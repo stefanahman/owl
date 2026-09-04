@@ -529,6 +529,27 @@ func TestMyReviewStatusDerivation(t *testing.T) {
 	}
 }
 
+func TestTrimCountsRunes(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactly-ten", 11, "exactly-ten"},
+		{"fix(report) — return factor", 14, "fix(report) —…"},
+		{"héllo wörld", 6, "héllo…"},
+		{"🦉🦉🦉🦉", 2, "🦉…"},
+		{"abc", 1, "a"},
+		{"abc", 0, ""},
+	}
+	for _, tc := range cases {
+		if got := trim(tc.in, tc.n); got != tc.want {
+			t.Errorf("trim(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
+	}
+}
+
 func TestFindLocalForPR(t *testing.T) {
 	state := map[string]LocalState{
 		"pr-4116":               {Worktree: "/wt/pr-4116"},

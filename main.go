@@ -1184,15 +1184,18 @@ func badges(ls LocalState, iApproved, iEngaged, hasCR bool) string {
 	return strings.Join(parts, " ")
 }
 
-// trim shortens s to max n characters, appending an ellipsis if it was cut.
+// trim shortens s to at most n runes, replacing the tail with an
+// ellipsis if it was cut. Runes, not bytes: slicing a title on a byte
+// boundary inside "—" or an emoji emits a broken UTF-8 sequence.
 func trim(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
 	if n <= 1 {
-		return s[:n]
+		return string(r[:n])
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
 
 // relativeAge formats an RFC3339 timestamp as "5m", "3h", "2d", or "3w".
