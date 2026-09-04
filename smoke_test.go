@@ -9,13 +9,15 @@ import (
 // TestFetchSmoke exercises fetchPRs and fetchLocal against the real
 // environment, chdir'd to whatever PR_OWL_TEST_CWD is set to (or the
 // module dir if unset). Not a unit test — a sanity check that the
-// message pipeline works end-to-end without a TTY.
+// message pipeline works end-to-end without a TTY. Needs an
+// authenticated gh and network, so it only runs when asked for:
 //
-// Run with:
-//
-//	go test -run TestFetchSmoke -v
-//	PR_OWL_TEST_CWD=~/Development/bardo/bardo-system go test -run TestFetchSmoke -v
+//	PR_OWL_SMOKE=1 go test -run TestFetchSmoke -v
+//	PR_OWL_SMOKE=1 PR_OWL_TEST_CWD=~/src/some-repo go test -run TestFetchSmoke -v
 func TestFetchSmoke(t *testing.T) {
+	if os.Getenv("PR_OWL_SMOKE") == "" {
+		t.Skip("set PR_OWL_SMOKE=1 to run against the live gh/git/tmux environment")
+	}
 	if cwd := os.Getenv("PR_OWL_TEST_CWD"); cwd != "" {
 		if err := os.Chdir(os.ExpandEnv(cwd)); err != nil {
 			t.Fatalf("chdir %s: %v", cwd, err)
