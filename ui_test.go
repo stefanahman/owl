@@ -67,7 +67,7 @@ func fixturePRs() []PR {
 func fixtureMerged() []PR {
 	now := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
 	p := PR{Number: 4070, Title: "chore(deps): bump lockfile", UpdatedAt: now, MergedAt: now}
-	p.Author.Login = "bardo-sven"
+	p.Author.Login = "dependabot"
 	return []PR{p}
 }
 
@@ -553,7 +553,7 @@ func TestTrimCountsRunes(t *testing.T) {
 func TestFindLocalForPR(t *testing.T) {
 	state := map[string]LocalState{
 		"pr-4116":               {Worktree: "/wt/pr-4116"},
-		"pr-4115-fix-something": {Worktree: "/wt/pr-4115-fix-something", Session: "pr-4115-fix-something", ClaudeState: "green"},
+		"pr-4115-fix-something": {Worktree: "/wt/pr-4115-fix-something", Session: "pr-4115-fix-something", ClaudeState: "done"},
 		"bar-4098-unrelated":    {Worktree: "/wt/bar-4098-unrelated"},
 	}
 

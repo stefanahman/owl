@@ -30,7 +30,7 @@ import (
 type LocalState struct {
 	Worktree    string // absolute path to the worktree; "" if none
 	Session     string // pr-reviews:<window> exists → window name; "" if none
-	ClaudeState string // "amber" | "working" | "green" | "read" | "" (absent)
+	ClaudeState string // "working" | "blocked" | "done" | "idle" | "" (absent)
 }
 
 // localMsg carries a snapshot of local state keyed by PR handle.
@@ -119,9 +119,9 @@ var prHandleRe = regexp.MustCompile(`^pr-[0-9]+(-.*)?$`)
 
 // readReviewWindows parses `tmux list-windows -t pr-reviews
 // -F '#{window_name}\t#{@claude-state}'` into a map. `@claude-state`
-// is a window option written by the user's Claude Code hooks
-// (PermissionRequest → amber, UserPromptSubmit/PostToolUse → working,
-// Stop → green, etc.). Absent value → empty string (fresh window).
+// is the window option tmux-claude-status writes from Claude Code's
+// hooks: working / blocked / done / idle. Absent value → empty string
+// (fresh window).
 //
 // Only windows of the `pr-reviews` session — that's where the
 // consolidated review workflow lives. Other tmux sessions (bf-*, eden)

@@ -111,14 +111,16 @@ func (k keyMap) FullHelp() [][]key.Binding {
 // Styles
 // ------------------------------------------------------------
 
+// Claude-state styles follow the tmux-claude-status vocabulary
+// (working / blocked / done / idle) read from the tmux window option.
 var (
-	styleWorktree      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // blue    ⎇  worktree present
-	styleClaudeAmber   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))     // amber   ©  Claude halted (blocked)
+	styleWorktree      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))      // blue    ⎇  worktree present
 	styleClaudeWorking = lipgloss.NewStyle().Foreground(lipgloss.Color("#dbbc7f")) // yellow  ©  Claude actively processing
-	styleClaudeGreen   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))      // green   ©  Claude finished (unread + `*`, or read without)
+	styleClaudeBlocked = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))     // amber   ©  Claude waiting on you (permission, question, plan)
+	styleClaudeDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))      // green   ©  Claude finished (done + `*`, or idle without)
 	styleClaudeNeutral = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))     // gray    ©  session exists, no state (fresh window)
-	styleApproved      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // green   ✓  I approved (current verdict)
-	styleChangesReqd   = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // orange  ⚠  any reviewer requested changes
+	styleApproved      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))      // green   ✓  I approved (current verdict)
+	styleChangesReqd   = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))     // orange  ⚠  any reviewer requested changes
 	styleDim           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	styleHeader        = lipgloss.NewStyle().Bold(true)
 	styleSectionTodo   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214")) // amber
@@ -735,9 +737,9 @@ func (m model) selectedPR() *PR {
 }
 
 // jumpToNextAttention advances the cursor to the next row that wants
-// attention — Todo bucket, or any row whose Claude state is amber
-// (halted) or green (unread). Wraps around when it hits the end.
-// No-op when no attention-needed rows exist.
+// attention — Todo bucket, or any row whose Claude state is blocked
+// (waiting on you) or done (unread). Wraps around when it hits the
+// end. No-op when no attention-needed rows exist.
 func (m *model) jumpToNextAttention() {
 	rows := m.visibleRows()
 	if len(rows) == 0 {
@@ -752,7 +754,7 @@ func (m *model) jumpToNextAttention() {
 		}
 		if r.pr != nil {
 			ls := findLocalForPR(m.localState, r.pr.Number)
-			if ls.ClaudeState == "amber" || ls.ClaudeState == "green" {
+			if ls.ClaudeState == "blocked" || ls.ClaudeState == "done" {
 				return true
 			}
 		}
@@ -1041,10 +1043,10 @@ func (m model) helpModalView() string {
 	legend := lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
 		fmt.Sprintf("  %s   worktree present for pr-<N>[-…] branch", styleWorktree.Render("⎇")),
-		fmt.Sprintf("  %s   Claude halted — blocked on permission/elicitation prompt", styleClaudeAmber.Render("©")),
 		fmt.Sprintf("  %s   Claude working — actively processing a turn", styleClaudeWorking.Render("©")),
-		fmt.Sprintf("  %s  Claude finished — unread (result to view; ack with `prefix + a`)", styleClaudeGreen.Render("©")+styleClaudeGreen.Render("*")),
-		fmt.Sprintf("  %s   Claude finished — read (acked, session still available)", styleClaudeGreen.Render("©")),
+		fmt.Sprintf("  %s   Claude blocked — waiting on you (permission, question, plan approval)", styleClaudeBlocked.Render("©")),
+		fmt.Sprintf("  %s  Claude done — unread (result to view; ack by focusing the window)", styleClaudeDone.Render("©")+styleClaudeDone.Render("*")),
+		fmt.Sprintf("  %s   Claude idle — finished and seen (session still available)", styleClaudeDone.Render("©")),
 		fmt.Sprintf("  %s   Claude session — no state set (fresh window)", styleClaudeNeutral.Render("©")),
 		fmt.Sprintf("  %s   I approved this PR (current verdict)", styleApproved.Render("✓")),
 		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
@@ -1128,10 +1130,10 @@ func (m model) View() string {
 //
 //	Slot 1  ⎇   worktree present
 //	Slot 2  ©*  Claude session — the trailing `*` (or space) is an unread marker:
-//	              ©*  green  = finished, unread (result to view)
-//	              ©   green  = finished, read (acked via `prefix + a`)
 //	              ©   yellow = working (actively processing)
-//	              ©   amber  = halted (blocked on permission/elicitation)
+//	              ©   amber  = blocked (waiting on permission / question / plan)
+//	              ©*  green  = done, unread (result to view)
+//	              ©   green  = idle (done and acknowledged)
 //	              ©   gray   = session exists, no state set (fresh window)
 //	Slot 3  ✓   I approved (green) — my current verdict is APPROVED
 //	            ·  engaged (dim) — I commented/CR'd but did not approve
@@ -1148,16 +1150,16 @@ func badges(ls LocalState, iApproved, iEngaged, hasCR bool) string {
 		parts = append(parts, " ")
 	}
 
-	// Claude slot: © + unread marker (`*` for unread green, else space).
+	// Claude slot: © + unread marker (`*` for done, else space).
 	switch ls.ClaudeState {
-	case "amber":
-		parts = append(parts, styleClaudeAmber.Render("©")+" ")
 	case "working":
 		parts = append(parts, styleClaudeWorking.Render("©")+" ")
-	case "green":
-		parts = append(parts, styleClaudeGreen.Render("©")+styleClaudeGreen.Render("*"))
-	case "read":
-		parts = append(parts, styleClaudeGreen.Render("©")+" ")
+	case "blocked":
+		parts = append(parts, styleClaudeBlocked.Render("©")+" ")
+	case "done":
+		parts = append(parts, styleClaudeDone.Render("©")+styleClaudeDone.Render("*"))
+	case "idle":
+		parts = append(parts, styleClaudeDone.Render("©")+" ")
 	default:
 		if ls.Session != "" {
 			parts = append(parts, styleClaudeNeutral.Render("©")+" ")
