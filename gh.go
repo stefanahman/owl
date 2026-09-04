@@ -67,10 +67,10 @@ type Review struct {
 type ReviewStatus int
 
 const (
-	StatusTodo              ReviewStatus = iota // I haven't submitted anything (or dismissed)
-	StatusWaitingForYou                         // I engaged; author pushed after my last review — my turn to re-look
-	StatusWaitingForAuthor                      // I engaged; my last review still covers head — author's turn
-	StatusApproved                              // I approved; approval covers current head
+	StatusTodo             ReviewStatus = iota // I haven't submitted anything (or dismissed)
+	StatusWaitingForYou                        // I engaged; author pushed after my last review — my turn to re-look
+	StatusWaitingForAuthor                     // I engaged; my last review still covers head — author's turn
+	StatusApproved                             // I approved; approval covers current head
 )
 
 func (s ReviewStatus) String() string {
