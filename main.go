@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -288,15 +289,16 @@ func launchDetached(name string, args ...string) tea.Cmd {
 }
 
 // hasPriorConversation reports whether Claude has any recorded session
-// jsonl for this PR — surviving worktree cleanup. Scans
-// ~/.claude/projects/ for a matching encoded-path dir and checks for
-// at least one .jsonl inside.
+// for this PR — surviving worktree cleanup. The worktree path is gone
+// by then, so this scans the projects dir for any entry whose encoded
+// path contains `-pr-<N>` (followed by `-` or the end) and holds a
+// transcript.
 func hasPriorConversation(prNumber int) bool {
-	home, err := os.UserHomeDir()
+	projects, err := claudeProjectsDir()
 	if err != nil {
 		return false
 	}
-	entries, err := os.ReadDir(home + "/.claude/projects")
+	entries, err := os.ReadDir(projects)
 	if err != nil {
 		return false
 	}
@@ -315,14 +317,8 @@ func hasPriorConversation(prNumber int) bool {
 		if end < len(name) && name[end] != '-' {
 			continue
 		}
-		sub, err := os.ReadDir(home + "/.claude/projects/" + name)
-		if err != nil {
-			continue
-		}
-		for _, f := range sub {
-			if strings.HasSuffix(f.Name(), ".jsonl") {
-				return true
-			}
+		if hasConversation(filepath.Join(projects, name)) {
+			return true
 		}
 	}
 	return false

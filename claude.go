@@ -1,0 +1,47 @@
+// Where Claude Code keeps per-project conversation state, and how it
+// names the directory for a given working directory. pr-owl reads this
+// to decide between starting a fresh review and resuming one.
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// claudeProjectsDir returns <config dir>/projects, where <config dir>
+// is $CLAUDE_CONFIG_DIR or ~/.claude.
+func claudeProjectsDir() (string, error) {
+	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".claude")
+	}
+	return filepath.Join(dir, "projects"), nil
+}
+
+// encodeProjectPath mirrors Claude Code's naming of a project's state
+// directory: every `/` and `.` in the absolute working directory
+// becomes `-`, so /home/me/src/app/.worktrees.local/pr-7 is stored
+// under -home-me-src-app--worktrees-local-pr-7.
+func encodeProjectPath(cwd string) string {
+	return strings.NewReplacer("/", "-", ".", "-").Replace(cwd)
+}
+
+// hasConversation reports whether a project state directory holds at
+// least one session transcript (*.jsonl).
+func hasConversation(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".jsonl") {
+			return true
+		}
+	}
+	return false
+}
