@@ -4,6 +4,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      # Nested module with pseudo-versions; Dependabot cannot resolve it
+      # (module github.com/charmbracelet/x@v0.1.0 found, but does not
+      # contain package .../exp/teatest). Bump it by hand.
+      - dependency-name: github.com/charmbracelet/x/exp/teatest
   - package-ecosystem: github-actions
     directory: /
     schedule:
