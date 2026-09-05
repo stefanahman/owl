@@ -24,7 +24,8 @@ const mergedWindow = 24 * time.Hour
 type PR struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
-	Body        string `json:"body"` // used for parsing Linear ticket IDs
+	Body        string `json:"body"` // searched by links' patterns (ticket ids)
+	URL         string `json:"url"`  // the PR's page; correct host on GitHub Enterprise too
 	HeadRefName string `json:"headRefName"`
 	HeadRefOid  string `json:"headRefOid,omitempty"` // populated by graphql fetch; drives staleness detection
 	UpdatedAt   string `json:"updatedAt"`
@@ -287,7 +288,7 @@ query($r: String!, $v: String!) {
   requested: search(query: $r, type: ISSUE, first: 100) {
     nodes {
       ... on PullRequest {
-        number title body headRefName headRefOid updatedAt isDraft
+        number title body url headRefName headRefOid updatedAt isDraft
         author { login }
         reviews(last: 100) {
           nodes { author { login } state submittedAt commit { oid } }
@@ -298,7 +299,7 @@ query($r: String!, $v: String!) {
   reviewed: search(query: $v, type: ISSUE, first: 100) {
     nodes {
       ... on PullRequest {
-        number title body headRefName headRefOid updatedAt isDraft
+        number title body url headRefName headRefOid updatedAt isDraft
         author { login }
         reviews(last: 100) {
           nodes { author { login } state submittedAt commit { oid } }
@@ -326,6 +327,7 @@ query($r: String!, $v: String!) {
 		Number      int    `json:"number"`
 		Title       string `json:"title"`
 		Body        string `json:"body"`
+		URL         string `json:"url"`
 		HeadRefName string `json:"headRefName"`
 		HeadRefOid  string `json:"headRefOid"`
 		UpdatedAt   string `json:"updatedAt"`
@@ -363,6 +365,7 @@ query($r: String!, $v: String!) {
 				Number:      n.Number,
 				Title:       n.Title,
 				Body:        n.Body,
+				URL:         n.URL,
 				HeadRefName: n.HeadRefName,
 				HeadRefOid:  n.HeadRefOid,
 				UpdatedAt:   n.UpdatedAt,
@@ -394,7 +397,7 @@ func ghPRList(state, search string) ([]PR, error) {
 	cmd := exec.Command("gh", "pr", "list",
 		"--search", search,
 		"--state", state,
-		"--json", "number,title,body,headRefName,author,updatedAt,mergedAt,isDraft,reviews",
+		"--json", "number,title,body,url,headRefName,author,updatedAt,mergedAt,isDraft,reviews",
 		"--limit", "100",
 	)
 	out, err := cmd.Output()
