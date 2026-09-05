@@ -1,8 +1,9 @@
 # pr-owl
 
-The PRs waiting for your review, in a tmux popup — and one key to turn
+A terminal UI of the PRs waiting for your review — and one key to turn
 any of them into a review workspace: a git worktree, a tmux window, and
-Claude Code reviewing inside it.
+Claude Code reviewing inside it. Run it in a shell, or bind it to a
+tmux popup so it's one keystroke away from any session.
 
 ```
  acme/app · 3 todo · 1 waiting for you · 2 approved      updated 40s ago
@@ -46,16 +47,16 @@ go install github.com/stefanahman/pr-owl@latest
 or from a checkout, `make install BIN=~/.local/bin`. Needs git, an
 authenticated `gh`, and tmux ≥ 3.2. Go 1.24 to build.
 
-Then bind the popup in `tmux.conf`:
+`pr-owl` opens the TUI for the repo of the current directory; set
+`default_repo` in the config to launch it from anywhere. To have it a
+keystroke away inside tmux, bind a popup in `tmux.conf`:
 
 ```tmux
 bind r display-popup -E -w 88% -h 84% pr-owl
 ```
 
 (tmux runs that with the server's PATH — give the absolute path if
-`pr-owl` isn't on it.) `pr-owl` on its own opens the TUI in the repo of
-the current directory; set `default_repo` in the config to launch it
-from anywhere.
+`pr-owl` isn't on it.)
 
 Two optional companions:
 
