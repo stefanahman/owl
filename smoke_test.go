@@ -62,7 +62,7 @@ func TestFetchSmoke(t *testing.T) {
 			counts[StatusTodo], counts[StatusWaitingForYou]+counts[StatusWaitingForAuthor], counts[StatusApproved])
 	}
 
-	local := fetchLocal()
+	local := model{cfg: defaultConfig()}.fetchLocal()
 	lm, ok := local.(localMsg)
 	if !ok {
 		t.Fatalf("fetchLocal returned unexpected type %T", local)

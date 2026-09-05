@@ -10,16 +10,16 @@
 //	bubbles/spinner   loading indicator
 //	bubbles/key       key bindings (rebindable, drive the help view)
 //	bubbles/help      auto-generates key legend from the keymap
-//
-// Data layer (gh.go, local.go) is untouched by the refactor.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -60,7 +60,6 @@ type keyMap struct {
 	Enter    key.Binding
 	Feedback key.Binding
 	Browser  key.Binding
-	Linear   key.Binding
 	Yank     key.Binding
 	Next     key.Binding
 	Cleanup  key.Binding
@@ -69,29 +68,56 @@ type keyMap struct {
 	Refresh  key.Binding
 	Help     key.Binding
 	Quit     key.Binding
+	Links    []key.Binding // parallel to Config.Links
 }
 
-func newKeyMap() keyMap {
-	return keyMap{
-		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		Home:     key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
-		End:      key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
-		PageUp:   key.NewBinding(key.WithKeys("pgup", "ctrl+u"), key.WithHelp("pgup", "page up")),
-		PageDown: key.NewBinding(key.WithKeys("pgdown", "ctrl+d"), key.WithHelp("pgdn", "page down")),
-		Enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("↵", "open review")),
-		Feedback: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "check feedback")),
-		Browser:  key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open PR in browser")),
-		Linear:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "open Linear ticket")),
-		Yank:     key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yank PR URL")),
-		Next:     key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next attention-needed")),
-		Cleanup:  key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clean up worktree")),
-		Search:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-		Cancel:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel/clear")),
-		Refresh:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+// newKeyMap builds the bindings from the `keys` and `links` config.
+func newKeyMap(k KeysConfig, links []LinkConfig) keyMap {
+	bind := func(keys keyNames, desc string) key.Binding {
+		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(keys.label(), desc))
 	}
+	km := keyMap{
+		Up:       bind(k.Up, "up"),
+		Down:     bind(k.Down, "down"),
+		Home:     bind(k.Top, "top"),
+		End:      bind(k.Bottom, "bottom"),
+		PageUp:   bind(k.PageUp, "page up"),
+		PageDown: bind(k.PageDown, "page down"),
+		Enter:    bind(k.Open, "open review"),
+		Feedback: bind(k.Feedback, "check feedback"),
+		Browser:  bind(k.Browser, "open PR in browser"),
+		Yank:     bind(k.Yank, "yank PR URL"),
+		Next:     bind(k.Next, "next attention-needed"),
+		Cleanup:  bind(k.Cleanup, "clean up worktree"),
+		Search:   bind(k.Search, "search"),
+		Cancel:   bind(k.Cancel, "cancel/clear"),
+		Refresh:  bind(k.Refresh, "refresh"),
+		Help:     bind(k.Help, "help"),
+		Quit:     bind(k.Quit, "quit"),
+	}
+	for _, l := range links {
+		km.Links = append(km.Links, bind(l.Key, l.Name))
+	}
+	return km
+}
+
+var keyGlyphs = map[string]string{"up": "↑", "down": "↓", "left": "←", "right": "→", "enter": "↵", "pgdown": "pgdn"}
+
+// label renders key names for the help views: the first key always,
+// further keys only when they are single characters (`↑/k`, but `q`
+// rather than `q/ctrl+c` — named alternates are noise in a legend).
+func (k keyNames) label() string {
+	var parts []string
+	for i, name := range k {
+		if i > 0 && len([]rune(name)) != 1 {
+			continue
+		}
+		if g, ok := keyGlyphs[name]; ok {
+			name = g
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, "/")
 }
 
 // ShortHelp drives the footer legend. FullHelp is rendered inside the
@@ -101,9 +127,10 @@ func (k keyMap) ShortHelp() []key.Binding {
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
+	actions := append([]key.Binding{k.Enter, k.Feedback, k.Browser, k.Yank, k.Cleanup}, k.Links...)
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Next, k.Home, k.End, k.PageUp, k.PageDown},
-		{k.Enter, k.Feedback, k.Browser, k.Linear, k.Yank, k.Cleanup},
+		actions,
 		{k.Search, k.Cancel, k.Refresh, k.Help, k.Quit},
 	}
 }
@@ -114,14 +141,17 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 // Claude-state styles follow the tmux-claude-status vocabulary
 // (working / blocked / done / idle) read from the tmux window option.
+// Their colours come from the `theme` config (applyTheme); everything
+// else is fixed.
 var (
-	styleWorktree      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))      // blue    ⎇  worktree present
-	styleClaudeWorking = lipgloss.NewStyle().Foreground(lipgloss.Color("#dbbc7f")) // yellow  ©  Claude actively processing
-	styleClaudeBlocked = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))     // amber   ©  Claude waiting on you (permission, question, plan)
-	styleClaudeDone    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))      // green   ©  Claude finished (done + `*`, or idle without)
-	styleClaudeNeutral = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))     // gray    ©  session exists, no state (fresh window)
-	styleApproved      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))      // green   ✓  I approved (current verdict)
-	styleChangesReqd   = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))     // orange  ⚠  any reviewer requested changes
+	styleClaudeWorking lipgloss.Style // ©  Claude actively processing
+	styleClaudeBlocked lipgloss.Style // ©  Claude waiting on you (permission, question, plan)
+	styleClaudeDone    lipgloss.Style // ©  Claude finished (done + `*`, or idle without)
+
+	styleWorktree      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // blue    ⎇  worktree present
+	styleClaudeNeutral = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // gray    ©  session exists, no state (fresh window)
+	styleApproved      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // green   ✓  I approved (current verdict)
+	styleChangesReqd   = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // orange  ⚠  any reviewer requested changes
 	styleDim           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	styleHeader        = lipgloss.NewStyle().Bold(true)
 	styleSectionTodo   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214")) // amber
@@ -131,6 +161,12 @@ var (
 	styleDraft         = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))            // dim for [draft]
 	styleSearchLabel   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
+
+func applyTheme(t ThemeConfig) {
+	styleClaudeWorking = lipgloss.NewStyle().Foreground(lipgloss.Color(t.Working))
+	styleClaudeBlocked = lipgloss.NewStyle().Foreground(lipgloss.Color(t.Blocked))
+	styleClaudeDone = lipgloss.NewStyle().Foreground(lipgloss.Color(t.Done))
+}
 
 // ------------------------------------------------------------
 // Row model
@@ -150,6 +186,8 @@ type visibleRow struct {
 // ------------------------------------------------------------
 
 type model struct {
+	cfg Config
+
 	// domain data
 	repo       string
 	me         string
@@ -182,7 +220,9 @@ type model struct {
 	initCmds []tea.Cmd
 }
 
-func initialModel() model {
+func initialModel(cfg Config) model {
+	applyTheme(cfg.Theme)
+
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = "PR number"
@@ -195,8 +235,9 @@ func initialModel() model {
 	sp.Style = styleDim
 
 	m := model{
+		cfg:     cfg,
 		repo:    currentRepo(),
-		keys:    newKeyMap(),
+		keys:    newKeyMap(cfg.Keys, cfg.Links),
 		help:    help.New(),
 		search:  ti,
 		list:    viewport.New(0, 0),
@@ -222,7 +263,7 @@ func (m model) Init() tea.Cmd {
 		return tea.Batch(m.initCmds...)
 	}
 	return tea.Batch(
-		fetchPRs, fetchLocal, fetchMerged, fetchUser,
+		fetchPRs, m.fetchLocal, fetchMerged, fetchUser,
 		m.spinner.Tick,
 		textinput.Blink,
 	)
@@ -329,8 +370,8 @@ func hasPriorConversation(prNumber int) bool {
 // session (Claude conversation state persists on disk), closes any
 // pr-<N> Ghostty window. Safety-checked upstream: pr-review-done
 // refuses when the worktree has uncommitted work.
-func cleanupPRWorktree(prNumber int) tea.Cmd {
-	return runEdenScript("pr-review-done", prNumber)
+func (m model) cleanupPRWorktree(prNumber int) tea.Cmd {
+	return m.runEdenScript("pr-review-done", prNumber)
 }
 
 // checkFeedbackPrompt is the canned message sent to a PR's Claude
@@ -342,15 +383,15 @@ func cleanupPRWorktree(prNumber int) tea.Cmd {
 const checkFeedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
 
 // sendCheckFeedback dispatches the check-feedback prompt into the
-// pr-reviews tmux window for this PR, selects that window, and focuses
+// review tmux window for this PR, selects that window, and focuses
 // the pr-reviews Ghostty window so the user sees Claude respond.
 //
 // `window` is the tmux window name (e.g. `pr-4141-fix-ci-…`) — under
 // the consolidated model, LocalState.Session carries this rather than
 // a tmux session name.
-func sendCheckFeedback(window string, prNumber int) tea.Cmd {
+func (m model) sendCheckFeedback(window string) tea.Cmd {
 	return func() tea.Msg {
-		target := reviewsSessionName + ":" + window
+		target := tmuxTarget(m.cfg.Tmux.Session, window)
 		// Select the window so it's what the Ghostty client shows.
 		if err := exec.Command("tmux", "select-window", "-t", target).Run(); err != nil {
 			return errMsg{fmt.Errorf("select-window %s: %w", target, err)}
@@ -387,52 +428,56 @@ func focusReviewsWindow() {
 	_ = exec.Command("yabai", "-m", "window", "--focus", wid).Run()
 }
 
-// openPRInBrowser opens the PR's GitHub page in the default browser
-// via `gh pr view --web`.
-func openPRInBrowser(prNumber int) tea.Cmd {
+// openPRInBrowser opens the PR's page. pr.URL comes from the API, so
+// this is right on GitHub Enterprise too; it is empty only while a
+// pre-url cache file is showing and the first fetch hasn't landed.
+func (m model) openPRInBrowser(pr *PR) tea.Cmd {
 	return func() tea.Msg {
-		if err := exec.Command("gh", "pr", "view", "--web", strconv.Itoa(prNumber)).Run(); err != nil {
-			return errMsg{fmt.Errorf("gh pr view --web %d: %w", prNumber, err)}
+		if pr.URL == "" {
+			return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)}
 		}
-		return nil
+		return openURL(m.cfg.OpenCmd, pr.URL)
 	}
 }
 
-// linearIDRe matches Linear ticket identifiers of the form `BAR-1234`
-// anywhere in a PR title, body, or branch name. Bardo team convention
-// is the `BAR-` prefix; other prefixes would need a config knob to
-// support cleanly (skipped for v1).
-var linearIDRe = regexp.MustCompile(`\bBAR-\d+\b`)
-
-// openLinearForPR parses a Linear ticket ID from the PR's title, body,
-// and branch name (in that order) and opens the corresponding Linear
-// URL in the default browser. No-op when no ID is found.
-func openLinearForPR(pr *PR) tea.Cmd {
+// openLink opens a configured link for the PR; a link whose pattern
+// doesn't match anything is a no-op.
+func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
 	return func() tea.Msg {
-		haystack := pr.Title + "\n" + pr.Body + "\n" + pr.HeadRefName
-		id := linearIDRe.FindString(haystack)
-		if id == "" {
+		url, ok := l.expand(m.repo, pr)
+		if !ok {
 			return nil
 		}
-		url := "https://linear.app/bardo-technology/issue/" + id
-		if err := exec.Command("open", url).Run(); err != nil {
-			return errMsg{fmt.Errorf("open %s: %w", url, err)}
-		}
-		return nil
+		return openURL(m.cfg.OpenCmd, url)
 	}
 }
 
-// yankPRURL copies the PR's GitHub URL to the macOS clipboard via
-// pbcopy. URL is constructed from the current repo + PR number, which
-// is cheaper than a separate `gh pr view --json url` roundtrip.
-func yankPRURL(repo string, prNumber int) tea.Cmd {
-	return func() tea.Msg {
-		if repo == "" {
-			return errMsg{fmt.Errorf("yank: no repo detected")}
+// openURL hands a URL to `open_cmd` (split on whitespace, URL
+// appended), defaulting to the platform opener.
+func openURL(openCmd, url string) tea.Msg {
+	argv := strings.Fields(openCmd)
+	if len(argv) == 0 {
+		if runtime.GOOS == "darwin" {
+			argv = []string{"open"}
+		} else {
+			argv = []string{"xdg-open"}
 		}
-		url := fmt.Sprintf("https://github.com/%s/pull/%d", repo, prNumber)
+	}
+	argv = append(argv, url)
+	if err := exec.Command(argv[0], argv[1:]...).Run(); err != nil {
+		return errMsg{fmt.Errorf("%s %s: %w", argv[0], url, err)}
+	}
+	return nil
+}
+
+// yankPRURL copies the PR's URL to the macOS clipboard via pbcopy.
+func yankPRURL(pr *PR) tea.Cmd {
+	return func() tea.Msg {
+		if pr.URL == "" {
+			return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)}
+		}
 		cmd := exec.Command("pbcopy")
-		cmd.Stdin = strings.NewReader(url)
+		cmd.Stdin = strings.NewReader(pr.URL)
 		if err := cmd.Run(); err != nil {
 			return errMsg{fmt.Errorf("pbcopy: %w", err)}
 		}
@@ -444,7 +489,7 @@ func yankPRURL(repo string, prNumber int) tea.Cmd {
 // exec ~/.eden/bin/<name> <prNumber>, refresh local state on success,
 // surface an errMsg on failure. Absolute path via $HOME/.eden/bin
 // because Ghostty may not inherit the user's interactive PATH.
-func runEdenScript(name string, prNumber int) tea.Cmd {
+func (m model) runEdenScript(name string, prNumber int) tea.Cmd {
 	return func() tea.Msg {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -454,7 +499,7 @@ func runEdenScript(name string, prNumber int) tea.Cmd {
 		if err := cmd.Run(); err != nil {
 			return errMsg{fmt.Errorf("%s %d: %w", name, prNumber, err)}
 		}
-		return fetchLocal()
+		return m.fetchLocal()
 	}
 }
 
@@ -487,7 +532,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// window shows current state. Debounced at 2s so rapid
 		// focus/unfocus (window-manager churn) doesn't storm gh.
 		if time.Since(m.lastFetched) > 2*time.Second {
-			cmds = append(cmds, fetchPRs, fetchLocal, fetchMerged)
+			cmds = append(cmds, fetchPRs, m.fetchLocal, fetchMerged)
 		}
 
 	case spinner.TickMsg:
@@ -547,18 +592,17 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.search.Focused() {
-		switch {
-		case key.Matches(msg, m.keys.Cancel):
+		// esc/enter are the input's own keys, independent of what the
+		// list actions are bound to.
+		switch msg.Type {
+		case tea.KeyEsc:
 			m.search.SetValue("")
 			m.search.Blur()
 			m.clampCursor()
 			m.refreshList()
 			return m, nil
-		case key.Matches(msg, m.keys.Enter):
-			// Blur search (applies filter, keeps value). Overloading
-			// Enter is fine — outside search mode Enter opens the
-			// selected PR's review; the two paths never collide because
-			// this branch runs only while search.Focused().
+		case tea.KeyEnter:
+			// Blur search (applies filter, keeps value).
 			m.search.Blur()
 			return m, nil
 		}
@@ -587,7 +631,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prsReady = false
 		m.merged = nil
 		m.err = nil
-		return m, tea.Batch(fetchPRs, fetchLocal, fetchMerged, m.spinner.Tick)
+		return m, tea.Batch(fetchPRs, m.fetchLocal, fetchMerged, m.spinner.Tick)
 	case key.Matches(msg, m.keys.Up):
 		m.moveCursor(-1)
 		m.refreshList()
@@ -624,7 +668,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case ls.Session != "":
 				// Review window exists — inject the prompt (sync tmux
 				// send-keys, ~100ms), then quit.
-				return m, tea.Sequence(sendCheckFeedback(ls.Session, pr.Number), tea.Quit)
+				return m, tea.Sequence(m.sendCheckFeedback(ls.Session), tea.Quit)
 			case hasPriorConversation(pr.Number):
 				// Review window gone (cleaned up) but Claude's conversation
 				// state survives on disk. Launch via pr-review with the
@@ -638,15 +682,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Browser):
 		if pr := m.selectedPR(); pr != nil {
-			return m, openPRInBrowser(pr.Number)
-		}
-	case key.Matches(msg, m.keys.Linear):
-		if pr := m.selectedPR(); pr != nil {
-			return m, openLinearForPR(pr)
+			return m, m.openPRInBrowser(pr)
 		}
 	case key.Matches(msg, m.keys.Yank):
 		if pr := m.selectedPR(); pr != nil {
-			return m, yankPRURL(m.repo, pr.Number)
+			return m, yankPRURL(pr)
 		}
 	case key.Matches(msg, m.keys.Next):
 		m.jumpToNextAttention()
@@ -657,7 +697,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
-				return m, cleanupPRWorktree(pr.Number)
+				return m, m.cleanupPRWorktree(pr.Number)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -670,6 +710,15 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = true
+	default:
+		for i, b := range m.keys.Links {
+			if key.Matches(msg, b) {
+				if pr := m.selectedPR(); pr != nil {
+					return m, m.openLink(m.cfg.Links[i], pr)
+				}
+				break
+			}
+		}
 	}
 	return m, nil
 }
@@ -1242,10 +1291,75 @@ func clampInt(v, lo, hi int) int {
 // Entry
 // ------------------------------------------------------------
 
-func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithReportFocus())
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
-		os.Exit(1)
+// version is set by the release build (-ldflags "-X main.version=…");
+// `go install …@vX.Y.Z` builds report the module version instead.
+var version = ""
+
+func versionString() string {
+	if version != "" {
+		return version
 	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return "dev"
+}
+
+const usage = `usage: pr-owl                          PR overview TUI (run inside a git repo)
+       pr-owl config init | path | get <key>
+       pr-owl --version`
+
+// usageError is a bad invocation: the message is printed with the
+// usage text and the process exits 64 (EX_USAGE).
+type usageError string
+
+func (e usageError) Error() string { return string(e) }
+
+func main() {
+	args := os.Args[1:]
+	if len(args) == 0 {
+		cfg, err := loadConfig()
+		exitOn(err)
+		exitOn(enterDefaultRepo(cfg.DefaultRepo))
+		p := tea.NewProgram(initialModel(cfg), tea.WithAltScreen(), tea.WithReportFocus())
+		_, err = p.Run()
+		exitOn(err)
+		return
+	}
+	switch args[0] {
+	case "config":
+		exitOn(runConfig(args[1:], os.Stdout))
+	case "--version", "version":
+		fmt.Println("pr-owl", versionString())
+	case "--help", "-h", "help":
+		fmt.Println(usage)
+	default:
+		exitOn(usageError("unknown command " + args[0]))
+	}
+}
+
+// enterDefaultRepo changes into `default_repo` when the working
+// directory isn't inside a git repo, so pr-owl can be launched from
+// anywhere (a hotkey, a popup) and still act on the configured repo.
+func enterDefaultRepo(defaultRepo string) error {
+	if defaultRepo == "" || exec.Command("git", "rev-parse", "--git-dir").Run() == nil {
+		return nil
+	}
+	if err := os.Chdir(defaultRepo); err != nil {
+		return fmt.Errorf("default_repo: %w", err)
+	}
+	return nil
+}
+
+func exitOn(err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
+	var ue usageError
+	if errors.As(err, &ue) {
+		fmt.Fprintln(os.Stderr, usage)
+		os.Exit(64)
+	}
+	os.Exit(1)
 }

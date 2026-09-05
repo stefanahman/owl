@@ -22,7 +22,7 @@ import (
 // and the terminal size fixed. Tests can then Send synthetic messages.
 func newTestModel(t *testing.T) *teatest.TestModel {
 	t.Helper()
-	m := initialModel()
+	m := initialModel(defaultConfig())
 	m.initCmds = []tea.Cmd{} // suppress fetchPRs/fetchLocal/etc
 	m.me = "stefanahman"     // stable login for MyReviewStatus derivation
 	m.repo = "acme/example"  // deterministic header regardless of cwd

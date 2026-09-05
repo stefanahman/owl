@@ -3,9 +3,9 @@
 //
 // Scope: `git worktree list` runs in the working directory, so it lists
 // every worktree of the repo pr-owl was launched from. tmux windows
-// come from the consolidated `pr-reviews` session (one window per PR
-// review, created by the pr-review script); window names use the same
-// pr-<N>[-…] pattern as the worktree basenames.
+// come from the review session (`tmux.session`, one window per PR
+// review); window names use the same pr-<N>[-…] pattern as the
+// worktree basenames.
 package main
 
 import (
@@ -19,34 +19,39 @@ import (
 )
 
 // LocalState is the per-PR overlay: does a worktree exist? A tmux
-// window (in the `pr-reviews` session) with a Claude conversation?
-// What state did the last Claude hook write?
+// window (in the review session) with a Claude conversation? What
+// state did the last Claude hook write?
 //
 // `Session` is retained as the field name for backwards-compat with
 // existing pr-owl consumers (badges, guards for `f` / `c`); its value
 // under the consolidated model is the tmux window NAME within the
-// pr-reviews session — semantically "does a review workspace exist
-// for this PR", just physically now a window instead of a session.
+// review session — semantically "does a review workspace exist for
+// this PR", just physically now a window instead of a session.
 type LocalState struct {
 	Worktree    string // absolute path to the worktree; "" if none
-	Session     string // pr-reviews:<window> exists → window name; "" if none
+	Session     string // <tmux.session>:<window> exists → window name; "" if none
 	ClaudeState string // "working" | "blocked" | "done" | "idle" | "" (absent)
 }
 
 // localMsg carries a snapshot of local state keyed by PR handle.
 type localMsg map[string]LocalState
 
-// reviewsSessionName is the fixed tmux session that holds all per-PR
-// review windows (see pr-review script). Kept as a constant so
-// changing it here + in the shell scripts stays in sync.
-const reviewsSessionName = "pr-reviews"
+// tmuxTarget builds an exact-match `-t` argument. Without the `=`
+// prefix tmux falls back to prefix matching, so `pr-1` would resolve
+// to `pr-12-foo` when `pr-1` itself doesn't exist.
+func tmuxTarget(session, window string) string {
+	if window == "" {
+		return "=" + session
+	}
+	return "=" + session + ":=" + window
+}
 
-// fetchLocal reads worktrees + tmux windows of the pr-reviews session
-// and merges them into a per-PR map. Failures in either source
-// degrade gracefully — you get whatever partial data was available.
-func fetchLocal() tea.Msg {
+// fetchLocal reads worktrees + tmux windows of the review session and
+// merges them into a per-PR map. Failures in either source degrade
+// gracefully — you get whatever partial data was available.
+func (m model) fetchLocal() tea.Msg {
 	worktrees := readWorktrees()
-	windows := readReviewWindows()
+	windows := readReviewWindows(m.cfg.Tmux)
 
 	out := make(map[string]LocalState)
 	for handle, wtPath := range worktrees {
@@ -117,19 +122,19 @@ func readWorktrees() map[string]string {
 // directories and tmux sessions.
 var prHandleRe = regexp.MustCompile(`^pr-[0-9]+(-.*)?$`)
 
-// readReviewWindows parses `tmux list-windows -t pr-reviews
-// -F '#{window_name}\t#{@claude-state}'` into a map. `@claude-state`
-// is the window option tmux-claude-status writes from Claude Code's
+// readReviewWindows lists the windows of the review session with the
+// value of the state option (`#{@claude-state}` by default) into a
+// map. tmux-claude-status writes that window option from Claude Code's
 // hooks: working / blocked / done / idle. Absent value → empty string
 // (fresh window).
 //
-// Only windows of the `pr-reviews` session — that's where the
-// consolidated review workflow lives. Other tmux sessions (bf-*, eden)
-// aren't PR reviews and don't belong in this overlay.
-func readReviewWindows() map[string]string {
-	out, err := exec.Command("tmux", "list-windows", "-t", reviewsSessionName, "-F", "#{window_name}\t#{@claude-state}").Output()
+// Only windows of the review session — other tmux sessions aren't PR
+// reviews and don't belong in this overlay.
+func readReviewWindows(t TmuxConfig) map[string]string {
+	format := "#{window_name}\t#{" + t.StateOption + "}"
+	out, err := exec.Command("tmux", "list-windows", "-t", tmuxTarget(t.Session, ""), "-F", format).Output()
 	if err != nil {
-		return nil // pr-reviews session doesn't exist yet — treat as empty
+		return nil // review session doesn't exist yet — treat as empty
 	}
 	result := make(map[string]string)
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -138,8 +143,8 @@ func readReviewWindows() map[string]string {
 		}
 		parts := strings.SplitN(line, "\t", 2)
 		name := parts[0]
-		// Skip the scratch keepalive window — no state to report.
-		if name == "scratch" {
+		// Skip the keepalive window — no state to report.
+		if name == t.KeepaliveWindow {
 			continue
 		}
 		state := ""
