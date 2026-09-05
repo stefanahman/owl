@@ -377,7 +377,7 @@ func validColor(s string) bool {
 }
 
 // expandHome turns a leading ~ into the home directory. YAML has no
-// shell, so users writing `~/.eden/bin/...` expect this.
+// shell, so users writing `~/.local/bin/...` expect this.
 func expandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
