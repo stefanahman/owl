@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Pin the review terminal to its own space: one Ghostty window titled
+# after the tmux session (`pr-reviews` by default), created by
+# pr-reviews-focus. Prefix match, not exact — shell prompts may append
+# to the title through OSC updates after Ghostty sets it.
+#
+# Source this from your yabairc, or paste the line. The space number
+# must match PR_REVIEWS_SPACE (default 9) in pr-reviews-focus.
+yabai -m rule --add app="^Ghostty$" title="^pr-reviews" space=^9
