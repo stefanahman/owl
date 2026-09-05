@@ -15,9 +15,19 @@ jobs:
           go-version-file: go.mod
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux shellcheck
       - run: make lint
+      - run: make test
+
+  # Static analysis on the current Go; the job above proves the minimum
+  # in go.mod still builds and passes.
+  analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
       - run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-      - run: make test
 
   plugin:
     runs-on: ubuntu-latest
