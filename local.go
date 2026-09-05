@@ -9,10 +9,7 @@
 package main
 
 import (
-	"fmt"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,16 +32,6 @@ type LocalState struct {
 
 // localMsg carries a snapshot of local state keyed by PR handle.
 type localMsg map[string]LocalState
-
-// tmuxTarget builds an exact-match `-t` argument. Without the `=`
-// prefix tmux falls back to prefix matching, so `pr-1` would resolve
-// to `pr-12-foo` when `pr-1` itself doesn't exist.
-func tmuxTarget(session, window string) string {
-	if window == "" {
-		return "=" + session
-	}
-	return "=" + session + ":=" + window
-}
 
 // fetchLocal reads worktrees + tmux windows of the review session and
 // merges them into a per-PR map. Failures in either source degrade
@@ -73,54 +60,30 @@ func (m model) fetchLocal() tea.Msg {
 	return localMsg(out)
 }
 
-// readWorktrees parses `git worktree list --porcelain` (run in cwd) and
-// returns a map keyed by the PR-handle derived from the worktree path
-// (basename matching `pr-<N>[-<slug>]`) plus, as fallback, the branch
-// name for any worktree whose path doesn't fit the convention.
+// readWorktrees lists the review worktrees of the repo in cwd, keyed
+// by handle (directory name `pr-<N>[-<slug>]`, or the branch as a
+// fallback — see worktree.handle).
 //
-// Path-based keying is primary because the pr-review script names its
-// worktrees `<repo>/.worktrees.local/pr-<N>-<slug>` and often leaves
-// them in detached HEAD (no `branch refs/heads/…` line to parse). Once
+// Path-based keying is primary because `pr-owl open` names its
+// worktrees `<repo>/<worktrees_dir>/pr-<N>-<slug>` and they often end
+// up in detached HEAD (no `branch refs/heads/…` line to parse). Once
 // checked out detached, branch-only matching drops them entirely — the
 // exact bug that hid PR 4115.
 //
 // Failure returns nil — the TUI still renders without wt badges.
 func readWorktrees() map[string]string {
-	out, err := exec.Command("git", "worktree", "list", "--porcelain").Output()
+	list, err := listWorktrees(".")
 	if err != nil {
 		return nil
 	}
 	result := make(map[string]string)
-	var currentWT, currentBranch string
-	flush := func() {
-		if currentWT == "" {
-			return
-		}
-		base := filepath.Base(currentWT)
-		if prHandleRe.MatchString(base) {
-			result[base] = currentWT
-		} else if currentBranch != "" {
-			result[currentBranch] = currentWT
+	for _, wt := range list {
+		if h := wt.handle(); h != "" {
+			result[h] = wt.Path
 		}
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			flush()
-			currentWT = strings.TrimPrefix(line, "worktree ")
-			currentBranch = ""
-		case strings.HasPrefix(line, "branch refs/heads/"):
-			currentBranch = strings.TrimPrefix(line, "branch refs/heads/")
-		}
-	}
-	flush()
 	return result
 }
-
-// prHandleRe matches names of the form `pr-<N>[-<anything>]`, the
-// naming convention used by the pr-review workflow for both worktree
-// directories and tmux sessions.
-var prHandleRe = regexp.MustCompile(`^pr-[0-9]+(-.*)?$`)
 
 // readReviewWindows lists the windows of the review session with the
 // value of the state option (`#{@claude-state}` by default) into a
@@ -157,12 +120,10 @@ func readReviewWindows(t TmuxConfig) map[string]string {
 }
 
 // findLocalForPR looks up a LocalState for the given PR number by
-// matching branch names of the form `pr-<N>` or `pr-<N>-<slug>`.
+// matching names of the form `pr-<N>` or `pr-<N>-<slug>`.
 func findLocalForPR(state map[string]LocalState, prNumber int) LocalState {
-	exact := fmt.Sprintf("pr-%d", prNumber)
-	prefix := exact + "-"
 	for name, ls := range state {
-		if name == exact || strings.HasPrefix(name, prefix) {
+		if matchesPR(name, prNumber) {
 			return ls
 		}
 	}

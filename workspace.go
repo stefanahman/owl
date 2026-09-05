@@ -1,0 +1,164 @@
+// A review workspace is three things named identically, `pr-<N>` or
+// `pr-<N>-<slug>`: a git worktree under <repo>/<worktrees_dir>, the
+// branch checked out in it, and a tmux window in the review session.
+// This file holds what `open`, `close` and the TUI overlay share.
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// prHandleRe matches workspace names: `pr-<N>` optionally followed by
+// `-<anything>`.
+var prHandleRe = regexp.MustCompile(`^pr-([0-9]+)(-.*)?$`)
+
+// matchesPR reports whether name is the workspace name for PR n.
+func matchesPR(name string, n int) bool {
+	prefix := "pr-" + strconv.Itoa(n)
+	return name == prefix || strings.HasPrefix(name, prefix+"-")
+}
+
+// prNumberOf extracts N from a workspace name, or 0.
+func prNumberOf(name string) int {
+	m := prHandleRe.FindStringSubmatch(name)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// parsePRNumber validates a positional PR argument.
+func parsePRNumber(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return 0, usageError(fmt.Sprintf("PR number must be a positive integer, got %q", s))
+	}
+	return n, nil
+}
+
+// git runs a git command in dir and returns trimmed stdout. Errors
+// carry git's stderr, which is where the useful message is.
+func git(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return runOut(cmd)
+}
+
+// tmux runs a tmux command and returns trimmed stdout.
+func tmux(args ...string) (string, error) {
+	return runOut(exec.Command("tmux", args...))
+}
+
+// tmuxTarget builds an exact-match `-t` argument. Without the `=`
+// prefix tmux falls back to prefix matching, so `pr-1` would resolve
+// to `pr-12-foo` when `pr-1` itself doesn't exist.
+func tmuxTarget(session, window string) string {
+	if window == "" {
+		return "=" + session
+	}
+	return "=" + session + ":=" + window
+}
+
+func runOut(cmd *exec.Cmd) (string, error) {
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("%s: %s", strings.Join(cmd.Args, " "), msg)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// mainRepo returns the main working tree of the repository containing
+// dir — the same answer from the main tree, a subdirectory, or a linked
+// worktree, where `--show-toplevel` would return the worktree instead.
+// The result has symlinks resolved, like every path git itself prints,
+// so it compares equal to `git worktree list` entries.
+func mainRepo(dir string) (string, error) {
+	common, err := git(dir, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", fmt.Errorf("%s is not inside a git repository", dir)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common) // git prints it relative to dir
+	}
+	common, err = filepath.Abs(common)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(filepath.Dir(common))
+}
+
+// worktree is one entry of `git worktree list`.
+type worktree struct {
+	Path   string
+	Branch string // short name; "" when detached
+}
+
+// handle returns the workspace name a worktree is known by: its
+// directory name when that follows the convention, else its branch
+// when that does, else "" (not a review workspace).
+func (w worktree) handle() string {
+	if base := filepath.Base(w.Path); prHandleRe.MatchString(base) {
+		return base
+	}
+	if prHandleRe.MatchString(w.Branch) {
+		return w.Branch
+	}
+	return ""
+}
+
+// listWorktrees parses `git worktree list --porcelain` for the repo
+// containing dir.
+func listWorktrees(dir string) ([]worktree, error) {
+	out, err := git(dir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var list []worktree
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			list = append(list, worktree{Path: strings.TrimPrefix(line, "worktree ")})
+		case strings.HasPrefix(line, "branch refs/heads/") && len(list) > 0:
+			list[len(list)-1].Branch = strings.TrimPrefix(line, "branch refs/heads/")
+		}
+	}
+	return list, nil
+}
+
+// shellQuote single-quotes s for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// reviewWindows lists the window names of the review session; nil
+// when the session doesn't exist.
+func reviewWindows(session string) []string {
+	out, err := tmux("list-windows", "-t", tmuxTarget(session, ""), "-F", "#{window_name}")
+	if err != nil || out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// findReviewWindow returns the window name for PR n, or "".
+func findReviewWindow(session string, n int) string {
+	for _, w := range reviewWindows(session) {
+		if matchesPR(w, n) {
+			return w
+		}
+	}
+	return ""
+}

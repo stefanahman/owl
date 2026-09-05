@@ -31,6 +31,17 @@ func encodeProjectPath(cwd string) string {
 	return strings.NewReplacer("/", "-", ".", "-").Replace(cwd)
 }
 
+// hasConversationFor reports whether Claude has a transcript for a
+// working directory. The state outlives the directory: `close` removes
+// the worktree, `open` recreates it at the same path and resumes.
+func hasConversationFor(cwd string) bool {
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		return false
+	}
+	return hasConversation(filepath.Join(projects, encodeProjectPath(cwd)))
+}
+
 // hasConversation reports whether a project state directory holds at
 // least one session transcript (*.jsonl).
 func hasConversation(dir string) bool {
