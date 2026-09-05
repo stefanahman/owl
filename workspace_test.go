@@ -1,0 +1,529 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+// fixture is a hermetic environment for open/close: a clone of a local
+// origin that has refs/pull/<N>/head for PRs 42 and 7, a fake gh that
+// knows PR 42's title, a private tmux server with its own minimal
+// config, an empty CLAUDE_CONFIG_DIR, and git isolated from the
+// developer's own config (no signing, fixed identity).
+type fixture struct {
+	t      *testing.T
+	root   string // everything lives under here
+	origin string
+	repo   string // the clone `open` runs in
+	cfg    Config
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir()) // git prints resolved paths
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{t: t, root: root, origin: filepath.Join(root, "origin"), repo: filepath.Join(root, "repo")}
+
+	t.Setenv("HOME", root)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"} {
+		t.Setenv(k, "owl")
+	}
+	for _, k := range []string{"GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"} {
+		t.Setenv(k, "owl@example.test")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
+
+	// Fake gh: title for PR 42, failure for anything else.
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gh := "#!/bin/sh\ncase \"$3\" in 42) echo 'Fix: Crash on Startup!!';; *) echo 'no such PR' >&2; exit 1;; esac\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Origin with two "pull requests", then the clone open works in.
+	f.git(f.root, "init", "-q", "-b", "main", f.origin)
+	f.write(filepath.Join(f.origin, ".gitignore"), ".worktrees.local/\n.claude/\n")
+	f.git(f.origin, "add", ".")
+	f.git(f.origin, "commit", "-q", "-m", "init")
+	for _, pr := range []int{42, 7} {
+		f.write(filepath.Join(f.origin, fmt.Sprintf("pr%d.txt", pr)), "change\n")
+		f.git(f.origin, "add", ".")
+		f.git(f.origin, "commit", "-q", "-m", fmt.Sprintf("PR %d", pr))
+		f.git(f.origin, "update-ref", fmt.Sprintf("refs/pull/%d/head", pr), "HEAD")
+		f.git(f.origin, "reset", "-q", "--hard", "HEAD~1")
+	}
+	f.git(f.root, "clone", "-q", f.origin, f.repo)
+	f.write(filepath.Join(f.repo, ".claude", "settings.local.json"), "{}\n")
+	f.write(filepath.Join(f.repo, ".claude", "skills", "review.local", "SKILL.md"), "# skill\n")
+
+	// Private tmux server with its own minimal config: /bin/sh in every
+	// window (the developer's shell would read its rc files and write
+	// history into $HOME on exit, racing the temp dir cleanup), and no
+	// exit when the last session goes. $TMUX points plain `tmux`
+	// invocations at it. The socket gets a short directory of its own —
+	// Unix socket paths are limited to ~100 bytes and t.TempDir includes
+	// the test name.
+	sockDir, err := os.MkdirTemp("", "pr-owl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	conf := filepath.Join(sockDir, "tmux.conf")
+	f.write(conf, "set -g default-shell /bin/sh\nset -s exit-empty off\n")
+	t.Setenv("TMUX_TMPDIR", sockDir)
+	t.Setenv("HISTFILE", "")
+	socket := "test"
+	f.tmuxL(socket, "-f", conf, "start-server")
+	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
+	t.Setenv("TMUX", filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), socket)+",0,0")
+
+	f.cfg = defaultConfig()
+	f.cfg.Tmux.Session = "reviews"
+	f.cfg.Agent.Cmd = "true" // exits at once: the pane is back at a shell prompt
+	return f
+}
+
+func (f *fixture) git(dir string, args ...string) string {
+	f.t.Helper()
+	out, err := git(dir, args...)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return out
+}
+
+func (f *fixture) tmuxL(socket string, args ...string) string {
+	f.t.Helper()
+	out, err := runOut(exec.Command("tmux", append([]string{"-L", socket}, args...)...))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return out
+}
+
+func (f *fixture) write(path, content string) {
+	f.t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *fixture) open(args ...string) string {
+	f.t.Helper()
+	var out strings.Builder
+	if err := runOpen(f.cfg, args, &out); err != nil {
+		f.t.Fatalf("open %v: %v", args, err)
+	}
+	return out.String()
+}
+
+func (f *fixture) windows() []string {
+	return reviewWindows(f.cfg.Tmux.Session)
+}
+
+func (f *fixture) activeWindow() string {
+	out, err := tmux("list-windows", "-t", tmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_active} #{window_name}")
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if name, ok := strings.CutPrefix(line, "1 "); ok {
+			return name
+		}
+	}
+	return ""
+}
+
+// waitPane polls the window's screen until it contains want.
+func (f *fixture) waitPane(window, want string) string {
+	f.t.Helper()
+	target := tmuxTarget(f.cfg.Tmux.Session, window)
+	var screen string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		screen, _ = tmux("capture-pane", "-p", "-t", target)
+		if strings.Contains(screen, want) {
+			return screen
+		}
+	}
+	f.t.Fatalf("window %s never showed %q; screen:\n%s", window, want, screen)
+	return ""
+}
+
+func (f *fixture) branches() []string {
+	return strings.Fields(f.git(f.repo, "branch", "--list", "--format=%(refname:short)"))
+}
+
+func (f *fixture) exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+func TestOpenCreatesWorkspace(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	hookOut := filepath.Join(f.root, "hook.out")
+	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_PR|$PR_OWL_SESSION|$PR_OWL_WINDOW|$PR_OWL_WORKTREE|$PR_OWL_REPO" > ` + hookOut
+
+	out := f.open("42")
+
+	name := "pr-42-fix-crash-on-startup"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	if !strings.Contains(out, "started =reviews:="+name) {
+		t.Errorf("output: %q", out)
+	}
+	if !f.exists(filepath.Join(wt, "pr42.txt")) {
+		t.Fatalf("worktree %s missing the PR's file", wt)
+	}
+	if head, want := f.git(wt, "rev-parse", "HEAD"), f.git(f.origin, "rev-parse", "refs/pull/42/head"); head != want {
+		t.Errorf("worktree HEAD %s, want the PR head %s", head, want)
+	}
+	if got := f.git(wt, "branch", "--show-current"); got != name {
+		t.Errorf("worktree branch %q, want %q", got, name)
+	}
+	for _, rel := range []string{".claude/settings.local.json", ".claude/skills/review.local"} {
+		link, err := os.Readlink(filepath.Join(wt, rel))
+		if err != nil || link != filepath.Join(f.repo, rel) {
+			t.Errorf("%s: link %q, err %v; want a symlink to the repo's", rel, link, err)
+		}
+	}
+	if !f.exists(filepath.Join(wt, ".claude", "skills", "review.local", "SKILL.md")) {
+		t.Error("linked skill dir is not readable through the symlink")
+	}
+	if got, want := f.windows(), []string{"scratch", name}; !reflect.DeepEqual(got, want) {
+		t.Errorf("windows %v, want %v", got, want)
+	}
+	if got := f.activeWindow(); got != name {
+		t.Errorf("active window %q, want %q", got, name)
+	}
+	if v, _ := tmux("show-options", "-w", "-v", "-t", tmuxTarget("reviews", name), "automatic-rename"); v != "off" {
+		t.Errorf("automatic-rename = %q, want off", v)
+	}
+	if cwd, _ := tmux("display-message", "-p", "-t", tmuxTarget("reviews", name), "#{pane_current_path}"); cwd != wt {
+		t.Errorf("window cwd %q, want %q", cwd, wt)
+	}
+	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	hook, err := os.ReadFile(hookOut)
+	if err != nil {
+		t.Fatalf("after_open hook did not run: %v", err)
+	}
+	if want := "42|reviews|" + name + "|" + wt + "|" + f.repo + "\n"; string(hook) != want {
+		t.Errorf("hook env %q, want %q", hook, want)
+	}
+}
+
+func TestOpenIsIdempotent(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+	name := "pr-42-fix-crash-on-startup"
+	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
+
+	out := f.open("42")
+
+	if !strings.Contains(out, "selected =reviews:="+name) {
+		t.Errorf("output: %q", out)
+	}
+	if got := f.windows(); len(got) != 2 {
+		t.Errorf("second open added a window: %v", got)
+	}
+	if got := f.activeWindow(); got != name {
+		t.Errorf("active window %q, want %q", got, name)
+	}
+	if screen := f.waitPane(name, "true"); strings.Count(screen, "true '/pr-review") != 1 {
+		t.Errorf("second open typed the agent command again:\n%s", screen)
+	}
+}
+
+func TestOpenFromInsideAWorktreeUsesTheMainRepo(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+	t.Chdir(filepath.Join(f.repo, ".worktrees.local", "pr-42-fix-crash-on-startup"))
+
+	out := f.open("7") // gh knows nothing about 7 → bare name
+
+	if !strings.Contains(out, "started =reviews:=pr-7\n") {
+		t.Errorf("output: %q", out)
+	}
+	if !f.exists(filepath.Join(f.repo, ".worktrees.local", "pr-7", "pr7.txt")) {
+		t.Error("worktree for PR 7 not under the main repo's worktrees dir")
+	}
+}
+
+func TestOpenPromptHandling(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+
+	// Fresh window with an explicit prompt: it replaces agent.prompt.
+	f.open("42", "--prompt", "look again")
+	name := "pr-42-fix-crash-on-startup"
+	f.waitPane(name, "true 'look again'")
+
+	// The agent exited (true returns at once) and a conversation exists
+	// on disk: a later prompt must restart the agent with -c, not be
+	// typed into the shell.
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	f.write(filepath.Join(f.root, "claude", "projects", encodeProjectPath(wt), "s.jsonl"), "{}\n")
+	out := f.open("42", "--prompt=it's back")
+	if !strings.Contains(out, "restarted agent") {
+		t.Errorf("output: %q", out)
+	}
+	f.waitPane(name, `true -c 'it'\''s back'`)
+
+	// A running agent gets the prompt as keystrokes.
+	f.cfg.Agent.Cmd = "cat >/dev/null #" // stays in the foreground; everything after # is ignored
+	f.open("7")
+	f.waitPane("pr-7", "cat >/dev/null # '/pr-review:pr-review 7'")
+	out = f.open("7", "--prompt", "ping")
+	if !strings.Contains(out, "sent prompt") {
+		t.Errorf("output: %q", out)
+	}
+	if screen := f.waitPane("pr-7", "ping"); strings.Contains(screen, "'ping'") {
+		t.Errorf("prompt was wrapped in an agent command:\n%s", screen)
+	}
+
+	// Without a prompt, an existing window is only selected.
+	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
+	if out := f.open("7"); !strings.Contains(out, "selected") || f.activeWindow() != "pr-7" {
+		t.Errorf("output %q, active %q", out, f.activeWindow())
+	}
+}
+
+func TestOpenResumesAfterClose(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+	name := "pr-42-fix-crash-on-startup"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	f.write(filepath.Join(f.root, "claude", "projects", encodeProjectPath(wt), "s.jsonl"), "{}\n")
+	if err := runClose(f.cfg, []string{"42"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	out := f.open("42")
+
+	if !strings.Contains(out, "resuming the conversation") {
+		t.Errorf("output: %q", out)
+	}
+	f.waitPane(name, "true -c\n") // no prompt: the agent shows the transcript and waits
+}
+
+func TestClose(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+	name := "pr-42-fix-crash-on-startup"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	f.waitPane(name, "true")
+
+	var out strings.Builder
+	if err := runClose(f.cfg, []string{"42"}, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"removed worktree " + wt, "deleted branch " + name, "killed window =reviews:=" + name, "pr-42 closed"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	if f.exists(wt) {
+		t.Error("worktree still on disk")
+	}
+	if slices.Contains(f.branches(), name) {
+		t.Error("branch still exists")
+	}
+	if got, want := f.windows(), []string{"scratch"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("windows %v, want %v (session and keepalive survive)", got, want)
+	}
+
+	err := runClose(f.cfg, []string{"42"}, &out)
+	var nothing nothingToCloseError
+	if !errors.As(err, &nothing) {
+		t.Errorf("second close: got %v, want nothingToCloseError", err)
+	}
+}
+
+func TestClosePartialWorkspaces(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+
+	// Only the window is left (worktree and branch removed by hand).
+	f.open("42")
+	name := "pr-42-fix-crash-on-startup"
+	f.waitPane(name, "true")
+	f.git(f.repo, "worktree", "remove", "--force", filepath.Join(f.repo, ".worktrees.local", name))
+	f.git(f.repo, "branch", "-D", name)
+	if err := runClose(f.cfg, []string{"42"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(f.windows(), name) {
+		t.Error("window survived close")
+	}
+
+	// Only the worktree is left (window killed by hand); the repo is
+	// found from the caller's cwd.
+	f.open("7")
+	f.waitPane("pr-7", "true")
+	if _, err := tmux("kill-window", "-t", tmuxTarget("reviews", "pr-7")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runClose(f.cfg, []string{"7"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", "pr-7")) || slices.Contains(f.branches(), "pr-7") {
+		t.Error("worktree or branch survived close")
+	}
+}
+
+func TestCloseInfersThePRFromTheCwd(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("7")
+	f.waitPane("pr-7", "true")
+	wt := filepath.Join(f.repo, ".worktrees.local", "pr-7")
+
+	// From inside the worktree, on a different branch.
+	f.git(wt, "checkout", "-q", "-b", "my-experiment")
+	t.Chdir(wt)
+	if err := runClose(f.cfg, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(wt) || slices.Contains(f.branches(), "pr-7") || slices.Contains(f.windows(), "pr-7") {
+		t.Error("workspace survived close")
+	}
+	if !slices.Contains(f.branches(), "my-experiment") {
+		t.Error("close deleted a branch it did not create")
+	}
+
+	// Outside any repo, with nothing to go on.
+	t.Chdir(f.root)
+	err := runClose(f.cfg, nil, io.Discard)
+	var ue usageError
+	if !errors.As(err, &ue) {
+		t.Errorf("got %v, want a usageError", err)
+	}
+}
+
+func TestCloseFindsTheRepoThroughTheWindow(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+	name := "pr-42-fix-crash-on-startup"
+	f.waitPane(name, "true")
+
+	t.Chdir(f.root) // not a repo
+	if err := runClose(f.cfg, []string{"42"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("worktree survived close")
+	}
+}
+
+func TestSlugify(t *testing.T) {
+	cases := map[string]string{
+		"Fix: Crash on Startup!!":                   "fix-crash-on-startup",
+		"  --leading and trailing--  ":              "leading-and-trailing",
+		"Ünïcödé — títle":                           "n-c-d-t-tle",
+		"a very long title that keeps going and on": "a-very-long-title-that-keeps-g",
+		"exactly-thirty-characters-here":            "exactly-thirty-characters-here",
+		"cut-right-before-a-dash-boundary-x":        "cut-right-before-a-dash-bounda",
+		"":                                          "",
+		"!!!":                                       "",
+	}
+	for in, want := range cases {
+		if got := slugify(in); got != want {
+			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestAgentCommand(t *testing.T) {
+	a := AgentConfig{Cmd: "claude --permission-mode auto", Prompt: "/review {pr}"}
+	cases := []struct {
+		resume bool
+		prompt string
+		want   string
+	}{
+		{false, "", "claude --permission-mode auto '/review 42'"},
+		{false, "hi", "claude --permission-mode auto 'hi'"},
+		{true, "", "claude --permission-mode auto -c"},
+		{true, "it's", `claude --permission-mode auto -c 'it'\''s'`},
+	}
+	for _, c := range cases {
+		if got := agentCommand(a, 42, c.resume, c.prompt); got != c.want {
+			t.Errorf("agentCommand(resume=%v, %q) = %q, want %q", c.resume, c.prompt, got, c.want)
+		}
+	}
+}
+
+func TestParseOpenArgs(t *testing.T) {
+	ok := map[string][]string{
+		"42":           {"42"},
+		"42 --prompt":  {"42", "--prompt", "hi"},
+		"prompt first": {"--prompt", "hi", "42"},
+		"equals":       {"42", "--prompt=hi"},
+	}
+	for name, args := range ok {
+		n, prompt, err := parseOpenArgs(args)
+		if err != nil || n != 42 || (len(args) > 1 && prompt != "hi") {
+			t.Errorf("%s: got %d %q %v", name, n, prompt, err)
+		}
+	}
+	for _, args := range [][]string{nil, {"x"}, {"0"}, {"-1"}, {"42", "7"}, {"42", "--bogus"}, {"42", "--prompt"}} {
+		if _, _, err := parseOpenArgs(args); err == nil {
+			t.Errorf("%v: expected an error", args)
+		}
+	}
+}
+
+func TestMatchesPR(t *testing.T) {
+	if !matchesPR("pr-4", 4) || !matchesPR("pr-4-slug", 4) || matchesPR("pr-42", 4) || matchesPR("pr-4x", 4) || matchesPR("xpr-4", 4) {
+		t.Error("matchesPR boundaries are wrong")
+	}
+	if prNumberOf("pr-12-fix") != 12 || prNumberOf("pr-12") != 12 || prNumberOf("pr-x") != 0 || prNumberOf("main") != 0 {
+		t.Error("prNumberOf is wrong")
+	}
+}
+
+func TestMainRepo(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.repo, "worktree", "add", "-q", filepath.Join(f.repo, ".worktrees.local", "pr-1"), "-b", "pr-1")
+	sub := filepath.Join(f.repo, ".worktrees.local", "pr-1", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{f.repo, filepath.Join(f.repo, ".claude"), filepath.Join(f.repo, ".worktrees.local", "pr-1"), sub} {
+		got, err := mainRepo(dir)
+		if err != nil || got != f.repo {
+			t.Errorf("mainRepo(%s) = %q, %v; want %q", dir, got, err, f.repo)
+		}
+	}
+	if _, err := mainRepo(f.root); err == nil {
+		t.Error("mainRepo outside a repo should fail")
+	}
+}

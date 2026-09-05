@@ -285,44 +285,28 @@ func (m model) persistCache() {
 	})
 }
 
-// launchPRReview opens (or focuses) the review workspace for the given
-// PR — the pr-review script is idempotent. Detached because pr-owl
-// quits immediately after firing it (popup closes); pr-review keeps
-// running in its own session.
-func launchPRReview(prNumber int) tea.Cmd {
-	return launchDetached("pr-review", strconv.Itoa(prNumber))
-}
-
-// launchPRReviewWithPrompt is like launchPRReview but passes an
-// explicit prompt to pr-review as its second arg. pr-review submits
-// that prompt to Claude on load — via `claude "$prompt"` (fresh) or
-// `claude -c "$prompt"` (resume). Used by the `f` shortcut when the
-// session isn't running but a prior conversation exists on disk:
-// one command spawns Ghostty → tmux → Claude, resumes, and submits
-// the check-feedback prompt, no timing race.
-func launchPRReviewWithPrompt(prNumber int, prompt string) tea.Cmd {
-	return launchDetached("pr-review", strconv.Itoa(prNumber), prompt)
-}
-
-// launchDetached runs an eden-bin script in its OWN session (Setsid)
-// and returns immediately without waiting. Needed because pr-owl often
-// runs inside a tmux popup; when pr-owl quits, tmux closes the popup
-// and sends SIGHUP to processes still in that popup's session — which
-// would kill the pr-review subprocess mid-flight. Setsid puts it in a
-// fresh session unreachable by the popup's SIGHUP.
+// openReview runs `pr-owl open <N> [--prompt TEXT]` detached — in its
+// own session (Setsid), without waiting. pr-owl usually runs inside a
+// tmux popup and quits right after firing this; tmux then closes the
+// popup and SIGHUPs everything still in the popup's session, which
+// would kill the child mid-flight. Setsid puts it out of reach.
 //
-// Trade: no auto-refresh of local state after the script finishes
-// (which is fine — the callers here always pair with tea.Quit).
-func launchDetached(name string, args ...string) tea.Cmd {
+// Trade: the child's outcome isn't surfaced (the callers pair this
+// with tea.Quit anyway).
+func openReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		home, err := os.UserHomeDir()
+		self, err := os.Executable()
 		if err != nil {
-			return errMsg{fmt.Errorf("resolve $HOME: %w", err)}
+			return errMsg{fmt.Errorf("locate pr-owl binary: %w", err)}
 		}
-		cmd := exec.Command(home+"/.eden/bin/"+name, args...)
+		args := []string{"open", strconv.Itoa(prNumber)}
+		if prompt != "" {
+			args = append(args, "--prompt", prompt)
+		}
+		cmd := exec.Command(self, args...)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		if err := cmd.Start(); err != nil {
-			return errMsg{fmt.Errorf("start %s: %w", name, err)}
+			return errMsg{fmt.Errorf("pr-owl open: %w", err)}
 		}
 		// Release so the parent doesn't need to reap on exit.
 		_ = cmd.Process.Release()
@@ -366,13 +350,20 @@ func hasPriorConversation(prNumber int) bool {
 	return false
 }
 
-// cleanupPRWorktree tears down the review workspace for the given PR:
-// removes the .worktrees.local/pr-<N>-* worktree, kills the tmux
-// session (Claude conversation state persists on disk), closes any
-// pr-<N> Ghostty window. Safety-checked upstream: pr-review-done
-// refuses when the worktree has uncommitted work.
-func (m model) cleanupPRWorktree(prNumber int) tea.Cmd {
-	return m.runEdenScript("pr-review-done", prNumber)
+// closeReview runs `pr-owl close <N>` synchronously — it is quick and
+// the TUI stays open — then refreshes the local overlay. The agent's
+// conversation survives on disk, so Enter / f afterwards resume it.
+func (m model) closeReview(prNumber int) tea.Cmd {
+	return func() tea.Msg {
+		self, err := os.Executable()
+		if err != nil {
+			return errMsg{fmt.Errorf("locate pr-owl binary: %w", err)}
+		}
+		if _, err := runOut(exec.Command(self, "close", strconv.Itoa(prNumber))); err != nil {
+			return errMsg{err}
+		}
+		return m.fetchLocal()
+	}
 }
 
 // checkFeedbackPrompt is the canned message sent to a PR's Claude
@@ -382,52 +373,6 @@ func (m model) cleanupPRWorktree(prNumber int) tea.Cmd {
 // `ultrathink` — deep enough via the two-pass structure without
 // paying max-thinking latency on every trigger.
 const checkFeedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
-
-// sendCheckFeedback dispatches the check-feedback prompt into the
-// review tmux window for this PR, selects that window, and focuses
-// the pr-reviews Ghostty window so the user sees Claude respond.
-//
-// `window` is the tmux window name (e.g. `pr-4141-fix-ci-…`) — under
-// the consolidated model, LocalState.Session carries this rather than
-// a tmux session name.
-func (m model) sendCheckFeedback(window string) tea.Cmd {
-	return func() tea.Msg {
-		target := tmuxTarget(m.cfg.Tmux.Session, window)
-		// Select the window so it's what the Ghostty client shows.
-		if err := exec.Command("tmux", "select-window", "-t", target).Run(); err != nil {
-			return errMsg{fmt.Errorf("select-window %s: %w", target, err)}
-		}
-		// Literal send for the prompt (arbitrary text, no key
-		// interpretation), then Enter to submit.
-		if err := exec.Command("tmux", "send-keys", "-t", target, "-l", checkFeedbackPrompt).Run(); err != nil {
-			return errMsg{fmt.Errorf("send-keys prompt: %w", err)}
-		}
-		if err := exec.Command("tmux", "send-keys", "-t", target, "Enter").Run(); err != nil {
-			return errMsg{fmt.Errorf("send-keys Enter: %w", err)}
-		}
-		focusReviewsWindow()
-		return nil
-	}
-}
-
-// focusReviewsWindow brings the single `pr-reviews` Ghostty window to
-// the front via yabai. Best-effort — no error surface if yabai isn't
-// running or the window doesn't exist (session may be detached).
-//
-// Prefix match on the title (not exact) because some shell prompts
-// OSC-update the terminal title after Ghostty's --title=pr-reviews.
-func focusReviewsWindow() {
-	out, err := exec.Command("sh", "-c",
-		`yabai -m query --windows | jq -r '.[] | select(.app=="Ghostty" and ((.title // "") == "pr-reviews" or ((.title // "") | startswith("pr-reviews ") or startswith("pr-reviews:")))) | .id' | head -1`).Output()
-	if err != nil {
-		return
-	}
-	wid := strings.TrimSpace(string(out))
-	if wid == "" {
-		return
-	}
-	_ = exec.Command("yabai", "-m", "window", "--focus", wid).Run()
-}
 
 // openPRInBrowser opens the PR's page. pr.URL comes from the API, so
 // this is right on GitHub Enterprise too; it is empty only while a
@@ -482,24 +427,6 @@ func yankPRURL(pr *PR) tea.Cmd {
 			return errMsg{fmt.Errorf("copy to clipboard: %w", err)}
 		}
 		return nil
-	}
-}
-
-// runEdenScript is the shared runner for pr-owl's shell-outs:
-// exec ~/.eden/bin/<name> <prNumber>, refresh local state on success,
-// surface an errMsg on failure. Absolute path via $HOME/.eden/bin
-// because Ghostty may not inherit the user's interactive PATH.
-func (m model) runEdenScript(name string, prNumber int) tea.Cmd {
-	return func() tea.Msg {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return errMsg{fmt.Errorf("resolve $HOME: %w", err)}
-		}
-		cmd := exec.Command(home+"/.eden/bin/"+name, strconv.Itoa(prNumber))
-		if err := cmd.Run(); err != nil {
-			return errMsg{fmt.Errorf("%s %d: %w", name, prNumber, err)}
-		}
-		return m.fetchLocal()
 	}
 }
 
@@ -652,33 +579,27 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 	case key.Matches(msg, m.keys.Enter):
 		if pr := m.selectedPR(); pr != nil {
-			// Fire pr-review, then quit pr-owl. tea.Sequence guarantees
-			// pr-review has been *started* (spawned + detached) before
+			// Fire `open`, then quit pr-owl. tea.Sequence guarantees the
+			// child has been *started* (spawned + detached) before
 			// tea.Quit closes the popup — with tea.Batch the goroutines
 			// race and quit can arrive first, tearing down pr-owl before
-			// launchDetached even forks the subprocess. launchDetached
-			// itself returns near-instantly (Setsid+Start+Release), so
-			// Sequence adds no perceptible latency.
-			return m, tea.Sequence(launchPRReview(pr.Number), tea.Quit)
+			// openReview even forks the subprocess. openReview itself
+			// returns near-instantly (Setsid+Start+Release), so Sequence
+			// adds no perceptible latency.
+			return m, tea.Sequence(openReview(pr.Number, ""), tea.Quit)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
+			// `open --prompt` hands the prompt to the running agent, or
+			// resumes the conversation with it when the window is gone
+			// but Claude's state survives on disk. Truly fresh (no
+			// window, no prior conversation) is a no-op — f is scoped to
+			// "check feedback on what you already reviewed"; press Enter
+			// first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
-			switch {
-			case ls.Session != "":
-				// Review window exists — inject the prompt (sync tmux
-				// send-keys, ~100ms), then quit.
-				return m, tea.Sequence(m.sendCheckFeedback(ls.Session), tea.Quit)
-			case hasPriorConversation(pr.Number):
-				// Review window gone (cleaned up) but Claude's conversation
-				// state survives on disk. Launch via pr-review with the
-				// prompt as arg 2 — pr-review resumes via `claude -c`
-				// and submits the prompt in one shot. No timing race.
-				return m, tea.Sequence(launchPRReviewWithPrompt(pr.Number, checkFeedbackPrompt), tea.Quit)
+			if ls.Session != "" || hasPriorConversation(pr.Number) {
+				return m, tea.Sequence(openReview(pr.Number, checkFeedbackPrompt), tea.Quit)
 			}
-			// Truly fresh (no window, no prior conversation) — f is
-			// scoped to "check feedback on what you already reviewed".
-			// No-op; press Enter first to open an initial review.
 		}
 	case key.Matches(msg, m.keys.Browser):
 		if pr := m.selectedPR(); pr != nil {
@@ -697,7 +618,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
-				return m, m.cleanupPRWorktree(pr.Number)
+				return m, m.closeReview(pr.Number)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -1306,6 +1227,8 @@ func versionString() string {
 }
 
 const usage = `usage: pr-owl                          PR overview TUI (run inside a git repo)
+       pr-owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
+       pr-owl close [<N>]                remove PR N's worktree, branch and window
        pr-owl config init | path | get <key>
        pr-owl --version`
 
@@ -1317,25 +1240,36 @@ func (e usageError) Error() string { return string(e) }
 
 func main() {
 	args := os.Args[1:]
-	if len(args) == 0 {
-		cfg, err := loadConfig()
-		exitOn(err)
-		exitOn(enterDefaultRepo(cfg.DefaultRepo))
+	if len(args) > 0 {
+		switch args[0] {
+		case "config":
+			exitOn(runConfig(args[1:], os.Stdout))
+			return
+		case "--version", "version":
+			fmt.Println("pr-owl", versionString())
+			return
+		case "--help", "-h", "help":
+			fmt.Println(usage)
+			return
+		case "open", "close":
+		default:
+			exitOn(usageError("unknown command " + args[0]))
+		}
+	}
+
+	cfg, err := loadConfig()
+	exitOn(err)
+	exitOn(enterDefaultRepo(cfg.DefaultRepo))
+	switch {
+	case len(args) == 0:
 		p := tea.NewProgram(initialModel(cfg), tea.WithAltScreen(), tea.WithReportFocus())
 		_, err = p.Run()
-		exitOn(err)
-		return
+	case args[0] == "open":
+		err = runOpen(cfg, args[1:], os.Stdout)
+	case args[0] == "close":
+		err = runClose(cfg, args[1:], os.Stdout)
 	}
-	switch args[0] {
-	case "config":
-		exitOn(runConfig(args[1:], os.Stdout))
-	case "--version", "version":
-		fmt.Println("pr-owl", versionString())
-	case "--help", "-h", "help":
-		fmt.Println(usage)
-	default:
-		exitOn(usageError("unknown command " + args[0]))
-	}
+	exitOn(err)
 }
 
 // enterDefaultRepo changes into `default_repo` when the working
@@ -1351,15 +1285,21 @@ func enterDefaultRepo(defaultRepo string) error {
 	return nil
 }
 
+// exitOn prints err and exits: 64 for a usage error (with the usage
+// text), 2 when `close` found nothing to do, 1 otherwise.
 func exitOn(err error) {
 	if err == nil {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
 	var ue usageError
-	if errors.As(err, &ue) {
+	var nothing nothingToCloseError
+	switch {
+	case errors.As(err, &ue):
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(64)
+	case errors.As(err, &nothing):
+		os.Exit(2)
 	}
 	os.Exit(1)
 }
