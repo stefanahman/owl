@@ -73,6 +73,9 @@ func runOpen(cfg Config, args []string, out io.Writer) error {
 	if _, err := tmux("select-window", "-t", target); err != nil {
 		return err
 	}
+	if os.Getenv("TMUX") == "" && cfg.Hooks.AfterOpen == "" {
+		fmt.Fprintf(out, "attach with: tmux attach -t %s\n", cfg.Tmux.Session)
+	}
 	return runAfterOpen(cfg.Hooks.AfterOpen, out, map[string]string{
 		"PR_OWL_PR":       strconv.Itoa(n),
 		"PR_OWL_SESSION":  cfg.Tmux.Session,
@@ -132,13 +135,53 @@ func ensureWorktree(cfg Config, repo string, n int, out io.Writer) (name, path s
 	}
 	path = filepath.Join(repo, cfg.WorktreesDir, name)
 	fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)
-	if _, err := git(repo, "fetch", "origin", fmt.Sprintf("pull/%d/head:%s", n, name)); err != nil {
+	if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("pull/%d/head:%s", n, name)); err != nil {
+		return "", "", err
+	}
+	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {
 		return "", "", err
 	}
 	if _, err := git(repo, "worktree", "add", path, name); err != nil {
 		return "", "", err
 	}
 	return name, path, nil
+}
+
+// excludeFromStatus adds the worktrees directory to the repo's
+// .git/info/exclude — the per-clone ignore file — so review worktrees
+// never show up as untracked in `git status`, without touching the
+// project's .gitignore.
+func excludeFromStatus(repo, dir string) error {
+	common, err := git(repo, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(repo, common)
+	}
+	exclude := filepath.Join(common, "info", "exclude")
+	line := "/" + filepath.ToSlash(filepath.Clean(dir)) + "/"
+	existing, err := os.ReadFile(exclude)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if slices.Contains(strings.Split(string(existing), "\n"), line) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(exclude), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(exclude, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sep := ""
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		sep = "\n"
+	}
+	_, err = fmt.Fprintf(f, "%s%s\n", sep, line)
+	return err
 }
 
 // prTitle asks gh for the PR title; "" when gh is missing or fails

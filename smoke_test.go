@@ -23,7 +23,9 @@ func TestFetchSmoke(t *testing.T) {
 			t.Fatalf("chdir %s: %v", cwd, err)
 		}
 	}
-	msg := fetchPRs()
+	m := model{cfg: defaultConfig()}
+	m.repo = currentRepo(m.cfg.Remote)
+	msg := m.fetchPRs()
 	switch v := msg.(type) {
 	case errMsg:
 		t.Fatalf("fetchPRs errored: %v", v.err)
@@ -31,7 +33,7 @@ func TestFetchSmoke(t *testing.T) {
 		if len(v) == 0 {
 			t.Log("fetchPRs returned zero PRs (fine if you have none)")
 		}
-		t.Logf("fetchPRs returned %d PRs from repo %s", len(v), currentRepo())
+		t.Logf("fetchPRs returned %d PRs from repo %s", len(v), m.repo)
 		for i, pr := range v {
 			if i >= 3 {
 				break
@@ -45,7 +47,7 @@ func TestFetchSmoke(t *testing.T) {
 	me := currentUser()
 	t.Logf("currentUser: %q", me)
 
-	merged := fetchMerged()
+	merged := m.fetchMerged()
 	if mm, ok := merged.(mergedMsg); ok {
 		t.Logf("fetchMerged returned %d PRs (last %s)", len(mm), mergedWindow)
 	} else {
@@ -62,7 +64,7 @@ func TestFetchSmoke(t *testing.T) {
 			counts[StatusTodo], counts[StatusWaitingForYou]+counts[StatusWaitingForAuthor], counts[StatusApproved])
 	}
 
-	local := model{cfg: defaultConfig()}.fetchLocal()
+	local := m.fetchLocal()
 	lm, ok := local.(localMsg)
 	if !ok {
 		t.Fatalf("fetchLocal returned unexpected type %T", local)

@@ -45,7 +45,9 @@ go install github.com/stefanahman/pr-owl@latest
 ```
 
 or from a checkout, `make install BIN=~/.local/bin`. Needs git, an
-authenticated `gh`, and tmux ≥ 3.2. Go 1.24 to build.
+authenticated `gh`, and tmux ≥ 3.2 (only for the popup; `open` itself
+works with any tmux). Go 1.25 to build. Linux: `xdg-open` for `o`,
+xclip/xsel/wl-clipboard for `y`.
 
 `pr-owl` opens the TUI for the repo of the current directory; set
 `default_repo` in the config to launch it from anywhere. To have it a
@@ -56,7 +58,8 @@ bind r display-popup -E -w 88% -h 84% pr-owl
 ```
 
 (tmux runs that with the server's PATH — give the absolute path if
-`pr-owl` isn't on it.)
+`pr-owl` isn't on it.) From a plain terminal it works the same; `open`
+then tells you how to attach to the review session.
 
 Two optional companions:
 
@@ -78,7 +81,7 @@ Two optional companions:
 | `f` | send the check-feedback prompt to the PR's Claude session, close the popup |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
-| `c` | close the workspace (worktree, branch, tmux window) |
+| `c` | close the workspace — worktree, branch and tmux window; uncommitted changes in the worktree are discarded |
 | `/` | filter by PR number; `esc` clears |
 | `r` | refresh |
 | `?` | help, with the full badge legend |
@@ -99,9 +102,15 @@ pr-owl config init | path | get <key>
 window. A workspace is named once, from the PR title at first open, and
 found by number afterwards — the path stays stable, and with it
 Claude's per-directory conversation, which is what lets `close` be
-cheap and `open` resume.
+cheap and `open` resume. The first `open` in a clone also adds the
+worktrees directory to `.git/info/exclude`, so `git status` stays clean
+without touching the project's `.gitignore`.
 
 `close` exits 2 when there was nothing to remove.
+
+Fork-based workflow (`origin` is your fork, `upstream` the repo the PRs
+are on)? Set `remote: upstream`: PRs are listed for, and fetched from,
+that remote.
 
 ## Configuration
 
@@ -115,13 +124,15 @@ tmux:
   keepalive_window: scratch      # keeps the session alive with no reviews open
   state_option: "@claude-state"  # window option written by tmux-claude-status
 
+remote: origin                   # the GitHub remote: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # relative to the repo root
 default_repo: ""                 # used when pr-owl starts outside a git repo
 
 agent:
   cmd: claude --permission-mode auto   # -c is appended when the worktree has a prior conversation
   prompt: "/pr-review:pr-review {pr}"  # first prompt of a fresh review
-  link_local:                          # symlinked from the repo into each new worktree
+  feedback_prompt: "Please carefully check the feedback since your last review …"  # what f sends
+  link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)
     - .claude/settings.local.json
     - .claude/*.local.md
     - .claude/skills/*.local

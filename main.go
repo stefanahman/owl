@@ -48,8 +48,11 @@ type errMsg struct{ err error }
 func (e errMsg) Error() string { return e.err.Error() }
 
 // openedMsg / closedMsg report the end of a `pr-owl open` / `close`
-// child; err is its failure, with the child's stderr.
-type openedMsg struct{ err error }
+// child: its stdout, or its failure with the child's stderr.
+type openedMsg struct {
+	out string
+	err error
+}
 type closedMsg struct{ err error }
 
 // ------------------------------------------------------------
@@ -225,6 +228,10 @@ type model struct {
 	// empty slice to suppress the shell-out fetches; production leaves
 	// it nil so the real fetches fire.
 	initCmds []tea.Cmd
+
+	// farewell is printed by main after the TUI exits: what `open` did,
+	// for the terminal the popup leaves behind.
+	farewell string
 }
 
 func initialModel(cfg Config) model {
@@ -243,7 +250,7 @@ func initialModel(cfg Config) model {
 
 	m := model{
 		cfg:     cfg,
-		repo:    currentRepo(),
+		repo:    currentRepo(cfg.Remote),
 		keys:    newKeyMap(cfg.Keys, cfg.Links),
 		help:    help.New(),
 		search:  ti,
@@ -270,7 +277,7 @@ func (m model) Init() tea.Cmd {
 		return tea.Batch(m.initCmds...)
 	}
 	return tea.Batch(
-		fetchPRs, m.fetchLocal, fetchMerged, fetchUser,
+		m.fetchPRs, m.fetchLocal, m.fetchMerged, fetchUser,
 		m.spinner.Tick,
 		textinput.Blink,
 	)
@@ -304,7 +311,8 @@ func openReview(prNumber int, prompt string) tea.Cmd {
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{runSelf(args...)}
+		out, err := runSelf(args...)
+		return openedMsg{out, err}
 	}
 }
 
@@ -313,21 +321,21 @@ func openReview(prNumber int, prompt string) tea.Cmd {
 // Enter / f afterwards resume it.
 func closeReview(prNumber int) tea.Cmd {
 	return func() tea.Msg {
-		return closedMsg{runSelf("close", strconv.Itoa(prNumber))}
+		_, err := runSelf("close", strconv.Itoa(prNumber))
+		return closedMsg{err}
 	}
 }
 
 // runSelf runs this binary with args in its own session and returns
-// its failure, if any, with the child's stderr in the message.
-func runSelf(args ...string) error {
+// its stdout, or its failure with the child's stderr in the message.
+func runSelf(args ...string) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("locate pr-owl binary: %w", err)
+		return "", fmt.Errorf("locate pr-owl binary: %w", err)
 	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	_, err = runOut(cmd)
-	return err
+	return runOut(cmd)
 }
 
 // hasPriorConversation reports whether Claude has any recorded session
@@ -365,14 +373,6 @@ func hasPriorConversation(prNumber int) bool {
 	}
 	return false
 }
-
-// checkFeedbackPrompt is the canned message sent to a PR's Claude
-// session by the `f` binding. Two-pass self-critique + RESOLVED
-// taxonomy, calm tenor (research: encouraging language increases
-// deliberation; desperation language causes shortcuts). No
-// `ultrathink` — deep enough via the two-pass structure without
-// paying max-thinking latency on every trigger.
-const checkFeedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
 
 // openPRInBrowser opens the PR's page. pr.URL comes from the API, so
 // this is right on GitHub Enterprise too; it is empty only while a
@@ -459,7 +459,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// window shows current state. Debounced at 2s so rapid
 		// focus/unfocus (window-manager churn) doesn't storm gh.
 		if time.Since(m.lastFetched) > 2*time.Second {
-			cmds = append(cmds, fetchPRs, m.fetchLocal, fetchMerged)
+			cmds = append(cmds, m.fetchPRs, m.fetchLocal, m.fetchMerged)
 		}
 
 	case spinner.TickMsg:
@@ -508,6 +508,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			break
 		}
+		m.farewell = msg.out
 		return m, tea.Quit
 
 	case closedMsg:
@@ -584,7 +585,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prsReady = false
 		m.merged = nil
 		m.err = nil
-		return m, tea.Batch(fetchPRs, m.fetchLocal, fetchMerged, m.spinner.Tick)
+		return m, tea.Batch(m.fetchPRs, m.fetchLocal, m.fetchMerged, m.spinner.Tick)
 	case key.Matches(msg, m.keys.Up):
 		m.moveCursor(-1)
 		m.refreshList()
@@ -623,7 +624,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if ls.Session != "" || hasPriorConversation(pr.Number) {
 				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
 				m.err = nil
-				return m, tea.Batch(openReview(pr.Number, checkFeedbackPrompt), m.spinner.Tick)
+				return m, tea.Batch(openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):
@@ -1292,7 +1293,12 @@ func main() {
 	switch {
 	case len(args) == 0:
 		p := tea.NewProgram(initialModel(cfg), tea.WithAltScreen(), tea.WithReportFocus())
-		_, err = p.Run()
+		var final tea.Model
+		if final, err = p.Run(); err == nil {
+			if farewell := final.(model).farewell; farewell != "" {
+				fmt.Println(farewell)
+			}
+		}
 	case args[0] == "open":
 		err = runOpen(cfg, args[1:], os.Stdout)
 	case args[0] == "close":

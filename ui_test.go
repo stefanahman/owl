@@ -600,12 +600,15 @@ func TestBusyState(t *testing.T) {
 		}
 	}
 
-	_, cmd = m.Update(openedMsg{})
+	opened, cmd := m.Update(openedMsg{out: "started =pr-reviews:=pr-4116"})
 	if cmd == nil {
 		t.Fatal("a successful open should quit")
 	}
 	if _, quit := cmd().(tea.QuitMsg); !quit {
 		t.Error("a successful open should quit the popup")
+	}
+	if om := opened.(model); om.farewell != "started =pr-reviews:=pr-4116" {
+		t.Errorf("farewell = %q", om.farewell)
 	}
 
 	closed, cmd := m.Update(closedMsg{})

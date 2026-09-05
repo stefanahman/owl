@@ -23,6 +23,7 @@ import (
 // it has been validated and the derived fields are set.
 type Config struct {
 	Tmux         TmuxConfig   `yaml:"tmux"`
+	Remote       string       `yaml:"remote"`
 	WorktreesDir string       `yaml:"worktrees_dir"`
 	DefaultRepo  string       `yaml:"default_repo"`
 	Agent        AgentConfig  `yaml:"agent"`
@@ -40,9 +41,10 @@ type TmuxConfig struct {
 }
 
 type AgentConfig struct {
-	Cmd       string   `yaml:"cmd"`
-	Prompt    string   `yaml:"prompt"`
-	LinkLocal []string `yaml:"link_local"`
+	Cmd            string   `yaml:"cmd"`
+	Prompt         string   `yaml:"prompt"`
+	FeedbackPrompt string   `yaml:"feedback_prompt"`
+	LinkLocal      []string `yaml:"link_local"`
 }
 
 // LinkConfig is a user-defined key that opens a URL built from the
@@ -192,12 +194,14 @@ tmux:
   keepalive_window: scratch      # window that keeps the session alive with no reviews open
   state_option: "@claude-state"  # window option written by tmux-claude-status
 
-worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root
+remote: origin                   # git remote of the GitHub repo: PRs are listed for it and fetched from it
+worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root (added to .git/info/exclude)
 default_repo: ""                 # repo to use when pr-owl is started outside a git repo; ~ is expanded
 
 agent:
   cmd: claude --permission-mode auto     # pr-owl appends -c (continue) when the worktree has a prior conversation
   prompt: "/pr-review:pr-review {pr}"    # first prompt of a fresh review; {pr} is the PR number
+  feedback_prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
     - .claude/settings.local.json
     - .claude/*.local.md
@@ -246,11 +250,16 @@ keys:                            # one key name or a list; names as bubbletea sp
 func defaultConfig() Config {
 	var c Config
 	c.Tmux = TmuxConfig{Session: "pr-reviews", KeepaliveWindow: "scratch", StateOption: "@claude-state"}
+	c.Remote = "origin"
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
-		Cmd:       "claude --permission-mode auto",
-		Prompt:    "/pr-review:pr-review {pr}",
-		LinkLocal: []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
+		Cmd:    "claude --permission-mode auto",
+		Prompt: "/pr-review:pr-review {pr}",
+		// The `f` key's message. Two-pass self-critique + a RESOLVED
+		// taxonomy, calm tenor: encouraging language increases
+		// deliberation, urgency causes shortcuts.
+		FeedbackPrompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict.",
+		LinkLocal:      []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
 	}
 	c.Theme = ThemeConfig{Working: "#dbbc7f", Blocked: "214", Done: "42"}
 	c.Keys = KeysConfig{
@@ -325,9 +334,11 @@ func (cfg *Config) validate() error {
 		{"tmux.session", cfg.Tmux.Session},
 		{"tmux.keepalive_window", cfg.Tmux.KeepaliveWindow},
 		{"tmux.state_option", cfg.Tmux.StateOption},
+		{"remote", cfg.Remote},
 		{"worktrees_dir", cfg.WorktreesDir},
 		{"agent.cmd", cfg.Agent.Cmd},
 		{"agent.prompt", cfg.Agent.Prompt},
+		{"agent.feedback_prompt", cfg.Agent.FeedbackPrompt},
 	}
 	for _, r := range required {
 		if r.value == "" {

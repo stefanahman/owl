@@ -79,8 +79,9 @@ func newFixture(t *testing.T) *fixture {
 	// Private tmux server with its own minimal config: /bin/sh in every
 	// window (the developer's shell would read its rc files and write
 	// history into $HOME on exit, racing the temp dir cleanup), and no
-	// exit when the last session goes. $TMUX points plain `tmux`
-	// invocations at it. The socket gets a short directory of its own —
+	// exit when the last session goes. It owns the default socket name
+	// under a private TMUX_TMPDIR, so plain `tmux` reaches it whether or
+	// not $TMUX is set. The socket gets a short directory of its own —
 	// Unix socket paths are limited to ~100 bytes and t.TempDir includes
 	// the test name.
 	sockDir, err := os.MkdirTemp("", "pr-owl")
@@ -91,11 +92,12 @@ func newFixture(t *testing.T) *fixture {
 	conf := filepath.Join(sockDir, "tmux.conf")
 	f.write(conf, "set -g default-shell /bin/sh\nset -s exit-empty off\n")
 	t.Setenv("TMUX_TMPDIR", sockDir)
+	t.Setenv("TMUX", "") // the test may itself run inside tmux; never touch that server
 	t.Setenv("HISTFILE", "")
-	socket := "test"
-	f.tmuxL(socket, "-f", conf, "start-server")
-	t.Cleanup(func() { _ = exec.Command("tmux", "-L", socket, "kill-server").Run() })
-	t.Setenv("TMUX", filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), socket)+",0,0")
+	f.tmuxL("-L", "default", "-f", conf, "start-server") // -L creates the socket dir; -S would not
+	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
+	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
+	t.Setenv("TMUX", socket+",0,0") // as inside a pane of the test server
 
 	f.cfg = defaultConfig()
 	f.cfg.Tmux.Session = "reviews"
@@ -112,9 +114,9 @@ func (f *fixture) git(dir string, args ...string) string {
 	return out
 }
 
-func (f *fixture) tmuxL(socket string, args ...string) string {
+func (f *fixture) tmuxL(args ...string) string {
 	f.t.Helper()
-	out, err := runOut(exec.Command("tmux", append([]string{"-L", socket}, args...)...))
+	out, err := tmux(args...)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -244,6 +246,85 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	}
 	if want := "42|reviews|" + name + "|" + wt + "|" + f.repo + "\n"; string(hook) != want {
 		t.Errorf("hook env %q, want %q", hook, want)
+	}
+	if strings.Contains(out, "attach with") {
+		t.Error("no attach hint when after_open is set")
+	}
+
+	// The worktrees dir is excluded per clone, so `git status` in the
+	// repo stays clean without touching the project's .gitignore.
+	if status := f.git(f.repo, "status", "--porcelain"); status != "" {
+		t.Errorf("git status not clean after open:\n%s", status)
+	}
+	exclude, _ := os.ReadFile(filepath.Join(f.repo, ".git", "info", "exclude"))
+	if !strings.Contains(string(exclude), "\n/.worktrees.local/\n") && !strings.HasPrefix(string(exclude), "/.worktrees.local/\n") {
+		t.Errorf(".git/info/exclude lacks the worktrees dir:\n%s", exclude)
+	}
+	f.open("7")
+	if n := strings.Count(string(mustRead(t, filepath.Join(f.repo, ".git", "info", "exclude"))), "/.worktrees.local/"); n != 1 {
+		t.Errorf("exclude line added %d times, want once", n)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestOpenOutsideTmuxHintsAttach(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	t.Setenv("TMUX", "") // a plain terminal; the server is still the fixture's
+
+	out := f.open("42")
+	if !strings.Contains(out, "attach with: tmux attach -t reviews") {
+		t.Errorf("output lacks the attach hint: %q", out)
+	}
+}
+
+func TestOpenFetchesFromTheConfiguredRemote(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.git(f.repo, "remote", "rename", "origin", "upstream")
+	f.git(f.repo, "remote", "add", "origin", filepath.Join(f.root, "nowhere"))
+
+	var out strings.Builder
+	if err := runOpen(f.cfg, []string{"42"}, &out); err == nil {
+		t.Fatal("open should fail when the default remote has no such PR")
+	}
+	f.cfg.Remote = "upstream"
+	f.open("42")
+	if !f.exists(filepath.Join(f.repo, ".worktrees.local", "pr-42-fix-crash-on-startup", "pr42.txt")) {
+		t.Error("worktree not created from the upstream remote")
+	}
+	if got := currentRepo("upstream"); got != "" { // a local path is not a GitHub URL
+		t.Errorf("currentRepo on a local-path remote = %q, want empty", got)
+	}
+}
+
+func TestParseRepoURL(t *testing.T) {
+	cases := map[string]string{
+		"git@github.com:acme/app.git":          "acme/app",
+		"git@github.com:acme/app":              "acme/app",
+		"https://github.com/acme/app.git":      "acme/app",
+		"https://github.com/acme/app":          "acme/app",
+		"https://github.com/acme/app/":         "acme/app",
+		"ssh://git@github.com/acme/app.git":    "acme/app",
+		"ssh://git@ghe.example.com:22/o/r.git": "o/r",
+		"https://ghe.example.com/o/r\n":        "o/r",
+		"/Users/me/src/app":                    "",
+		"../origin":                            "",
+		"file:///tmp/a/b":                      "",
+		"app":                                  "",
+	}
+	for url, want := range cases {
+		if got := parseRepoURL(url); got != want {
+			t.Errorf("parseRepoURL(%q) = %q, want %q", url, got, want)
+		}
 	}
 }
 

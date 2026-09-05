@@ -200,31 +200,38 @@ func latestReviewByMe(reviews []Review, me string) *Review {
 	return latest
 }
 
-// repoURLRe extracts owner/name from a GitHub remote URL. Matches both
-// SSH (`git@github.com:owner/name.git`) and HTTPS
-// (`https://github.com/owner/name.git`) shapes, with or without the
-// `.git` suffix. Captures owner ($1) and name ($2).
-var repoURLRe = regexp.MustCompile(`[:/]([^/]+)/([^/]+?)(?:\.git)?$`)
+// repoURLRe extracts owner/name from a remote URL that has a host:
+// scp-style (`git@github.com:owner/name.git`) or with a scheme
+// (`https://github.com/owner/name`, `ssh://git@host/owner/name`), with
+// or without the `.git` suffix. A local path is not a GitHub repo and
+// doesn't match. Captures owner ($1) and name ($2).
+var repoURLRe = regexp.MustCompile(`^(?:[a-z][a-z0-9+.-]*://[^/]+/|[^/:]+:)([^/:]+)/([^/]+?)(?:\.git)?/?$`)
+
+// parseRepoURL returns owner/name for a remote URL, or "".
+func parseRepoURL(url string) string {
+	m := repoURLRe.FindStringSubmatch(strings.TrimSpace(url))
+	if m == nil {
+		return ""
+	}
+	return m[1] + "/" + m[2]
+}
 
 // currentRepo returns the owner/name of the repo in the working
-// directory, or "" if the cwd isn't a git repo with a GitHub `origin`
-// remote.
+// directory, or "" if the cwd isn't a git repo with the configured
+// GitHub remote (`remote`, origin by default — `upstream` in a
+// fork-based workflow).
 //
-// Uses `git remote get-url origin` (reads `.git/config` locally, ~10ms)
+// Uses `git remote get-url` (reads `.git/config` locally, ~10ms)
 // rather than `gh repo view` (~700-1000ms — gh is a large binary that
 // initializes config/HTTP/auth even for non-network subcommands). This
 // is on the blocking path from initialModel(), so the difference is
 // user-visible as popup startup latency.
-func currentRepo() string {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+func currentRepo(remote string) string {
+	out, err := exec.Command("git", "remote", "get-url", remote).Output()
 	if err != nil {
 		return ""
 	}
-	m := repoURLRe.FindStringSubmatch(strings.TrimSpace(string(out)))
-	if len(m) != 3 {
-		return ""
-	}
-	return m[1] + "/" + m[2]
+	return parseRepoURL(string(out))
 }
 
 // currentUser returns the authenticated user's login (e.g. "stefanahman").
@@ -271,12 +278,12 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 // their alias keys. One HTTP round-trip, dedupe in Go by PR number.
 // Standard GraphQL alias pattern (graphql.org/learn/queries).
 //
-// Scope: reads currentRepo() from the working directory and adds a
-// `repo:<owner>/<name>` filter to both searches.
-func fetchPRs() tea.Msg {
-	repo := currentRepo()
+// Scope: repo (owner/name, from currentRepo) becomes a `repo:` filter
+// on both searches.
+func (m model) fetchPRs() tea.Msg {
+	repo := m.repo
 	if repo == "" {
-		return errMsg{fmt.Errorf("gh api graphql: no repo detected in cwd")}
+		return errMsg{fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
 	}
 
 	// $r and $v are the two search queries; the shared PR-shape
@@ -381,10 +388,10 @@ query($r: String!, $v: String!) {
 
 // fetchMerged returns PRs merged in the last mergedWindow, so a PR you
 // reviewed doesn't vanish from view the instant it merges.
-func fetchMerged() tea.Msg {
+func (m model) fetchMerged() tea.Msg {
 	cutoff := time.Now().Add(-mergedWindow).UTC().Format("2006-01-02T15:04:05Z")
 	q := fmt.Sprintf("%s merged:>=%s", prSearchQuery, cutoff)
-	prs, err := ghPRList("merged", q)
+	prs, err := ghPRList(m.repo, "merged", q)
 	if err != nil {
 		// Best-effort — don't fail the whole app for the merged section.
 		return mergedMsg(nil)
@@ -392,9 +399,11 @@ func fetchMerged() tea.Msg {
 	return mergedMsg(prs)
 }
 
-// ghPRList is the shared shape for both open + merged queries.
-func ghPRList(state, search string) ([]PR, error) {
+// ghPRList runs `gh pr list` against an explicit repo — gh's own
+// current-repo guess fails when a clone has several remotes.
+func ghPRList(repo, state, search string) ([]PR, error) {
 	cmd := exec.Command("gh", "pr", "list",
+		"--repo", repo,
 		"--search", search,
 		"--state", state,
 		"--json", "number,title,body,url,headRefName,author,updatedAt,mergedAt,isDraft,reviews",
