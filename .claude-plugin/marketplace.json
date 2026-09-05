@@ -1,0 +1,21 @@
+{
+  "name": "pr-owl",
+  "owner": {
+    "name": "Stefan Åhman",
+    "url": "https://github.com/stefanahman"
+  },
+  "metadata": {
+    "description": "Claude Code plugins that ship with pr-owl",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "pr-review",
+      "source": "./pr-review",
+      "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": ["pull-request", "code-review", "github"]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+# pr-review — a Claude Code plugin
+
+One skill, `/pr-review:pr-review <number>`, that reviews a pull request
+the way a careful senior engineer would and never posts without you:
+
+1. **Context** — `gh pr view` metadata (draft? auto-merge armed? prior
+   reviews? size? external contributor?), CI status, the linked issues.
+2. **Careful reading** — the diff plus the whole files around it and
+   their callers; every finding needs a concrete failure scenario and
+   survives an attempt to refute it. Vague suspicions are dropped.
+3. **Local verification** — build, lint and tests in a worktree for the
+   PR (the one `pr-owl open` puts you in, or one the skill creates).
+4. **A draft file** — the exact body and inline comments, written to a
+   file you can edit. The skill stops here, every time.
+5. **One atomic post** — after your explicit go, `gh api` posts verdict
+   and comments as a single review and prints the URL.
+
+The skill is the process. Everything specific to a codebase — tracker,
+build commands, house rules, review voice — comes from a file in the
+repository, so the same plugin serves a Go CLI and a TypeScript
+monorepo.
+
+## Install
+
+```
+/plugin marketplace add stefanahman/pr-owl
+/plugin install pr-review@pr-owl
+```
+
+Requires git and an authenticated `gh`. The skill pre-approves
+`Bash(gh *)` and `Bash(git *)`, `Read`, `Grep`, `Glob` and `WebFetch`
+for its own turn; the build and test commands of Step 3 run under your
+normal permission settings.
+
+## Configure a repository
+
+Two optional files, same format, read in order:
+
+- `.claude/pr-review.md` — committed, shared by the team.
+- `.claude/pr-review.local.md` — yours; add `.claude/*.local.md` to
+  `.gitignore`. Frontmatter keys override the shared file's, sections
+  add to them.
+
+```markdown
+---
+modules: [linear, pnpm-turbo, mongodb, service-boundaries]
+ticket_pattern: 'PROJ-\d+'
+---
+
+## Verification
+Integration tests need `docker compose up -d db` first.
+
+## Extra lenses
+- Multi-tenant collections live in `pipelineDb` and are keyed on `tenantId`; every query filters by it.
+- Soft deletes: filter `archivedAt: null` unless the code says why not.
+- RPC contracts (Zod) live in `packages/internal/messaging/`, never in the consuming service.
+
+## Writing style
+Prefer `suggestion` blocks over prose for one-line fixes.
+```
+
+- `modules` — shipped add-ons to enable (below).
+- `ticket_pattern` — how issue ids look in titles, bodies and branches; read by the tracker modules.
+- `## Verification` — how to build, lint and test this repo (Step 3). With a stack module enabled, this adds to it.
+- `## Extra lenses` — what to look for in this codebase, applied alongside the built-in lenses (Step 2). This is also where the modules read their project specifics.
+- `## Writing style` — additions to the shipped [writing-style.md](skills/pr-review/writing-style.md).
+
+Without any file the core workflow runs on its own; Step 3 then detects
+the build system and confirms the commands with you before running
+them.
+
+## Modules
+
+| Module | Step | What it adds |
+|---|---|---|
+| `linear` | 1 | Linked Linear issues and documents via the Linear MCP tools |
+| `github-issues` | 1 | Linked GitHub issues via `gh issue view` |
+| `pnpm-turbo` | 3 | `pnpm install`, scoped `turbo build/lint/test`, and the command constraint that keeps `Bash(pnpm:*)` safe to auto-allow |
+| `mongodb` | 2 | Index coverage, tenant scoping, soft deletes, schema migrations, aggregation and write hazards |
+| `service-boundaries` | 2 | Services talk only through the messaging layer; contracts and shared packages are public API |
+
+Each module is one markdown file under
+[skills/pr-review/modules/](skills/pr-review/modules/); the first line
+says which step it plugs into. A project-specific rule that doesn't fit
+a module goes in your project file's sections — no fork needed.
+
+## Hacking
+
+```sh
+claude --plugin-dir ./pr-review        # from the pr-owl checkout
+claude plugin validate ./pr-review --strict
+```
