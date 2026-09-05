@@ -10,7 +10,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -565,5 +567,49 @@ func TestFindLocalForPR(t *testing.T) {
 	}
 	if ls := findLocalForPR(state, 4098); ls.Worktree != "" {
 		t.Errorf("expected no match for pr-4098 (only bar-4098-* branch present), got wt=%q", ls.Worktree)
+	}
+}
+
+// TestBusyState covers the open/close child lifecycle without spawning
+// one: while busy, keys other than quit are ignored; a failed child
+// surfaces its error and unblocks; a successful open quits the popup.
+func TestBusyState(t *testing.T) {
+	m := initialModel(defaultConfig())
+	m.prs = fixturePRs()
+	m.prsReady = true
+	m.me = "stefanahman"
+	m.refreshList()
+	m.cursor = m.firstPRRowIndex()
+	m.busy = "opening #4116…"
+
+	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	if got := next.(model); got.cursor != m.cursor {
+		t.Errorf("cursor moved while busy: %d → %d", m.cursor, got.cursor)
+	}
+	if !strings.Contains(m.actionRowView(), "opening #4116…") {
+		t.Errorf("action row should show the busy label, got %q", m.actionRowView())
+	}
+
+	failed, cmd := m.Update(openedMsg{err: errors.New("fetch failed")})
+	if fm := failed.(model); fm.busy != "" || fm.err == nil {
+		t.Errorf("after a failed open: busy=%q err=%v", fm.busy, fm.err)
+	}
+	if cmd != nil {
+		if _, quit := cmd().(tea.QuitMsg); quit {
+			t.Error("a failed open must not quit the popup")
+		}
+	}
+
+	_, cmd = m.Update(openedMsg{})
+	if cmd == nil {
+		t.Fatal("a successful open should quit")
+	}
+	if _, quit := cmd().(tea.QuitMsg); !quit {
+		t.Error("a successful open should quit the popup")
+	}
+
+	closed, cmd := m.Update(closedMsg{})
+	if cm := closed.(model); cm.busy != "" || cmd == nil {
+		t.Errorf("after close: busy=%q, refresh cmd=%v", cm.busy, cmd)
 	}
 }

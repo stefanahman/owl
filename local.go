@@ -9,7 +9,6 @@
 package main
 
 import (
-	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -95,24 +94,16 @@ func readWorktrees() map[string]string {
 // reviews and don't belong in this overlay.
 func readReviewWindows(t TmuxConfig) map[string]string {
 	format := "#{window_name}\t#{" + t.StateOption + "}"
-	out, err := exec.Command("tmux", "list-windows", "-t", tmuxTarget(t.Session, ""), "-F", format).Output()
+	out, err := tmux("list-windows", "-t", tmuxTarget(t.Session, ""), "-F", format)
 	if err != nil {
 		return nil // review session doesn't exist yet — treat as empty
 	}
 	result := make(map[string]string)
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 2)
-		name := parts[0]
+	for _, line := range strings.Split(out, "\n") {
+		name, state, _ := strings.Cut(line, "\t")
 		// Skip the keepalive window — no state to report.
-		if name == t.KeepaliveWindow {
+		if name == "" || name == t.KeepaliveWindow {
 			continue
-		}
-		state := ""
-		if len(parts) == 2 {
-			state = parts[1]
 		}
 		result[name] = state
 	}

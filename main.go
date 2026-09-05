@@ -47,6 +47,11 @@ type errMsg struct{ err error }
 
 func (e errMsg) Error() string { return e.err.Error() }
 
+// openedMsg / closedMsg report the end of a `pr-owl open` / `close`
+// child; err is its failure, with the child's stderr.
+type openedMsg struct{ err error }
+type closedMsg struct{ err error }
+
 // ------------------------------------------------------------
 // Keymap
 // ------------------------------------------------------------
@@ -202,7 +207,8 @@ type model struct {
 	lastFetched time.Time // set when prsMsg lands; drives "updated X ago"
 
 	// UI state
-	cursor int // index into the current visibleRows() output
+	cursor int    // index into the current visibleRows() output
+	busy   string // "opening #42…" while an open/close child runs; keys are ignored
 
 	// widgets
 	keys    keyMap
@@ -285,33 +291,43 @@ func (m model) persistCache() {
 	})
 }
 
-// openReview runs `pr-owl open <N> [--prompt TEXT]` detached — in its
-// own session (Setsid), without waiting. pr-owl usually runs inside a
-// tmux popup and quits right after firing this; tmux then closes the
-// popup and SIGHUPs everything still in the popup's session, which
-// would kill the child mid-flight. Setsid puts it out of reach.
-//
-// Trade: the child's outcome isn't surfaced (the callers pair this
-// with tea.Quit anyway).
+// openReview runs `pr-owl open <N> [--prompt TEXT]` and waits for it.
+// The child gets its own session (Setsid): pr-owl usually runs inside
+// a tmux popup, and if the popup is closed while a fetch is under way
+// tmux SIGHUPs everything still in the popup's session — the child
+// must not be killed mid-flight. Its result still comes back here, so
+// a failure (offline, gh not authenticated) is shown instead of the
+// popup closing on nothing.
 func openReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		self, err := os.Executable()
-		if err != nil {
-			return errMsg{fmt.Errorf("locate pr-owl binary: %w", err)}
-		}
 		args := []string{"open", strconv.Itoa(prNumber)}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		cmd := exec.Command(self, args...)
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			return errMsg{fmt.Errorf("pr-owl open: %w", err)}
-		}
-		// Release so the parent doesn't need to reap on exit.
-		_ = cmd.Process.Release()
-		return nil
+		return openedMsg{runSelf(args...)}
 	}
+}
+
+// closeReview runs `pr-owl close <N>`; the TUI refreshes its overlay
+// when it succeeds. The agent's conversation survives on disk, so
+// Enter / f afterwards resume it.
+func closeReview(prNumber int) tea.Cmd {
+	return func() tea.Msg {
+		return closedMsg{runSelf("close", strconv.Itoa(prNumber))}
+	}
+}
+
+// runSelf runs this binary with args in its own session and returns
+// its failure, if any, with the child's stderr in the message.
+func runSelf(args ...string) error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate pr-owl binary: %w", err)
+	}
+	cmd := exec.Command(self, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	_, err = runOut(cmd)
+	return err
 }
 
 // hasPriorConversation reports whether Claude has any recorded session
@@ -348,22 +364,6 @@ func hasPriorConversation(prNumber int) bool {
 		}
 	}
 	return false
-}
-
-// closeReview runs `pr-owl close <N>` synchronously — it is quick and
-// the TUI stays open — then refreshes the local overlay. The agent's
-// conversation survives on disk, so Enter / f afterwards resume it.
-func (m model) closeReview(prNumber int) tea.Cmd {
-	return func() tea.Msg {
-		self, err := os.Executable()
-		if err != nil {
-			return errMsg{fmt.Errorf("locate pr-owl binary: %w", err)}
-		}
-		if _, err := runOut(exec.Command(self, "close", strconv.Itoa(prNumber))); err != nil {
-			return errMsg{err}
-		}
-		return m.fetchLocal()
-	}
 }
 
 // checkFeedbackPrompt is the canned message sent to a PR's Claude
@@ -464,9 +464,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// bubbles/spinner has no Stop method — you stop it by not
-		// forwarding its next tick. Gate on !prsReady so it winds
-		// down naturally once the initial fetch completes.
-		if !m.prsReady {
+		// forwarding its next tick. It spins during the initial fetch
+		// and while an open/close child runs.
+		if !m.prsReady || m.busy != "" {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
@@ -500,6 +500,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		m.prsReady = true
+
+	case openedMsg:
+		// The workspace is up and focused — the popup's job is done.
+		m.busy = ""
+		if msg.err != nil {
+			m.err = msg.err
+			break
+		}
+		return m, tea.Quit
+
+	case closedMsg:
+		m.busy = ""
+		if msg.err != nil {
+			m.err = msg.err
+			break
+		}
+		cmds = append(cmds, m.fetchLocal)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -515,6 +532,15 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.showHelp = false
+		return m, nil
+	}
+
+	// A child is running: don't start another, don't move the cursor
+	// it acts on. Quit still works; the child is in its own session.
+	if m.busy != "" {
+		if key.Matches(msg, m.keys.Quit) {
+			return m, tea.Quit
+		}
 		return m, nil
 	}
 
@@ -579,14 +605,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 	case key.Matches(msg, m.keys.Enter):
 		if pr := m.selectedPR(); pr != nil {
-			// Fire `open`, then quit pr-owl. tea.Sequence guarantees the
-			// child has been *started* (spawned + detached) before
-			// tea.Quit closes the popup — with tea.Batch the goroutines
-			// race and quit can arrive first, tearing down pr-owl before
-			// openReview even forks the subprocess. openReview itself
-			// returns near-instantly (Setsid+Start+Release), so Sequence
-			// adds no perceptible latency.
-			return m, tea.Sequence(openReview(pr.Number, ""), tea.Quit)
+			// `open` runs to completion; openedMsg quits the popup on
+			// success and shows the failure otherwise.
+			m.busy = fmt.Sprintf("opening #%d…", pr.Number)
+			m.err = nil
+			return m, tea.Batch(openReview(pr.Number, ""), m.spinner.Tick)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
@@ -598,7 +621,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
 			if ls.Session != "" || hasPriorConversation(pr.Number) {
-				return m, tea.Sequence(openReview(pr.Number, checkFeedbackPrompt), tea.Quit)
+				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
+				m.err = nil
+				return m, tea.Batch(openReview(pr.Number, checkFeedbackPrompt), m.spinner.Tick)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):
@@ -618,7 +643,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
-				return m, m.closeReview(pr.Number)
+				m.busy = fmt.Sprintf("closing #%d…", pr.Number)
+				m.err = nil
+				return m, tea.Batch(closeReview(pr.Number), m.spinner.Tick)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -935,6 +962,8 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 // truncated by the terminal; that's acceptable for a status row.
 func (m model) actionRowView() string {
 	switch {
+	case m.busy != "":
+		return m.spinner.View() + " " + styleDim.Render(m.busy)
 	case !m.prsReady && m.err == nil:
 		return m.spinner.View() + " " + styleDim.Render("loading PRs…")
 	case m.search.Focused():

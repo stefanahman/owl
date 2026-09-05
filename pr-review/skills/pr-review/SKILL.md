@@ -150,7 +150,7 @@ Zero surviving findings is a valid outcome. Approve with a body that names what 
 
 ## Step 3: Local verification in a worktree
 
-If the working directory is already a worktree for this PR — `pr-owl open` starts you in one, on a branch named `pr-$pr` or `pr-$pr-…` — skip the setup. Otherwise create one first (`git worktree add <path>` then `gh pr checkout $pr` inside it).
+If the working directory is already a worktree for this PR — `pr-owl open` starts you in one, a directory named `pr-$pr` or `pr-$pr-…` — skip the setup. Otherwise create one first (`git worktree add <path>` then `gh pr checkout $pr` inside it).
 
 Then, from inside the worktree, run the project's checks:
 

@@ -225,6 +225,19 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 		t.Errorf("window cwd %q, want %q", cwd, wt)
 	}
 	f.waitPane(name, "true '/pr-review:pr-review 42'")
+
+	// The TUI overlay sees the window, without the keepalive one, and
+	// reads the state option tmux-claude-status writes.
+	if got, want := readReviewWindows(f.cfg.Tmux), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
+		t.Errorf("readReviewWindows = %v, want %v", got, want)
+	}
+	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", name), "@claude-state", "blocked"); err != nil {
+		t.Fatal(err)
+	}
+	if ls := findLocalForPR(model{cfg: f.cfg}.fetchLocal().(localMsg), 42); ls.Worktree != wt || ls.Session != name || ls.ClaudeState != "blocked" {
+		t.Errorf("fetchLocal overlay = %+v", ls)
+	}
+
 	hook, err := os.ReadFile(hookOut)
 	if err != nil {
 		t.Fatalf("after_open hook did not run: %v", err)
