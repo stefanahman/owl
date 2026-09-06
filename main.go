@@ -398,6 +398,17 @@ func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
 	}
 }
 
+// switchClient moves the tmux client to the review session, whose
+// current window `open` has just selected.
+func switchClient(session string) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := tmux("switch-client", "-t", tmuxTarget(session, "")); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
 // openURL hands a URL to `open_cmd` (split on whitespace, URL
 // appended), defaulting to the platform opener.
 func openURL(openCmd, url string) tea.Msg {
@@ -502,14 +513,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prsReady = true
 
 	case openedMsg:
-		// The workspace is up and focused — the popup's job is done.
 		m.busy = ""
 		if msg.err != nil {
 			m.err = msg.err
 			break
 		}
-		m.farewell = msg.out
-		return m, tea.Quit
+		// The workspace is up. What happens to the TUI is `on_open`: a
+		// popup closes, a standalone TUI stays (optionally moving the
+		// tmux client to the review session).
+		switch m.cfg.OnOpen {
+		case "quit":
+			m.farewell = msg.out
+			return m, tea.Quit
+		case "switch":
+			cmds = append(cmds, switchClient(m.cfg.Tmux.Session))
+		}
+		cmds = append(cmds, m.fetchLocal)
 
 	case closedMsg:
 		m.busy = ""

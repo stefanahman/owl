@@ -615,4 +615,14 @@ func TestBusyState(t *testing.T) {
 	if cm := closed.(model); cm.busy != "" || cmd == nil {
 		t.Errorf("after close: busy=%q, refresh cmd=%v", cm.busy, cmd)
 	}
+
+	// on_open: stay keeps the TUI and refreshes instead of quitting.
+	m.cfg.OnOpen = "stay"
+	stayed, cmd := m.Update(openedMsg{out: "selected"})
+	if sm := stayed.(model); sm.busy != "" || sm.farewell != "" || cmd == nil {
+		t.Errorf("on_open stay: busy=%q farewell=%q cmd=%v", sm.busy, sm.farewell, cmd)
+	}
+	if _, quit := cmd().(tea.QuitMsg); quit {
+		t.Error("on_open stay must not quit")
+	}
 }

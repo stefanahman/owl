@@ -27,10 +27,16 @@ monorepo.
 /plugin install pr-review@pr-owl
 ```
 
-Requires git and an authenticated `gh`. The skill pre-approves
-`Bash(gh *)` and `Bash(git *)`, `Read`, `Grep`, `Glob` and `WebFetch`
-for its own turn; the build and test commands of Step 3 run under your
-normal permission settings.
+Requires git and an authenticated `gh`. The skill pre-approves only
+what it reads with — `gh pr view/checks/diff/checkout`, `gh issue
+view`, `git worktree add/list/remove`, `git log/show/diff/blame/status`, `Read`, `Grep`,
+`Glob`, `WebFetch` — and only for its own turn. Posting the review
+(`gh api`) is not pre-approved on purpose: it goes through your
+permission prompt every time, a second gate behind approving the
+draft. The build and test commands of Step 3 run under your normal
+permission settings too; the `pnpm-turbo` module keeps to commands a
+`Bash(pnpm:*)` rule can safely auto-allow and never uses `pnpm exec`,
+`pnpm dlx` or `npx`.
 
 ## Configure a repository
 

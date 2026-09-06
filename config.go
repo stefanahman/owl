@@ -28,6 +28,7 @@ type Config struct {
 	DefaultRepo  string       `yaml:"default_repo"`
 	Agent        AgentConfig  `yaml:"agent"`
 	OpenCmd      string       `yaml:"open_cmd"`
+	OnOpen       string       `yaml:"on_open"`
 	Hooks        HooksConfig  `yaml:"hooks"`
 	Theme        ThemeConfig  `yaml:"theme"`
 	Keys         KeysConfig   `yaml:"keys"`
@@ -208,6 +209,7 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
+on_open: quit                    # the TUI once a review is open: quit (a popup closes), stay (keep the list), switch (tmux switch-client to the review session, for pr-owl in a tmux window)
 
 hooks:
   after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO set; ~ is expanded
@@ -261,6 +263,7 @@ func defaultConfig() Config {
 		FeedbackPrompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict.",
 		LinkLocal:      []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
 	}
+	c.OnOpen = "quit"
 	c.Theme = ThemeConfig{Working: "#dbbc7f", Blocked: "214", Done: "42"}
 	c.Keys = KeysConfig{
 		Up: keyNames{"up", "k"}, Down: keyNames{"down", "j"},
@@ -347,6 +350,11 @@ func (cfg *Config) validate() error {
 	}
 	if d := filepath.Clean(cfg.WorktreesDir); filepath.IsAbs(d) || d == ".." || strings.HasPrefix(d, "../") {
 		return fmt.Errorf("worktrees_dir must be a relative path inside the repo, got %q", cfg.WorktreesDir)
+	}
+	switch cfg.OnOpen {
+	case "quit", "stay", "switch":
+	default:
+		return fmt.Errorf("on_open must be quit, stay or switch, got %q", cfg.OnOpen)
 	}
 	for _, c := range []struct{ name, value string }{
 		{"theme.working", cfg.Theme.Working}, {"theme.blocked", cfg.Theme.Blocked}, {"theme.done", cfg.Theme.Done},

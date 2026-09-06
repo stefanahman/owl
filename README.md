@@ -58,8 +58,10 @@ bind r display-popup -E -w 88% -h 84% pr-owl
 ```
 
 (tmux runs that with the server's PATH — give the absolute path if
-`pr-owl` isn't on it.) From a plain terminal it works the same; `open`
-then tells you how to attach to the review session.
+`pr-owl` isn't on it.) Without a popup — pr-owl in a tmux window, or in
+a plain terminal — set `on_open: switch` or `stay` so the TUI doesn't
+quit after opening a review; `switch` moves your tmux client straight
+to the review session.
 
 Two optional companions:
 
@@ -77,8 +79,8 @@ Two optional companions:
 |---|---|
 | `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped |
 | `n` | jump to the next PR that needs you (Claude blocked or done) |
-| `↵` | open (or focus) the review workspace, close the popup |
-| `f` | send the check-feedback prompt to the PR's Claude session, close the popup |
+| `↵` | open (or focus) the review workspace; then `on_open` |
+| `f` | send the check-feedback prompt to the PR's Claude session; then `on_open` |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
 | `c` | close the workspace — worktree, branch and tmux window; uncommitted changes in the worktree are discarded |
@@ -138,6 +140,7 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
+on_open: quit                    # the TUI once a review is open: quit (popup), stay, or switch (tmux switch-client to the review session)
 
 hooks:
   after_open: ""                 # runs after every open with PR_OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO set
@@ -165,10 +168,14 @@ links:                           # your own keys, each opening a URL built from 
 Link placeholders: `{pr}`, `{repo}` (owner/name), `{branch}`, `{url}`
 (the PR page) and `{id}`.
 
-`hooks.after_open` is where window-manager glue goes; see
+Two hooks, two layers: `on_open` is what the TUI itself does;
+`hooks.after_open` is a shell command run after *every* `open` (TUI or
+CLI), where window-manager glue goes. See
 [contrib/macos](contrib/macos/README.md) for the yabai + Ghostty setup
 that keeps every review in one terminal window on its own space, with
-a hotkey that reaches the popup from anywhere.
+a hotkey that reaches the popup from anywhere — entirely optional; the
+review session is a normal tmux session you can attach to or switch to
+from anywhere.
 
 ## The workspace model
 

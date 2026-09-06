@@ -128,6 +128,7 @@ func TestParseConfigRejects(t *testing.T) {
 		"hidden parent":       "worktrees_dir: wt/../../x\n",
 		"bad colour":          "theme:\n  done: green\n",
 		"colour out of range": "theme:\n  done: \"256\"\n",
+		"bad on_open":         "on_open: close\n",
 		"not a mapping":       "- a\n- b\n",
 		"unbound action":      "keys:\n  quit: []\n",
 		"empty key name":      "keys:\n  quit: ''\n",

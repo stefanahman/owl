@@ -6,8 +6,20 @@ arguments: [pr]
 disable-model-invocation: true
 compatibility: Requires git, an authenticated gh CLI, and network access. Modules may need more (Linear MCP tools, pnpm).
 allowed-tools:
-  - Bash(gh *)
-  - Bash(git *)
+  - Bash(gh pr view *)
+  - Bash(gh pr checks *)
+  - Bash(gh pr diff *)
+  - Bash(gh pr checkout *)
+  - Bash(gh issue view *)
+  - Bash(git worktree add *)
+  - Bash(git worktree list *)
+  - Bash(git worktree remove *)
+  - Bash(git log *)
+  - Bash(git show *)
+  - Bash(git diff *)
+  - Bash(git blame *)
+  - Bash(git status)
+  - Bash(git status *)
   - Read
   - Grep
   - Glob
@@ -202,6 +214,8 @@ The chat analysis from Step 2 is context, not the deliverable. What gets posted 
 4. **Stop here and wait.** Ask the user to approve, redirect in chat, or edit the file directly and tell you to post. No exceptions — see the golden rule at the top. "Continue", "sounds good", "you decide" on an unrelated earlier turn are NOT approval of this draft. Only an explicit go on this specific draft moves you to Step 5.
 
 ## Step 5: Post from the draft file
+
+Posting is deliberately not among this skill's pre-approved tools: the `gh api` call below always goes through the user's permission prompt, a mechanical second gate behind the approval of the draft.
 
 1. **Re-read the draft file first** — the user may have edited it after you printed it. The file is the single source of truth; post its contents verbatim (verdict, body, comments), no rewording, no additions.
 2. Post everything in a single `gh api` call to `repos/{owner}/{repo}/pulls/$pr/reviews` so the verdict and all inline comments land as one atomic review. Map verdict → `event`: `approve` = `APPROVE`, `request-changes` = `REQUEST_CHANGES`, `comment` = `COMMENT`.
