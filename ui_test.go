@@ -676,9 +676,16 @@ func TestGoldenFrames(t *testing.T) {
 	}
 	for name, drive := range frames {
 		t.Run(name, func(t *testing.T) {
+			// The renderer picks escape-sequence optimisations from
+			// $TERM (repeat, vertical position…), so pin the terminal
+			// type and colour profile: the frames must not depend on
+			// the shell the tests run from.
 			tm := teatest.NewTestModel(t, testModel(t),
 				teatest.WithInitialTermSize(100, 24),
-				teatest.WithProgramOptions(tea.WithColorProfile(colorprofile.ANSI256)),
+				teatest.WithProgramOptions(
+					tea.WithColorProfile(colorprofile.ANSI256),
+					tea.WithEnvironment([]string{"TERM=xterm-256color"}),
+				),
 			)
 			drive(tm)
 			time.Sleep(150 * time.Millisecond)
