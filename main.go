@@ -231,6 +231,10 @@ type model struct {
 	// farewell is printed by main after the TUI exits: what `open` did,
 	// for the terminal the popup leaves behind.
 	farewell string
+
+	// runSelf runs this binary with args (`open`, `close`). Tests
+	// replace it — os.Executable() is the test binary there.
+	runSelf func(args ...string) (string, error)
 }
 
 func initialModel(cfg Config) model {
@@ -249,6 +253,7 @@ func initialModel(cfg Config) model {
 
 	m := model{
 		cfg:     cfg,
+		runSelf: runSelf,
 		repo:    currentRepo(cfg.Remote),
 		keys:    newKeyMap(cfg.Keys, cfg.Links),
 		help:    help.New(),
@@ -305,13 +310,13 @@ func (m model) persistCache() {
 // must not be killed mid-flight. Its result still comes back here, so
 // a failure (offline, gh not authenticated) is shown instead of the
 // popup closing on nothing.
-func openReview(prNumber int, prompt string) tea.Cmd {
+func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"open", strconv.Itoa(prNumber)}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		out, err := runSelf(args...)
+		out, err := m.runSelf(args...)
 		return openedMsg{out, err}
 	}
 }
@@ -319,9 +324,9 @@ func openReview(prNumber int, prompt string) tea.Cmd {
 // closeReview runs `pr-owl close <N>`; the TUI refreshes its overlay
 // when it succeeds. The agent's conversation survives on disk, so
 // Enter / f afterwards resume it.
-func closeReview(prNumber int) tea.Cmd {
+func (m model) closeReview(prNumber int) tea.Cmd {
 	return func() tea.Msg {
-		_, err := runSelf("close", strconv.Itoa(prNumber))
+		_, err := m.runSelf("close", strconv.Itoa(prNumber))
 		return closedMsg{err}
 	}
 }
@@ -631,7 +636,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// success and shows the failure otherwise.
 			m.busy = fmt.Sprintf("opening #%d…", pr.Number)
 			m.err = nil
-			return m, tea.Batch(openReview(pr.Number, ""), m.spinner.Tick)
+			return m, tea.Batch(m.openReview(pr.Number, ""), m.spinner.Tick)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
@@ -645,7 +650,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if ls.Session != "" || hasPriorConversation(pr.Number) {
 				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
 				m.err = nil
-				return m, tea.Batch(openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)
+				return m, tea.Batch(m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):
@@ -667,7 +672,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
 				m.busy = fmt.Sprintf("closing #%d…", pr.Number)
 				m.err = nil
-				return m, tea.Batch(closeReview(pr.Number), m.spinner.Tick)
+				return m, tea.Batch(m.closeReview(pr.Number), m.spinner.Tick)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):

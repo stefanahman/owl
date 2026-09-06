@@ -17,6 +17,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
@@ -24,11 +25,25 @@ import (
 // and the terminal size fixed. Tests can then Send synthetic messages.
 func newTestModel(t *testing.T) *teatest.TestModel {
 	t.Helper()
+	return teatest.NewTestModel(t, testModel(t), teatest.WithInitialTermSize(120, 30))
+}
+
+// testModel is a model that never shells out: no Init fetches, and a
+// runSelf that blocks until the test ends instead of executing the
+// test binary as `pr-owl open`.
+func testModel(t *testing.T) model {
+	t.Helper()
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
 	m := initialModel(defaultConfig())
 	m.initCmds = []tea.Cmd{} // suppress fetchPRs/fetchLocal/etc
 	m.me = "stefanahman"     // stable login for MyReviewStatus derivation
 	m.repo = "acme/example"  // deterministic header regardless of cwd
-	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(120, 30))
+	m.runSelf = func(args ...string) (string, error) {
+		<-done
+		return "", errors.New("test ended")
+	}
+	return m
 }
 
 // fixturePRs returns a small stable set covering all three status
@@ -574,7 +589,7 @@ func TestFindLocalForPR(t *testing.T) {
 // one: while busy, keys other than quit are ignored; a failed child
 // surfaces its error and unblocks; a successful open quits the popup.
 func TestBusyState(t *testing.T) {
-	m := initialModel(defaultConfig())
+	m := testModel(t)
 	m.prs = fixturePRs()
 	m.prsReady = true
 	m.me = "stefanahman"
@@ -624,5 +639,53 @@ func TestBusyState(t *testing.T) {
 	}
 	if _, quit := cmd().(tea.QuitMsg); quit {
 		t.Error("on_open stay must not quit")
+	}
+}
+
+// TestGoldenFrames snapshots the full program output for the states
+// the screen test (e2e/) can't reach without a live backend: loading,
+// empty, a search filter, an error, and a running open. Refresh with
+// `go test -run TestGoldenFrames -update .` and review the diff.
+func TestGoldenFrames(t *testing.T) {
+	frames := map[string]func(tm *teatest.TestModel){
+		"loading": func(tm *teatest.TestModel) {},
+		"empty": func(tm *teatest.TestModel) {
+			tm.Send(prsMsg{})
+			tm.Send(mergedMsg(nil))
+		},
+		"sections": func(tm *teatest.TestModel) {
+			tm.Send(prsMsg(fixturePRs()))
+			tm.Send(localMsg{"pr-4116-feat": {Worktree: "/wt", Session: "pr-4116-feat", ClaudeState: "blocked"}})
+			tm.Send(mergedMsg(fixtureMerged()))
+		},
+		"search": func(tm *teatest.TestModel) {
+			tm.Send(prsMsg(fixturePRs()))
+			tm.Send(mergedMsg(nil))
+			tm.Send(tea.KeyPressMsg{Code: '/', Text: "/"})
+			tm.Send(tea.KeyPressMsg{Code: '4', Text: "4"})
+			tm.Send(tea.KeyPressMsg{Code: '1', Text: "1"})
+		},
+		"error": func(tm *teatest.TestModel) {
+			tm.Send(errMsg{errors.New("gh api graphql: HTTP 401: Bad credentials")})
+		},
+		"busy": func(tm *teatest.TestModel) {
+			tm.Send(prsMsg(fixturePRs()))
+			tm.Send(mergedMsg(nil))
+			tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+		},
+	}
+	for name, drive := range frames {
+		t.Run(name, func(t *testing.T) {
+			tm := teatest.NewTestModel(t, testModel(t),
+				teatest.WithInitialTermSize(100, 24),
+				teatest.WithProgramOptions(tea.WithColorProfile(colorprofile.ANSI256)),
+			)
+			drive(tm)
+			time.Sleep(150 * time.Millisecond)
+			if err := tm.Quit(); err != nil {
+				t.Fatal(err)
+			}
+			teatest.RequireEqualOutput(t, readAll(t, tm.FinalOutput(t, teatest.WithFinalTimeout(2*time.Second))))
+		})
 	}
 }

@@ -1,6 +1,6 @@
 BIN ?= $(HOME)/.local/bin
 
-.PHONY: build install install-macos test lint
+.PHONY: build install install-macos test lint update-snapshots
 
 build:
 	go build -o pr-owl .
@@ -15,6 +15,12 @@ install-macos: install
 
 test:
 	go test ./...
+
+# Rewrite the golden frames (model level) and the screen snapshots
+# (real binary in a virtual terminal, JSON + PNG). Review the diff.
+update-snapshots:
+	go test . -run TestGoldenFrames -update
+	go test ./e2e -update
 
 lint:
 	test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
