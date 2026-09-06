@@ -32,7 +32,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/atotto/clipboard"
 )
 
 // ------------------------------------------------------------
@@ -428,18 +427,14 @@ func openURL(openCmd, url string) tea.Msg {
 	return nil
 }
 
-// yankPRURL copies the PR's URL to the system clipboard (pbcopy on
-// macOS, xclip/xsel/wl-clipboard on Linux — whatever the library finds).
+// yankPRURL copies the PR's URL to the clipboard through OSC 52 — the
+// terminal does the copying, so it works over SSH and inside tmux
+// (`set-clipboard on`) without pbcopy or xclip.
 func yankPRURL(pr *PR) tea.Cmd {
-	return func() tea.Msg {
-		if pr.URL == "" {
-			return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)}
-		}
-		if err := clipboard.WriteAll(pr.URL); err != nil {
-			return errMsg{fmt.Errorf("copy to clipboard: %w", err)}
-		}
-		return nil
+	if pr.URL == "" {
+		return func() tea.Msg { return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)} }
 	}
+	return tea.SetClipboard(pr.URL)
 }
 
 // ------------------------------------------------------------
