@@ -3,7 +3,7 @@
 // activity) and review involvement (approved / engaged / any-CR)
 // overlaid.
 //
-// Widgets used, all docs-endorsed from charmbracelet/bubbles:
+// Widgets used, all from charm.land/bubbles/v2:
 //
 //	bubbles/viewport  scroll container (slice-based rendering, table pattern)
 //	bubbles/textinput search field
@@ -25,14 +25,14 @@ import (
 	"syscall"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ------------------------------------------------------------
@@ -254,7 +254,7 @@ func initialModel(cfg Config) model {
 		keys:    newKeyMap(cfg.Keys, cfg.Links),
 		help:    help.New(),
 		search:  ti,
-		list:    viewport.New(0, 0),
+		list:    viewport.New(),
 		spinner: sp,
 	}
 	// Cache-first: if a previous session left a cache for this repo,
@@ -280,6 +280,7 @@ func (m model) Init() tea.Cmd {
 		m.fetchPRs, m.fetchLocal, m.fetchMerged, fetchUser,
 		m.spinner.Tick,
 		textinput.Blink,
+		tea.RequestBackgroundColor,
 	)
 }
 
@@ -456,8 +457,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeViewport()
 		m.refreshList()
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+
+	case tea.BackgroundColorMsg:
+		// Bubbles no longer guess the terminal background; pick the
+		// light or dark palette once the terminal has answered.
+		m.help.Styles = help.DefaultStyles(msg.IsDark())
+		m.search.SetStyles(textinput.DefaultStyles(msg.IsDark()))
 
 	case tea.FocusMsg:
 		// Window regained focus. If a search filter was active but the
@@ -544,7 +551,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey routes a KeyMsg. When the search input is focused, the
 // input consumes most keys — we only intercept esc/enter/tab-out.
-func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Help modal captures everything: quit still quits; anything else
 	// dismisses. Keeps the modal an obvious mode with a single exit.
 	if m.showHelp {
@@ -567,8 +574,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.search.Focused() {
 		// esc/enter are the input's own keys, independent of what the
 		// list actions are bound to.
-		switch msg.Type {
-		case tea.KeyEsc:
+		switch msg.Code {
+		case tea.KeyEscape:
 			m.search.SetValue("")
 			m.search.Blur()
 			m.clampCursor()
@@ -582,8 +589,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Drop non-digit runes upstream — bubbles/textinput's Validate
 		// only sets a display error, it doesn't reject input. Non-rune
 		// keys (backspace, arrows, delete) pass through so editing works.
-		if msg.Type == tea.KeyRunes {
-			for _, r := range msg.Runes {
+		if msg.Text != "" {
+			for _, r := range msg.Text {
 				if r < '0' || r > '9' {
 					return m, nil
 				}
@@ -612,10 +619,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(1)
 		m.refreshList()
 	case key.Matches(msg, m.keys.PageUp):
-		m.moveCursor(-m.list.Height / 2)
+		m.moveCursor(-m.list.Height() / 2)
 		m.refreshList()
 	case key.Matches(msg, m.keys.PageDown):
-		m.moveCursor(m.list.Height / 2)
+		m.moveCursor(m.list.Height() / 2)
 		m.refreshList()
 	case key.Matches(msg, m.keys.Home):
 		m.cursor = m.firstPRRowIndex()
@@ -830,12 +837,12 @@ func (m *model) resizeViewport() {
 	if h < 3 {
 		h = 3
 	}
-	m.list.Width = m.width
-	m.list.Height = h
-	m.help.Width = m.width
+	m.list.SetWidth(m.width)
+	m.list.SetHeight(h)
+	m.help.SetWidth(m.width)
 	// Leave room for the "search /  " label; clamp so a very narrow
 	// terminal doesn't hand textinput a negative width.
-	m.search.Width = clampInt(m.width-20, 10, 200)
+	m.search.SetWidth(clampInt(m.width-20, 10, 200))
 }
 
 // ------------------------------------------------------------
@@ -910,7 +917,7 @@ func (m model) visibleRows() []visibleRow {
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
 	rows := m.visibleRows()
-	h := m.list.Height
+	h := m.list.Height()
 	if h == 0 || len(rows) == 0 {
 		m.list.SetContent("")
 		return
@@ -1094,7 +1101,20 @@ func (m model) helpModalView() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-func (m model) View() string {
+// View wraps the rendered frame with what used to be program options:
+// the alternate screen, focus reporting (auto-refresh on focus), and
+// the search input's cursor while it is focused.
+func (m model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	v.ReportFocus = true
+	if m.search.Focused() {
+		v.Cursor = m.search.Cursor()
+	}
+	return v
+}
+
+func (m model) render() string {
 	if m.showHelp {
 		return m.helpModalView()
 	}
@@ -1311,7 +1331,7 @@ func main() {
 	exitOn(enterDefaultRepo(cfg.DefaultRepo))
 	switch {
 	case len(args) == 0:
-		p := tea.NewProgram(initialModel(cfg), tea.WithAltScreen(), tea.WithReportFocus())
+		p := tea.NewProgram(initialModel(cfg))
 		var final tea.Model
 		if final, err = p.Run(); err == nil {
 			if farewell := final.(model).farewell; farewell != "" {

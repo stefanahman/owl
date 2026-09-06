@@ -1,4 +1,4 @@
-// UI tests via charmbracelet/x/exp/teatest — exercise the bubbletea
+// UI tests via charmbracelet/x/exp/teatest/v2 — exercise the bubbletea
 // program without a real TTY. Fetches are suppressed by setting
 // initCmds to an empty slice; tests then Send synthetic msgs
 // (prsMsg, mergedMsg, localMsg, userMsg) and assert on the
@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/exp/teatest"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
 // newTestModel returns a model with the shell-out Init cmds suppressed
@@ -87,7 +87,7 @@ func readAll(t *testing.T, r io.Reader) []byte {
 // mustQuit sends the Quit key so FinalOutput returns; keeps every test
 // symmetric in shape.
 func mustQuit(tm *teatest.TestModel) {
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"})
 }
 
 // TestRendersGroupSections verifies each of Todo/Waiting/Approved
@@ -157,7 +157,7 @@ func TestSearchFilters(t *testing.T) {
 
 	// Enter search mode + type "4116", then blur so `q` quits.
 	tm.Type("/4116")
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -225,7 +225,7 @@ func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Press `c` on the currently-selected row (first Todo PR).
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	time.Sleep(50 * time.Millisecond)
 
 	mustQuit(tm)
@@ -279,11 +279,11 @@ func TestHelpModalOpensAndDismisses(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Open modal
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	tm.Send(tea.KeyPressMsg{Code: '?', Text: "?"})
 	time.Sleep(50 * time.Millisecond)
 
 	// Dismiss with a benign key (space)
-	tm.Send(tea.KeyMsg{Type: tea.KeySpace})
+	tm.Send(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	time.Sleep(50 * time.Millisecond)
 
 	mustQuit(tm)
@@ -307,11 +307,11 @@ func TestHelpModalQuitBypassesDismiss(t *testing.T) {
 	tm.Send(mergedMsg(nil))
 	time.Sleep(50 * time.Millisecond)
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	tm.Send(tea.KeyPressMsg{Code: '?', Text: "?"})
 	time.Sleep(50 * time.Millisecond)
 
 	// `q` should quit even from the modal
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	tm.Send(tea.KeyPressMsg{Code: 'q', Text: "q"})
 
 	// If Quit worked, FinalModel returns without needing another mustQuit.
 	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second))
@@ -333,7 +333,7 @@ func TestFocusRestoresSearch(t *testing.T) {
 	// Type a search then blur it (Enter). Search value persists,
 	// input loses focus.
 	tm.Type("/4116")
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	time.Sleep(50 * time.Millisecond)
 
 	// Window regains focus.
@@ -582,7 +582,7 @@ func TestBusyState(t *testing.T) {
 	m.cursor = m.firstPRRowIndex()
 	m.busy = "opening #4116…"
 
-	next, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if got := next.(model); got.cursor != m.cursor {
 		t.Errorf("cursor moved while busy: %d → %d", m.cursor, got.cursor)
 	}

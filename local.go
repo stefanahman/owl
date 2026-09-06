@@ -11,7 +11,7 @@ package main
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // LocalState is the per-PR overlay: does a worktree exist? A tmux
