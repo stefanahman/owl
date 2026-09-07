@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -46,6 +47,44 @@ func hasConversationFor(cwd string) bool {
 		return false
 	}
 	return hasConversation(filepath.Join(projects, encodeProjectPath(cwd)))
+}
+
+// priorWorkspaceName returns the name of a workspace for PR n that
+// Claude holds a conversation for — `pr-<n>` or `pr-<n>-<slug>` under
+// the repo's worktrees dir — or "" when there is none. `close` removes
+// the worktree; `open` recreates it under this name, so the
+// conversation resumes even if the PR was retitled in between.
+func priorWorkspaceName(repo, worktreesDir string, n int) string {
+	if repo == "" {
+		return ""
+	}
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(projects)
+	if err != nil {
+		return ""
+	}
+	base := "pr-" + strconv.Itoa(n)
+	prefix := encodeProjectPath(filepath.Join(repo, worktreesDir, base))
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), prefix)
+		if !ok || !e.IsDir() || (rest != "" && rest[0] != '-') {
+			continue // a file, or another PR (pr-70 when looking for pr-7)
+		}
+		if hasConversation(filepath.Join(projects, e.Name())) {
+			return base + rest // a slug is [a-z0-9-]: the encoding leaves it as is
+		}
+	}
+	return ""
+}
+
+// hasPriorConversation reports whether Claude has a conversation for
+// PR n's workspace in this repo, whether or not the worktree still
+// exists.
+func hasPriorConversation(repo, worktreesDir string, n int) bool {
+	return priorWorkspaceName(repo, worktreesDir, n) != ""
 }
 
 // hasConversation reports whether a project state directory holds at

@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -198,7 +197,8 @@ type model struct {
 	cfg Config
 
 	// domain data
-	repo       string
+	repo       string // owner/name on GitHub
+	repoDir    string // the repository's main working tree; "" outside a repo
 	me         string
 	prs        []PR
 	merged     []PR
@@ -242,7 +242,9 @@ type model struct {
 // the repo of the working directory and its cache — and builds it.
 func initialModel(cfg Config) model {
 	repo := currentRepo(cfg.Remote)
-	return newModel(cfg, repo, loadCache(repo))
+	m := newModel(cfg, repo, loadCache(repo))
+	m.repoDir, _ = mainRepo(".") // "" outside a repo: nothing to resume
+	return m
 }
 
 // newModel builds the model from its inputs. Tests call it directly, so
@@ -357,42 +359,6 @@ func runSelf(args ...string) (string, error) {
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return runOut(cmd)
-}
-
-// hasPriorConversation reports whether Claude has any recorded session
-// for this PR — surviving worktree cleanup. The worktree path is gone
-// by then, so this scans the projects dir for any entry whose encoded
-// path contains `-pr-<N>` (followed by `-` or the end) and holds a
-// transcript.
-func hasPriorConversation(prNumber int) bool {
-	projects, err := claudeProjectsDir()
-	if err != nil {
-		return false
-	}
-	entries, err := os.ReadDir(projects)
-	if err != nil {
-		return false
-	}
-	needle := fmt.Sprintf("-pr-%d", prNumber)
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		loc := strings.Index(name, needle)
-		if loc == -1 {
-			continue
-		}
-		// Ensure the digits end at `-` or end-of-string (exact match).
-		end := loc + len(needle)
-		if end < len(name) && name[end] != '-' {
-			continue
-		}
-		if hasConversation(filepath.Join(projects, name)) {
-			return true
-		}
-	}
-	return false
 }
 
 // openPRInBrowser opens the PR's page. pr.URL comes from the API, so
@@ -663,7 +629,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// "check feedback on what you already reviewed"; press Enter
 			// first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
-			if ls.Session != "" || hasPriorConversation(pr.Number) {
+			if ls.Session != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
 				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
 				m.err = nil
 				return m, tea.Batch(m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)

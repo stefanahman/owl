@@ -117,8 +117,9 @@ func parseOpenArgs(args []string) (n int, prompt string, err error) {
 // creating the branch and worktree when no worktree exists yet.
 //
 // The name is decided once, on first open, from the PR title at that
-// time: later opens find the worktree by number, so a retitled PR keeps
-// its path — and with it the agent's per-cwd conversation.
+// time: later opens find the worktree by number and, after `close`, the
+// name Claude's conversation is stored under — so a retitled PR keeps
+// its path, and with it the agent's per-cwd conversation.
 func ensureWorktree(cfg Config, repo string, n int, out io.Writer) (name, path string, err error) {
 	list, err := listWorktrees(repo)
 	if err != nil {
@@ -129,9 +130,11 @@ func ensureWorktree(cfg Config, repo string, n int, out io.Writer) (name, path s
 			return h, wt.Path, nil
 		}
 	}
-	name = "pr-" + strconv.Itoa(n)
-	if slug := slugify(prTitle(repo, n)); slug != "" {
-		name += "-" + slug
+	if name = priorWorkspaceName(repo, cfg.WorktreesDir, n); name == "" {
+		name = "pr-" + strconv.Itoa(n)
+		if slug := slugify(prTitle(repo, n)); slug != "" {
+			name += "-" + slug
+		}
 	}
 	path = filepath.Join(repo, cfg.WorktreesDir, name)
 	fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)

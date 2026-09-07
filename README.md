@@ -110,9 +110,10 @@ pr-owl config init | path | get <key>
 
 `open` is idempotent: it creates what is missing and selects the
 window. A workspace is named once, from the PR title at first open, and
-found by number afterwards — the path stays stable, and with it
-Claude's per-directory conversation, which is what lets `close` be
-cheap and `open` resume. The first `open` in a clone also adds the
+found by number afterwards — after `close`, by the name Claude's
+conversation is stored under — so the path stays stable even if the PR
+is retitled, and with it Claude's per-directory conversation, which is
+what lets `close` be cheap and `open` resume. The first `open` in a clone also adds the
 worktrees directory to `.git/info/exclude`, so `git status` stays clean
 without touching the project's `.gitignore`.
 

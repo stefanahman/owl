@@ -418,9 +418,13 @@ func TestOpenResumesAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Retitled since: the workspace keeps the name the conversation is
+	// stored under, whatever gh says the title is now.
+	f.write(filepath.Join(f.root, "bin", "gh"), "#!/bin/sh\necho 'Renamed since'\n")
+
 	out := f.open("42")
 
-	if !strings.Contains(out, "resuming the conversation") {
+	if !strings.Contains(out, "started =reviews:="+name) || !strings.Contains(out, "resuming the conversation") {
 		t.Errorf("output: %q", out)
 	}
 	f.waitPane(name, "true -c\n") // no prompt: the agent shows the transcript and waits
