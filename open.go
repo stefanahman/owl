@@ -24,7 +24,7 @@ func runOpen(cfg Config, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	name, wt, err := ensureWorktree(cfg, repo, n, out)
+	name, wt, err := ensureWorktree(cfg, repo, currentRepo(cfg.Remote), n, out)
 	if err != nil {
 		return err
 	}
@@ -114,13 +114,14 @@ func parseOpenArgs(args []string) (n int, prompt string, err error) {
 }
 
 // ensureWorktree returns the workspace name and worktree path for PR n,
-// creating the branch and worktree when no worktree exists yet.
+// creating the branch and worktree when no worktree exists yet. slug
+// is the GitHub owner/name the PR lives in ("" when unknown).
 //
 // The name is decided once, on first open, from the PR title at that
 // time: later opens find the worktree by number and, after `close`, the
 // name Claude's conversation is stored under — so a retitled PR keeps
 // its path, and with it the agent's per-cwd conversation.
-func ensureWorktree(cfg Config, repo string, n int, out io.Writer) (name, path string, err error) {
+func ensureWorktree(cfg Config, repo, slug string, n int, out io.Writer) (name, path string, err error) {
 	list, err := listWorktrees(repo)
 	if err != nil {
 		return "", "", err
@@ -132,8 +133,8 @@ func ensureWorktree(cfg Config, repo string, n int, out io.Writer) (name, path s
 	}
 	if name = priorWorkspaceName(repo, cfg.WorktreesDir, n); name == "" {
 		name = "pr-" + strconv.Itoa(n)
-		if slug := slugify(prTitle(repo, n)); slug != "" {
-			name += "-" + slug
+		if s := slugify(prTitle(repo, slug, n)); s != "" {
+			name += "-" + s
 		}
 	}
 	path = filepath.Join(repo, cfg.WorktreesDir, name)
@@ -189,8 +190,15 @@ func excludeFromStatus(repo, dir string) error {
 
 // prTitle asks gh for the PR title; "" when gh is missing or fails
 // (offline, unauthenticated) — the workspace is then named `pr-<N>`.
-func prTitle(repo string, n int) string {
-	cmd := exec.Command("gh", "pr", "view", strconv.Itoa(n), "--json", "title", "--jq", ".title")
+// The repo is passed explicitly when known: gh's own guess fails in a
+// clone with several remotes, and with `remote: upstream` it would
+// answer for the fork.
+func prTitle(repo, slug string, n int) string {
+	args := []string{"pr", "view", strconv.Itoa(n)}
+	if slug != "" {
+		args = append(args, "--repo", slug)
+	}
+	cmd := exec.Command("gh", append(args, "--json", "title", "--jq", ".title")...)
 	cmd.Dir = repo
 	out, err := cmd.Output()
 	if err != nil {
