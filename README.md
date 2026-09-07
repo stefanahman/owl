@@ -139,7 +139,7 @@ worktrees_dir: .worktrees.local  # relative to the repo root
 default_repo: ""                 # used when pr-owl starts outside a git repo
 
 agent:
-  cmd: claude --permission-mode auto   # Claude Code, with your flags; -c is appended when the worktree has a prior conversation
+  cmd: claude --permission-mode auto   # Claude Code, with your flags (e.g. --model claude-opus-5); -c is appended when the worktree has a prior conversation
   prompt: "/pr-review:pr-review {pr}"  # first prompt of a fresh review
   feedback_prompt: "Please carefully check the feedback since your last review …"  # what f sends
   link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)

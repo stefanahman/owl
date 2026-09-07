@@ -200,7 +200,7 @@ worktrees_dir: .worktrees.local  # where review worktrees go, relative to the re
 default_repo: ""                 # repo to use when pr-owl is started outside a git repo; ~ is expanded
 
 agent:
-  cmd: claude --permission-mode auto     # Claude Code, with your flags; pr-owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
+  cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); pr-owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
   prompt: "/pr-review:pr-review {pr}"    # first prompt of a fresh review; {pr} is the PR number
   feedback_prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
