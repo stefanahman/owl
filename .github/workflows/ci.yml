@@ -16,6 +16,23 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tmux
       - run: make lint
       - run: make test
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+  # Homebrew and the review popup are macOS first; the e2e test has a
+  # darwin branch of its own.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: brew install tmux
+      - run: make test
 
   # Static analysis on the current Go; the job above proves the minimum
   # in go.mod still builds and passes.
@@ -36,6 +53,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - run: npm install -g @anthropic-ai/claude-code
+      - run: npm install -g @anthropic-ai/claude-code@2.1.263 # the release the plugin was validated with
       - run: claude plugin validate ./pr-review --strict
       - run: claude plugin validate . --strict
