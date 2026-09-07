@@ -64,27 +64,27 @@ func fixturePRs() []PR {
 
 	return []PR{
 		// Todo: no review from me
-		mkPR(4116, "refactor(desktop): tighten agent surface", "mr-sandstorm", nil),
+		mkPR(3543, "add billing migration", "alice", nil),
 
-		// Waiting: I requested changes
-		mkPR(4114, "fix(report): return the assigned emission factor", "jefftrinidad29",
+		// Waiting for author: I requested changes
+		mkPR(3510, "retry on 429", "erin",
 			[]Review{mkReview("stefanahman", "CHANGES_REQUESTED")}),
 
 		// Approved: I approved
-		mkPR(4076, "fix(capture): invalidate freight data", "iggerask",
+		mkPR(3502, "bump node to 22", "dave",
 			[]Review{mkReview("stefanahman", "APPROVED")}),
 
-		// Waiting: I commented (folds into Waiting on author since COMMENTED
-		// is feedback given, ball's in author's court)
-		mkPR(4085, "feat(pipeline): streaming local", "guerillacoder",
+		// Waiting for author: I commented — feedback given, the ball is in
+		// the author's court
+		mkPR(3550, "fix retry ordering", "bob",
 			[]Review{mkReview("stefanahman", "COMMENTED")}),
 	}
 }
 
 func fixtureMerged() []PR {
 	now := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
-	p := PR{Number: 4070, Title: "chore(deps): bump lockfile", UpdatedAt: now, MergedAt: now}
-	p.Author.Login = "dependabot"
+	p := PR{Number: 3488, Title: "remove legacy flag", UpdatedAt: now, MergedAt: now}
+	p.Author.Login = "erin"
 	return []PR{p}
 }
 
@@ -128,7 +128,7 @@ func TestRendersGroupSections(t *testing.T) {
 	if bytes.Contains(out, []byte("Other")) {
 		t.Errorf("Other group should no longer appear (COMMENTED folds into Waiting on author)\n---\n%s", out)
 	}
-	for _, want := range []string{"#4116", "#4114", "#4076", "#4085"} {
+	for _, want := range []string{"#3543", "#3510", "#3502", "#3550"} {
 		if !bytes.Contains(out, []byte(want)) {
 			t.Errorf("output missing PR number %q\n---\n%s", want, out)
 		}
@@ -152,8 +152,8 @@ func TestMergedSection(t *testing.T) {
 	if !bytes.Contains(out, []byte("Merged (last")) {
 		t.Errorf("output missing merged section header\n---\n%s", out)
 	}
-	if !bytes.Contains(out, []byte("#4070")) {
-		t.Errorf("output missing merged PR #4070\n---\n%s", out)
+	if !bytes.Contains(out, []byte("#3488")) {
+		t.Errorf("output missing merged PR #3488\n---\n%s", out)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestSearchFilters(t *testing.T) {
 	// Give initial render a beat.
 	time.Sleep(100 * time.Millisecond)
 
-	// Enter search mode + type "4116", then blur so `q` quits.
-	tm.Type("/4116")
+	// Enter search mode + type "3543", then blur so `q` quits.
+	tm.Type("/3543")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	time.Sleep(100 * time.Millisecond)
@@ -182,8 +182,8 @@ func TestSearchFilters(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected final model of type model, got %T", fm)
 	}
-	if got := m.search.Value(); got != "4116" {
-		t.Fatalf("search value = %q, want %q", got, "4116")
+	if got := m.search.Value(); got != "3543" {
+		t.Fatalf("search value = %q, want %q", got, "3543")
 	}
 	rows := m.visibleRows()
 	seenPRs := map[int]bool{}
@@ -192,18 +192,18 @@ func TestSearchFilters(t *testing.T) {
 			seenPRs[r.pr.Number] = true
 		}
 	}
-	if !seenPRs[4116] {
-		t.Errorf("filtered rows missing #4116; seen=%v", seenPRs)
+	if !seenPRs[3543] {
+		t.Errorf("filtered rows missing #3543; seen=%v", seenPRs)
 	}
-	for _, gone := range []int{4114, 4076, 4085} {
+	for _, gone := range []int{3510, 3502, 3550} {
 		if seenPRs[gone] {
 			t.Errorf("filtered rows still contain non-matching #%d; seen=%v", gone, seenPRs)
 		}
 	}
 }
 
-// TestApprovedBadgeRenders locks in the #4074 fix: when I approved
-// the PR (even if I later commented on it), the ✓ badge appears.
+// TestApprovedBadgeRenders: when I approved the PR (even if I later
+// commented on it), the ✓ badge appears.
 // Non-approved-but-engaged PRs get · instead.
 func TestApprovedBadgeRenders(t *testing.T) {
 	tm := newTestModel(t)
@@ -216,11 +216,11 @@ func TestApprovedBadgeRenders(t *testing.T) {
 
 	out := readAll(t, tm.FinalOutput(t, teatest.WithFinalTimeout(2*time.Second)))
 
-	// #4076 in fixturePRs has my APPROVED review; ✓ must render on it.
+	// #3502 in fixturePRs has my APPROVED review; ✓ must render on it.
 	if !bytes.Contains(out, []byte("✓")) {
 		t.Errorf("expected ✓ badge somewhere in output (fixture includes an approved PR)\n---\n%s", out)
 	}
-	// The fixture's #4114 has my CHANGES_REQUESTED (engaged, not approved) —
+	// The fixture's #3510 has my CHANGES_REQUESTED (engaged, not approved) —
 	// dim · should show for it.
 	if !bytes.Contains(out, []byte("·")) {
 		t.Errorf("expected · badge somewhere in output (fixture includes an engaged-but-not-approved PR)\n---\n%s", out)
@@ -250,7 +250,7 @@ func TestStaleBadgeColour(t *testing.T) {
 	}
 	// A stale approval is what puts a PR under "Waiting for you": the
 	// row's status is the badge's stale flag.
-	pr := fixturePRs()[2] // #4076, approved
+	pr := fixturePRs()[2] // #3502, approved
 	pr.HeadRefOid = "b"
 	pr.Reviews[0].Commit.OID = "a"
 	if got := pr.MyReviewStatus("stefanahman"); got != StatusWaitingForYou {
@@ -378,7 +378,7 @@ func TestFocusRestoresSearch(t *testing.T) {
 
 	// Type a search then blur it (Enter). Search value persists,
 	// input loses focus.
-	tm.Type("/4116")
+	tm.Type("/3543")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	time.Sleep(50 * time.Millisecond)
 
@@ -397,8 +397,8 @@ func TestFocusRestoresSearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected final model of type model, got %T", fm)
 	}
-	if m.search.Value() != "4116" {
-		t.Fatalf("search value = %q, want 4116 (should persist)", m.search.Value())
+	if m.search.Value() != "3543" {
+		t.Fatalf("search value = %q, want 3543 (should persist)", m.search.Value())
 	}
 	if !m.search.Focused() {
 		t.Errorf("expected search to be re-focused after FocusMsg with active filter")
@@ -500,8 +500,8 @@ func TestMyReviewStatusDerivation(t *testing.T) {
 			[]Review{mkReview(me, "COMMENTED", t0)}, StatusWaitingForAuthor},
 		{"my review dismissed → Todo",
 			[]Review{mkReview(me, "DISMISSED", t0)}, StatusTodo},
-		// #4074 shape — approved then follow-up comment. No new commits
-		// since (no OIDs set → no staleness). Verdict stays APPROVED
+		// Approved, then a follow-up comment. No new commits since (no
+		// OIDs set → no staleness). Verdict stays APPROVED
 		// because COMMENTED is skipped when picking my verdict.
 		{"I approved then commented → still Approved",
 			[]Review{
@@ -526,8 +526,8 @@ func TestMyReviewStatusDerivation(t *testing.T) {
 	}
 
 	// Staleness cases — Commit.OID + HeadRefOid populated, so the
-	// stale check fires. Anchored on the #4141 shape: I engaged, author
-	// pushed after, my review's commit != head.
+	// stale check fires: I engaged, the author pushed after, my review's
+	// commit != head.
 	stale := []struct {
 		name       string
 		reviews    []Review
@@ -600,19 +600,19 @@ func TestTrimCountsRunes(t *testing.T) {
 
 func TestFindLocalForPR(t *testing.T) {
 	state := map[string]LocalState{
-		"pr-4116":               {Worktree: "/wt/pr-4116"},
-		"pr-4115-fix-something": {Worktree: "/wt/pr-4115-fix-something", Session: "pr-4115-fix-something", ClaudeState: "done"},
-		"bar-4098-unrelated":    {Worktree: "/wt/bar-4098-unrelated"},
+		"pr-3543":               {Worktree: "/wt/pr-3543"},
+		"pr-3542-fix-something": {Worktree: "/wt/pr-3542-fix-something", Session: "pr-3542-fix-something", ClaudeState: "done"},
+		"other-3498-unrelated":  {Worktree: "/wt/other-3498-unrelated"},
 	}
 
-	if ls := findLocalForPR(state, 4116); ls.Worktree == "" {
-		t.Errorf("expected exact pr-4116 match, got zero LocalState")
+	if ls := findLocalForPR(state, 3543); ls.Worktree == "" {
+		t.Errorf("expected exact pr-3543 match, got zero LocalState")
 	}
-	if ls := findLocalForPR(state, 4115); ls.Session != "pr-4115-fix-something" {
-		t.Errorf("expected prefix match on pr-4115-*, got session=%q", ls.Session)
+	if ls := findLocalForPR(state, 3542); ls.Session != "pr-3542-fix-something" {
+		t.Errorf("expected prefix match on pr-3542-*, got session=%q", ls.Session)
 	}
-	if ls := findLocalForPR(state, 4098); ls.Worktree != "" {
-		t.Errorf("expected no match for pr-4098 (only bar-4098-* branch present), got wt=%q", ls.Worktree)
+	if ls := findLocalForPR(state, 3498); ls.Worktree != "" {
+		t.Errorf("expected no match for pr-3498 (only bar-3498-* branch present), got wt=%q", ls.Worktree)
 	}
 }
 
@@ -626,13 +626,13 @@ func TestBusyState(t *testing.T) {
 	m.me = "stefanahman"
 	m.refreshList()
 	m.cursor = m.firstPRRowIndex()
-	m.busy = "opening #4116…"
+	m.busy = "opening #3543…"
 
 	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
 	if got := next.(model); got.cursor != m.cursor {
 		t.Errorf("cursor moved while busy: %d → %d", m.cursor, got.cursor)
 	}
-	if !strings.Contains(m.actionRowView(), "opening #4116…") {
+	if !strings.Contains(m.actionRowView(), "opening #3543…") {
 		t.Errorf("action row should show the busy label, got %q", m.actionRowView())
 	}
 
@@ -646,14 +646,14 @@ func TestBusyState(t *testing.T) {
 		}
 	}
 
-	opened, cmd := m.Update(openedMsg{out: "started =pr-reviews:=pr-4116"})
+	opened, cmd := m.Update(openedMsg{out: "started =pr-reviews:=pr-3543"})
 	if cmd == nil {
 		t.Fatal("a successful open should quit")
 	}
 	if _, quit := cmd().(tea.QuitMsg); !quit {
 		t.Error("a successful open should quit the popup")
 	}
-	if om := opened.(model); om.farewell != "started =pr-reviews:=pr-4116" {
+	if om := opened.(model); om.farewell != "started =pr-reviews:=pr-3543" {
 		t.Errorf("farewell = %q", om.farewell)
 	}
 
@@ -686,15 +686,15 @@ func TestGoldenFrames(t *testing.T) {
 		},
 		"sections": func(tm *teatest.TestModel) {
 			tm.Send(prsMsg(fixturePRs()))
-			tm.Send(localMsg{"pr-4116-feat": {Worktree: "/wt", Session: "pr-4116-feat", ClaudeState: "blocked"}})
+			tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Session: "pr-3543-feat", ClaudeState: "blocked"}})
 			tm.Send(mergedMsg(fixtureMerged()))
 		},
 		"search": func(tm *teatest.TestModel) {
 			tm.Send(prsMsg(fixturePRs()))
 			tm.Send(mergedMsg(nil))
 			tm.Send(tea.KeyPressMsg{Code: '/', Text: "/"})
-			tm.Send(tea.KeyPressMsg{Code: '4', Text: "4"})
-			tm.Send(tea.KeyPressMsg{Code: '1', Text: "1"})
+			tm.Send(tea.KeyPressMsg{Code: '3', Text: "3"})
+			tm.Send(tea.KeyPressMsg{Code: '5', Text: "5"})
 		},
 		"error": func(tm *teatest.TestModel) {
 			tm.Send(errMsg{errors.New("gh api graphql: HTTP 401: Bad credentials")})

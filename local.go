@@ -66,8 +66,8 @@ func (m model) fetchLocal() tea.Msg {
 // Path-based keying is primary because `pr-owl open` names its
 // worktrees `<repo>/<worktrees_dir>/pr-<N>-<slug>` and they often end
 // up in detached HEAD (no `branch refs/heads/…` line to parse). Once
-// checked out detached, branch-only matching drops them entirely — the
-// exact bug that hid PR 4115.
+// checked out detached, branch-only matching drops them entirely — a
+// review vanished from the overlay that way once.
 //
 // Failure returns nil — the TUI still renders without wt badges.
 func readWorktrees() map[string]string {

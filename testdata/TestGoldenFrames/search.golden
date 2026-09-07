@@ -1,7 +1,10 @@
 [?2026$p[?2027$p[>4m[?1049h[?25l[?2004h[?1004h[>4;2m[>1u[?u[H[2J[1mpr-owl · acme/example[m[63X[1;85H[38;5;244mupdated just now[m
-[38;5;214msearch /[m41[37;7m [m
+[38;5;214msearch /[m35[37;7m [m
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 [38;5;214;1mTodo[m
-▸ #4116           refactor(desktop): tighten agent surface (mr-sandstorm) — 2h
+▸ #3543           add billing migration (alice) — 2h
 [38;5;39;1mWaiting for author[m
-  #4114       [38;5;244m·[m [38;5;208m⚠[m fix(report): return the assigned emission factor (jefftrinidad29) — 2h[24d[38;5;241m↑/k[m [38;5;239mup[38;5;237m • [38;5;241m↓/j[m [38;5;239mdown[38;5;237m • [38;5;241mn[m [38;5;239mnext attention-needed[38;5;237m • [38;5;241m↵[m [38;5;239mopen review[38;5;237m • [38;5;241mf[m [38;5;239mcheck feedback[m [38;5;237m…[m[>4m[<1u[24;1H[?1049l[?25h[?2004l[?1004l
+  #3510       [38;5;244m·[m [38;5;208m⚠[m retry on 429 (erin) — 2h
+  #3550       [38;5;244m·[m   fix retry ordering (bob) — 2h
+[38;5;42;1mApproved[m
+  #3502       [38;5;42m✓[m   bump node to 22 (dave) — 2h[24d[38;5;241m↑/k[m [38;5;239mup[38;5;237m • [38;5;241m↓/j[m [38;5;239mdown[38;5;237m • [38;5;241mn[m [38;5;239mnext attention-needed[38;5;237m • [38;5;241m↵[m [38;5;239mopen review[38;5;237m • [38;5;241mf[m [38;5;239mcheck feedback[m [38;5;237m…[m[>4m[<1u[24;1H[?1049l[?25h[?2004l[?1004l
