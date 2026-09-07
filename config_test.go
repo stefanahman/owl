@@ -206,35 +206,6 @@ func TestLoadConfigNamesFileInErrors(t *testing.T) {
 	}
 }
 
-func TestConfigGet(t *testing.T) {
-	cfg := defaultConfig()
-	cases := map[string]string{
-		"tmux.session":      "pr-reviews\n",
-		"tmux.state_option": "@claude-state\n", // verbatim, not YAML-quoted
-		"default_repo":      "\n",
-		"links":             "[]\n",
-		"keys.quit":         "- q\n- ctrl+c\n",
-		"keys.help":         "?\n",
-		"agent.link_local":  "- .claude/settings.local.json\n- .claude/*.local.md\n- .claude/skills/*.local\n",
-		"theme":             "working: '#dbbc7f'\nblocked: \"214\"\ndone: \"42\"\n",
-	}
-	for key, want := range cases {
-		got, err := configGet(cfg, key)
-		if err != nil {
-			t.Errorf("%s: %v", key, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("%s = %q, want %q", key, got, want)
-		}
-	}
-	for _, key := range []string{"nope", "tmux.nope", "tmux.session.deeper", ""} {
-		if _, err := configGet(cfg, key); err == nil {
-			t.Errorf("%q: expected an error", key)
-		}
-	}
-}
-
 func TestConfigInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "config.yaml")
 	t.Setenv("PR_OWL_CONFIG", path)

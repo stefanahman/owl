@@ -1343,7 +1343,7 @@ func versionString() string {
 const usage = `usage: pr-owl                          PR overview TUI (run inside a git repo)
        pr-owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
        pr-owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
-       pr-owl config init | path | get <key>
+       pr-owl config init | path
        pr-owl --version`
 
 // usageError is a bad invocation: the message is printed with the

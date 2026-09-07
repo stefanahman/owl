@@ -158,7 +158,7 @@ func validateBindings(k KeysConfig, links []LinkConfig) error {
 }
 
 // keyNames is one key name or a list of them: `quit: q` or
-// `quit: [q, ctrl+c]`. A single name round-trips as a scalar.
+// `quit: [q, ctrl+c]`.
 type keyNames []string
 
 func (k *keyNames) UnmarshalYAML(n *yaml.Node) error {
@@ -176,13 +176,6 @@ func (k *keyNames) UnmarshalYAML(n *yaml.Node) error {
 	}
 	*k = list
 	return nil
-}
-
-func (k keyNames) MarshalYAML() (any, error) {
-	if len(k) == 1 {
-		return k[0], nil
-	}
-	return []string(k), nil
 }
 
 // configTemplate is what `pr-owl config init` writes. It is the
@@ -406,11 +399,11 @@ func expandHome(p string) string {
 	return p
 }
 
-// runConfig implements `pr-owl config init | path | get <key>`,
-// writing results to w.
+// runConfig implements `pr-owl config init | path`, writing results
+// to w.
 func runConfig(args []string, w io.Writer) error {
 	if len(args) == 0 {
-		return usageError("config: expected init, path or get <key>")
+		return usageError("config: expected init or path")
 	}
 	switch args[0] {
 	case "path":
@@ -436,61 +429,6 @@ func runConfig(args []string, w io.Writer) error {
 		}
 		fmt.Fprintln(w, path)
 		return nil
-	case "get":
-		if len(args) != 2 {
-			return usageError("config get: expected one key, e.g. tmux.session")
-		}
-		cfg, err := loadConfig()
-		if err != nil {
-			return err
-		}
-		out, err := configGet(cfg, args[1])
-		if err != nil {
-			return err
-		}
-		fmt.Fprint(w, out)
-		return nil
 	}
 	return usageError("config: unknown subcommand " + args[0])
-}
-
-// configGet renders the value at a dotted key: a scalar verbatim plus
-// newline (so shell `$(pr-owl config get default_repo)` gets the raw
-// string), anything nested as YAML. Walks the YAML form of the config
-// so the keys are the ones in the file, not the Go field names.
-func configGet(cfg Config, key string) (string, error) {
-	raw, err := yaml.Marshal(cfg)
-	if err != nil {
-		return "", err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return "", err
-	}
-	node := doc.Content[0]
-	for _, part := range strings.Split(key, ".") {
-		node = mappingValue(node, part)
-		if node == nil {
-			return "", fmt.Errorf("no such key: %s", key)
-		}
-	}
-	if node.Kind == yaml.ScalarNode {
-		return node.Value + "\n", nil
-	}
-	out, err := yaml.Marshal(node)
-	return string(out), err
-}
-
-// mappingValue returns the value node for key in a mapping node, or
-// nil when n isn't a mapping or has no such key.
-func mappingValue(n *yaml.Node, key string) *yaml.Node {
-	if n.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i+1]
-		}
-	}
-	return nil
 }

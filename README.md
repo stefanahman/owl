@@ -69,7 +69,7 @@ a plain terminal — set `on_open: switch` or `stay` so the TUI doesn't
 quit after opening a review; `switch` moves your tmux client straight
 to the review session.
 
-Two companions:
+Three companions, each optional:
 
 - [tmux-claude-status](https://github.com/stefanahman/tmux-claude-status)
   writes the `©` state pr-owl shows (and puts the same chips in your
@@ -80,6 +80,11 @@ Two companions:
   `/plugin marketplace add stefanahman/pr-owl`, then
   `/plugin install pr-review@pr-owl`. Without it, set `agent.prompt` to
   the first prompt a review should start with.
+- [tmux-spaces](https://github.com/stefanahman/tmux-spaces) keeps the
+  review session in one terminal window on its own desktop space and
+  opens the popup from a hotkey anywhere (macOS, yabai, Ghostty);
+  `hooks.after_open: tmux-spaces focus pr-reviews` brings that window
+  to the front after every open.
 
 ## Keys
 
@@ -105,7 +110,7 @@ Every key is rebindable, and `links` add your own (below).
 pr-owl                          the TUI
 pr-owl open <N> [--prompt TEXT] open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 pr-owl close [--force] [<N>]    remove the worktree, branch and window; N is inferred from inside a workspace; --force discards uncommitted changes
-pr-owl config init | path | get <key>
+pr-owl config init | path
 ```
 
 `open` is idempotent: it creates what is missing and selects the
@@ -179,12 +184,9 @@ Link placeholders: `{pr}`, `{repo}` (owner/name), `{branch}`, `{url}`
 
 Two hooks, two layers: `on_open` is what the TUI itself does;
 `hooks.after_open` is a shell command run after *every* `open` (TUI or
-CLI), where window-manager glue goes. See
-[contrib/macos](contrib/macos/README.md) for the yabai + Ghostty setup
-that keeps every review in one terminal window on its own space, with
-a hotkey that reaches the popup from anywhere — entirely optional; the
-review session is a normal tmux session you can attach to or switch to
-from anywhere.
+CLI), where window-manager glue goes — `tmux-spaces focus pr-reviews`,
+for one. The review session is a normal tmux session you can attach to
+or switch to from anywhere.
 
 ## The workspace model
 
@@ -205,7 +207,7 @@ repo, so keep one repo per review session.
 
 ```sh
 make test               # go test ./... — the open/close tests need tmux
-make lint               # gofmt, go vet, shellcheck
+make lint               # gofmt, go vet
 make update-snapshots   # after a deliberate UI change: golden frames + screen snapshots
 PR_OWL_SMOKE=1 go test -run TestFetchSmoke .   # against your real gh, from a repo checkout
 ```
