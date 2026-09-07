@@ -61,6 +61,49 @@ func TestScreen(t *testing.T) {
 	}
 }
 
+// TestOpenFromTheTUI presses Enter on the first PR: the binary runs
+// its own `open`, which fetches the PR into a worktree, creates the
+// review window on the private tmux server and — on_open: quit — ends
+// the TUI with the child's summary printed.
+func TestOpenFromTheTUI(t *testing.T) {
+	root := t.TempDir()
+	bin := buildBinary(t, root)
+	repo := fixtureRepo(t, root)
+	fakeGH(t, root)
+	env := hermeticEnv(t, root)
+
+	term, err := vttest.NewTerminal(t, 120, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer term.Close()
+	cmd := exec.Command(bin)
+	cmd.Dir = repo
+	cmd.Env = env
+	if err := term.Start(cmd); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, term, "Waiting for author")
+	term.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
+	waitFor(t, term, "opening #3543")
+	if err := term.Wait(cmd); err != nil {
+		t.Fatalf("pr-owl exited with %v:\n%s", err, screenText(term))
+	}
+	if !strings.Contains(screenText(term), "started =pr-reviews:=pr-3543-add-billing-migration") {
+		t.Errorf("no farewell on screen:\n%s", screenText(term))
+	}
+	wt := filepath.Join(repo, ".worktrees.local", "pr-3543-add-billing-migration")
+	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
+		t.Errorf("worktree not created: %v", err)
+	}
+	tmux := exec.Command("tmux", "list-windows", "-t", "=pr-reviews", "-F", "#{window_name}")
+	tmux.Env = env
+	out, err := tmux.Output()
+	if err != nil || !strings.Contains(string(out), "pr-3543-add-billing-migration") {
+		t.Errorf("review window missing: %v %q", err, out)
+	}
+}
+
 // buildBinary compiles pr-owl once into root.
 func buildBinary(t *testing.T, root string) string {
 	t.Helper()
@@ -72,20 +115,46 @@ func buildBinary(t *testing.T, root string) string {
 	return bin
 }
 
-// fixtureRepo is a git repo with a GitHub-looking origin, so
-// currentRepo resolves acme/app without any network.
+// fixtureRepo is a clone whose origin is named like a GitHub repo (so
+// currentRepo resolves acme/app) but fetches, through an insteadOf
+// rule, from a local repository that has refs/pull/3543/head — so
+// `open` works without any network.
 func fixtureRepo(t *testing.T, root string) string {
 	t.Helper()
+	origin := filepath.Join(root, "origin")
 	repo := filepath.Join(root, "repo")
 	for _, args := range [][]string{
-		{"init", "-q", repo},
+		{"init", "-q", "-b", "main", origin},
+		{"-C", origin, "commit", "-q", "--allow-empty", "-m", "init"},
+		{"-C", origin, "commit", "-q", "--allow-empty", "-m", "PR 3543"},
+		{"-C", origin, "update-ref", "refs/pull/3543/head", "HEAD"},
+		{"init", "-q", "-b", "main", repo},
+		{"-C", repo, "commit", "-q", "--allow-empty", "-m", "init"},
 		{"-C", repo, "remote", "add", "origin", "git@github.com:acme/app.git"},
+		{"-C", repo, "config", "url." + origin + ".insteadOf", "git@github.com:acme/app.git"},
 	} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		cmd := exec.Command("git", args...)
+		cmd.Env = gitEnv(root)
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
 	return repo
+}
+
+// gitEnv isolates git from the developer's configuration (signing,
+// identity) for both the fixture and the binary under test. Built from
+// scratch, not from os.Environ(): the developer's TERM/COLORTERM would
+// change what the binary renders.
+func gitEnv(root string) []string {
+	return []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + root,
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=owl", "GIT_AUTHOR_EMAIL=owl@example.test",
+		"GIT_COMMITTER_NAME=owl", "GIT_COMMITTER_EMAIL=owl@example.test",
+	}
 }
 
 // fakeGH serves the three gh calls the TUI makes. The GraphQL fixture
@@ -134,6 +203,7 @@ case "$1 $2" in
   "api graphql") cat "$(dirname "$0")/graphql.json" ;;
   "pr list") echo '[]' ;;
   "api user") echo stefanahman ;;
+  "pr view") echo "Add Billing Migration" ;;
   *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
 esac
 `
@@ -148,27 +218,51 @@ esac
 func hermeticEnv(t *testing.T, root string) []string {
 	t.Helper()
 	cfg := filepath.Join(root, "config.yaml")
-	link := "links:\n  - key: l\n    name: Linear\n    pattern: 'PROJ-\\d+'\n    url: https://linear.app/acme/issue/{id}\n"
-	if err := os.WriteFile(cfg, []byte(link), 0o644); err != nil {
+	config := "agent:\n  cmd: \"true\"\nlinks:\n  - key: l\n    name: Linear\n    pattern: 'PROJ-\\d+'\n    url: https://linear.app/acme/issue/{id}\n"
+	if err := os.WriteFile(cfg, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
-	env := []string{
-		"PATH=" + path,
-		"HOME=" + root,
+	env := append(gitEnv(root)[1:], // PATH: the fake gh first
+		"PATH="+path,
 		// 256 colours, not truecolor: vttest compares snapshots after a
 		// JSON round-trip, and only indexed colours survive it losslessly.
 		"TERM=xterm-256color",
 		"LANG=en_US.UTF-8",
-		"PR_OWL_CONFIG=" + cfg,
-		"XDG_CACHE_HOME=" + filepath.Join(root, "cache"),
-		"CLAUDE_CONFIG_DIR=" + filepath.Join(root, "claude"),
-		"TMUX_TMPDIR=" + filepath.Join(root, "notmux"),
-	}
+		"PR_OWL_CONFIG="+cfg,
+		"XDG_CACHE_HOME="+filepath.Join(root, "cache"),
+		"CLAUDE_CONFIG_DIR="+filepath.Join(root, "claude"),
+		"TMUX_TMPDIR="+privateTmux(t, root),
+		"TMUX=",
+		"HISTFILE=",
+	)
 	if runtime.GOOS == "darwin" {
 		env = append(env, "TMPDIR="+root)
 	}
 	return env
+}
+
+// privateTmux starts a tmux server of its own for the binary under
+// test: /bin/sh windows, no exit when empty, its own short socket dir.
+func privateTmux(t *testing.T, root string) string {
+	t.Helper()
+	sockDir, err := os.MkdirTemp("", "pr-owl-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+	conf := filepath.Join(sockDir, "tmux.conf")
+	if err := os.WriteFile(conf, []byte("set -g default-shell /bin/sh\nset -s exit-empty off\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := exec.Command("tmux", "-L", "default", "-f", conf, "start-server")
+	start.Env = append(os.Environ(), "TMUX_TMPDIR="+sockDir, "TMUX=")
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("tmux start-server: %v\n%s", err, out)
+	}
+	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
+	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
+	return sockDir
 }
 
 // waitFor polls the screen until want is visible.
