@@ -536,19 +536,27 @@ func TestCloseInfersThePRFromTheCwd(t *testing.T) {
 	}
 }
 
-func TestCloseFindsTheRepoThroughTheWindow(t *testing.T) {
+func TestCloseActsOnTheCurrentRepo(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	f.open("42")
 	name := "pr-42-fix-crash-on-startup"
 	f.waitPane(name, "true")
 
-	t.Chdir(f.root) // not a repo
+	// Outside any repo there is nothing to act on — the review window's
+	// own directory is not consulted (a shell that cd'd elsewhere would
+	// point close at another repo's pr-42 branches).
+	t.Chdir(f.root)
+	err := runClose(f.cfg, []string{"42"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "not inside a git repository") {
+		t.Fatalf("close outside a repo: %v, want a refusal", err)
+	}
+	if !f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("the refusal removed the worktree")
+	}
+	t.Chdir(f.repo)
 	if err := runClose(f.cfg, []string{"42"}, io.Discard); err != nil {
 		t.Fatal(err)
-	}
-	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
-		t.Error("worktree survived close")
 	}
 }
 

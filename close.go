@@ -3,7 +3,8 @@
 // and the agent's conversation on disk all survive — `open` resumes
 // it. Uncommitted changes to tracked files stop it unless --force.
 // With no number, N is inferred from the current worktree, branch, or
-// tmux window, so it can be run from inside the review itself.
+// tmux window, so it can be run from inside the review itself. Like
+// open, it acts on the repository of the working directory.
 package main
 
 import (
@@ -53,9 +54,9 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 
 	session := cfg.Tmux.Session
 	window := findReviewWindow(session, n)
-	repo, err := closeRepo(session, window)
+	repo, err := mainRepo(".")
 	if err != nil {
-		return err
+		return fmt.Errorf("close: not inside a git repository (default_repo makes pr-owl work from anywhere)")
 	}
 	wt := findReviewWorktree(repo, cfg.WorktreesDir, n)
 	branches := reviewBranches(repo, n)
@@ -138,23 +139,6 @@ func inferPR(worktreesDir string) (int, error) {
 		}
 	}
 	return 0, usageError("close: PR number required (or run it from inside a pr-<N> worktree or window)")
-}
-
-// closeRepo locates the main repo: from the review window's pane cwd
-// when there is one (works from any directory), else from the caller's.
-func closeRepo(session, window string) (string, error) {
-	if window != "" {
-		if dir, err := tmux("display-message", "-p", "-t", tmuxTarget(session, window), "#{pane_current_path}"); err == nil && dir != "" {
-			if repo, err := mainRepo(dir); err == nil {
-				return repo, nil
-			}
-		}
-	}
-	repo, err := mainRepo(".")
-	if err != nil {
-		return "", fmt.Errorf("not inside a git repository, and no review window to derive it from")
-	}
-	return repo, nil
 }
 
 // findReviewWorktree returns the registered worktree for PR n under

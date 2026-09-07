@@ -111,7 +111,7 @@ Every key is rebindable, and `links` add your own (below).
 ```
 pr-owl                          the TUI
 pr-owl open <N> [--prompt TEXT] open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
-pr-owl close [--force] [<N>]    remove the worktree, branch and window; N is inferred from inside a workspace; --force discards uncommitted changes
+pr-owl close [--force] [<N>]    remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
 pr-owl config init | path
 ```
 
