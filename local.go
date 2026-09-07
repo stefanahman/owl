@@ -14,18 +14,16 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// claudeStateOption is the tmux window option tmux-claude-status
+// writes Claude's state to — the contract between the two tools.
+const claudeStateOption = "@claude-state"
+
 // LocalState is the per-PR overlay: does a worktree exist? A tmux
 // window (in the review session) with a Claude conversation? What
 // state did the last Claude hook write?
-//
-// `Session` is retained as the field name for backwards-compat with
-// existing pr-owl consumers (badges, guards for `f` / `c`); its value
-// under the consolidated model is the tmux window NAME within the
-// review session — semantically "does a review workspace exist for
-// this PR", just physically now a window instead of a session.
 type LocalState struct {
 	Worktree    string // absolute path to the worktree; "" if none
-	Session     string // <tmux.session>:<window> exists → window name; "" if none
+	Session     string // the review window's name when one exists (a workspace is a window of tmux.session); "" if none
 	ClaudeState string // "working" | "blocked" | "done" | "idle" | "" (absent)
 }
 
@@ -85,15 +83,14 @@ func readWorktrees() map[string]string {
 }
 
 // readReviewWindows lists the windows of the review session with the
-// value of the state option (`#{@claude-state}` by default) into a
-// map. tmux-claude-status writes that window option from Claude Code's
-// hooks: working / blocked / done / idle. Absent value → empty string
-// (fresh window).
+// value of the state option into a map. tmux-claude-status writes that
+// window option from Claude Code's hooks: working / blocked / done /
+// idle. Absent value → empty string (fresh window).
 //
 // Only windows of the review session — other tmux sessions aren't PR
 // reviews and don't belong in this overlay.
 func readReviewWindows(t TmuxConfig) map[string]string {
-	format := "#{window_name}\t#{" + t.StateOption + "}"
+	format := "#{window_name}\t#{" + claudeStateOption + "}"
 	out, err := tmux("list-windows", "-t", tmuxTarget(t.Session, ""), "-F", format)
 	if err != nil {
 		return nil // review session doesn't exist yet — treat as empty

@@ -138,7 +138,6 @@ key is optional.
 tmux:
   session: pr-reviews            # one window per review lives here
   keepalive_window: scratch      # keeps the session alive with no reviews open
-  state_option: "@claude-state"  # window option written by tmux-claude-status
 
 remote: origin                   # the GitHub remote: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # relative to the repo root

@@ -38,7 +38,6 @@ type Config struct {
 type TmuxConfig struct {
 	Session         string `yaml:"session"`
 	KeepaliveWindow string `yaml:"keepalive_window"`
-	StateOption     string `yaml:"state_option"`
 }
 
 type AgentConfig struct {
@@ -186,7 +185,6 @@ const configTemplate = `# pr-owl configuration. Every key is optional; these are
 tmux:
   session: pr-reviews            # session that holds one window per review
   keepalive_window: scratch      # window that keeps the session alive with no reviews open
-  state_option: "@claude-state"  # window option written by tmux-claude-status
 
 remote: origin                   # git remote of the GitHub repo: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root (added to .git/info/exclude)
@@ -244,7 +242,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 
 func defaultConfig() Config {
 	var c Config
-	c.Tmux = TmuxConfig{Session: "pr-reviews", KeepaliveWindow: "scratch", StateOption: "@claude-state"}
+	c.Tmux = TmuxConfig{Session: "pr-reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
@@ -329,7 +327,6 @@ func (cfg *Config) validate() error {
 	required := []struct{ name, value string }{
 		{"tmux.session", cfg.Tmux.Session},
 		{"tmux.keepalive_window", cfg.Tmux.KeepaliveWindow},
-		{"tmux.state_option", cfg.Tmux.StateOption},
 		{"remote", cfg.Remote},
 		{"worktrees_dir", cfg.WorktreesDir},
 		{"agent.cmd", cfg.Agent.Cmd},
