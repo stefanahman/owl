@@ -1027,19 +1027,22 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	if row.pr.IsDraft {
 		draft = styleDraft.Render(" [draft]")
 	}
+	// The age sits in a three-cell column before the title, where the
+	// eye already is; after a long title it landed far to the right.
+	// Merged rows show the merge age — the section says merged.
 	age := relativeAge(row.pr.UpdatedAt)
 	if row.merged {
-		age = "merged " + relativeAge(row.pr.MergedAt)
+		age = relativeAge(row.pr.MergedAt)
 	}
 	return fmt.Sprintf(
-		"%s#%-5d %s %s%s (%s) — %s",
+		"%s#%-5d %s %s  %s%s (%s)",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
+		styleDim.Render(fmt.Sprintf("%3s", age)),
 		trim(row.pr.Title, 70),
 		draft,
 		row.pr.Author.Login,
-		age,
 	)
 }
 
@@ -1333,7 +1336,8 @@ func trim(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// relativeAge formats an RFC3339 timestamp as "5m", "3h", "2d", or "3w".
+// relativeAge formats an RFC3339 timestamp as "now", "5m", "3h", "2d"
+// or "3w" — three cells at most.
 func relativeAge(iso string) string {
 	t, err := time.Parse(time.RFC3339, iso)
 	if err != nil {
@@ -1342,7 +1346,7 @@ func relativeAge(iso string) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return "just now"
+		return "now"
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:

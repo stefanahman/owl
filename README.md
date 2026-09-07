@@ -10,16 +10,16 @@ pr-owl · acme/app                                           updated just now
 5 open · 1 todo · 1 you · 2 author · 1 approved · 1 merged (1d)
 ────────────────────────────────────────────────────────────────────────────
 Todo
-▸ #3543  ⎇ ©*     add billing migration (alice) — 2h
+▸ #3543  ⎇ ©*      2h  add billing migration (alice)
 Waiting for you
-  #3491  ⎇ ©  ·   split ingestion worker (carol) — 1d
+  #3491  ⎇ ©  ·    1d  split ingestion worker (carol)
 Waiting for author
-  #3510       · ⚠ retry on 429 (erin) — 8h
-  #3550       ·   fix retry ordering (bob) — 5h
+  #3510       · ⚠  8h  retry on 429 (erin)
+  #3550       ·    5h  fix retry ordering (bob)
 Approved
-  #3502       ✓   bump node to 22 (dave) — 3d
+  #3502       ✓    3d  bump node to 22 (dave)
 Merged (last 1d)
-  #3488           remove legacy flag (erin) — merged 6h
+  #3488            6h  remove legacy flag (erin)
 ```
 
 - Rows are grouped by **where you sit on the PR** — todo, waiting for
