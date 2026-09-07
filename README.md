@@ -6,17 +6,20 @@ Claude Code reviewing inside it. Run it in a shell, or bind it to a
 tmux popup so it's one keystroke away from any session.
 
 ```
- acme/app · 3 todo · 1 waiting for you · 2 approved      updated 40s ago
-
- Todo
-▸ #3543  ⎇  ©*  ✓  ⚠   add billing migration            alice     2h
-  #3550                 fix retry ordering               bob       5h
- Waiting for you
-  #3491  ⎇  ©      ·   split ingestion worker           carol     1d
- Approved
-  #3502      ✓         bump node to 22                  dave      3d
- Merged (last 24h)
-  #3488                 remove legacy flag               erin      merged 6h
+pr-owl · acme/app                                           updated just now
+5 open · 1 todo · 1 you · 2 author · 1 approved · 1 merged (1d)
+────────────────────────────────────────────────────────────────────────────
+Todo
+▸ #3543  ⎇ ©*     add billing migration (alice) — 2h
+Waiting for you
+  #3491  ⎇ ©  ·   split ingestion worker (carol) — 1d
+Waiting for author
+  #3510       · ⚠ retry on 429 (erin) — 8h
+  #3550       ·   fix retry ordering (bob) — 5h
+Approved
+  #3502       ✓   bump node to 22 (dave) — 3d
+Merged (last 1d)
+  #3488           remove legacy flag (erin) — merged 6h
 ```
 
 - Rows are grouped by **where you sit on the PR** — todo, waiting for
@@ -64,10 +67,9 @@ bind r display-popup -E -w 88% -h 84% pr-owl
 ```
 
 (tmux runs that with the server's PATH — give the absolute path if
-`pr-owl` isn't on it.) Without a popup — pr-owl in a tmux window, or in
-a plain terminal — set `on_open: switch` or `stay` so the TUI doesn't
-quit after opening a review; `switch` moves your tmux client straight
-to the review session.
+`pr-owl` isn't on it.) Without a popup, set `on_open` so the TUI doesn't
+quit after opening a review: `switch` in a tmux window (it moves your
+client to the review session), `stay` in a plain terminal.
 
 Three companions, each optional:
 
@@ -91,7 +93,7 @@ Three companions, each optional:
 | key | action |
 |---|---|
 | `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped |
-| `n` | jump to the next PR that needs you (Claude blocked or done) |
+| `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
 | `↵` | open (or focus) the review workspace; then `on_open` |
 | `f` | send the check-feedback prompt to the PR's Claude session; then `on_open` |
 | `o` | open the PR in the browser |
@@ -180,6 +182,12 @@ links:                           # your own keys, each opening a URL built from 
 
 Link placeholders: `{pr}`, `{repo}` (owner/name), `{branch}`, `{url}`
 (the PR page) and `{id}`.
+
+The default `agent.cmd` runs Claude with `--permission-mode auto` inside
+a checkout the PR's author controls, and `link_local` never replaces a
+file the PR ships under the same name — so a PR's own `.claude/` is
+what the agent starts with. Read that part of the diff first when it
+matters.
 
 Two hooks, two layers: `on_open` is what the TUI itself does;
 `hooks.after_open` is a shell command run after *every* `open` (TUI or
