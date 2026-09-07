@@ -227,6 +227,37 @@ func TestApprovedBadgeRenders(t *testing.T) {
 	}
 }
 
+// TestStaleBadgeColour: the glyph says what I did, the colour whether
+// it still covers the head — a review on an older commit renders in
+// the stale style, whatever its verdict.
+func TestStaleBadgeColour(t *testing.T) {
+	cases := []struct {
+		name                     string
+		approved, engaged, stale bool
+		want                     string
+	}{
+		{"approved, covers head", true, true, false, styleApproved.Render("✓")},
+		{"approved, head moved", true, true, true, styleReviewStale.Render("✓")},
+		{"engaged, covers head", false, true, false, styleDim.Render("·")},
+		{"engaged, head moved", false, true, true, styleReviewStale.Render("·")},
+		{"no review", false, false, false, " "},
+	}
+	for _, c := range cases {
+		got := badges(LocalState{}, c.approved, c.engaged, c.stale, false)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: badges = %q, want it to contain %q", c.name, got, c.want)
+		}
+	}
+	// A stale approval is what puts a PR under "Waiting for you": the
+	// row's status is the badge's stale flag.
+	pr := fixturePRs()[2] // #4076, approved
+	pr.HeadRefOid = "b"
+	pr.Reviews[0].Commit.OID = "a"
+	if got := pr.MyReviewStatus("stefanahman"); got != StatusWaitingForYou {
+		t.Errorf("approval on an older commit: status = %v, want waiting for you", got)
+	}
+}
+
 // TestCleanupGuardSkipsPRWithoutLocal verifies the guard at handleKey:
 // pressing `c` on a PR with no worktree AND no tmux session doesn't
 // fire pr-review-done (which would fail with "no such worktree" and

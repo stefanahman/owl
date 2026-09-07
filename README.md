@@ -26,7 +26,8 @@ tmux popup so it's one keystroke away from any session.
 - `⎇` a worktree exists for it, `©` a Claude session is running in its
   tmux window — coloured by what Claude is doing (working / blocked on
   you / done, with `*` until you look) — `✓` you approved, `·` you
-  engaged, `⚠` someone requested changes.
+  engaged (both amber when the author pushed after that review), `⚠`
+  someone requested changes.
 - **Enter** opens the review: `pr-owl open` fetches the PR into
   `<repo>/.worktrees.local/pr-<N>-<slug>`, creates a window in the
   `pr-reviews` tmux session and starts Claude there with the
@@ -42,14 +43,17 @@ hosts are not supported.
 ## Install
 
 ```sh
-go install github.com/stefanahman/pr-owl@latest
+brew install --cask stefanahman/tap/pr-owl        # macOS
+go install github.com/stefanahman/pr-owl@latest   # anywhere with Go 1.25
 ```
 
-or from a checkout, `make install BIN=~/.local/bin`. Needs git, an
-authenticated `gh`, tmux (any version for `open` and `close`, ≥ 3.2 for
-the popup) and [Claude Code](https://docs.claude.com/en/docs/claude-code),
-the agent `open` starts and resumes. Go 1.25 to build. Linux: `xdg-open`
-for `o`; `y` copies through OSC 52, which most terminals support.
+Prebuilt binaries for macOS and Linux (amd64, arm64) are on the
+[releases page](https://github.com/stefanahman/pr-owl/releases); from a
+checkout, `make install BIN=~/.local/bin`. Needs git, an authenticated
+`gh`, tmux (any version for `open` and `close`, ≥ 3.2 for the popup) and
+[Claude Code](https://docs.claude.com/en/docs/claude-code), the agent
+`open` starts and resumes. Linux: `xdg-open` for `o`; `y` copies through
+OSC 52, which most terminals support.
 
 `pr-owl` opens the TUI for the repo of the current directory; set
 `default_repo` in the config to launch it from anywhere. To have it a

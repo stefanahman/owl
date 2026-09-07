@@ -159,6 +159,7 @@ var (
 	styleWorktree      = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))  // blue    ⎇  worktree present
 	styleClaudeNeutral = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // gray    ©  session exists, no state (fresh window)
 	styleApproved      = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // green   ✓  I approved (current verdict)
+	styleReviewStale   = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // amber   ✓ or ·  my review predates the head
 	styleChangesReqd   = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // orange  ⚠  any reviewer requested changes
 	styleDim           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	styleHeader        = lipgloss.NewStyle().Bold(true)
@@ -966,7 +967,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		"%s#%-5d %s %s%s (%s) — %s",
 		cursor,
 		row.pr.Number,
-		badges(local, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.pr.HasChangesRequested()),
+		badges(local, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
 		trim(row.pr.Title, 70),
 		draft,
 		row.pr.Author.Login,
@@ -1072,6 +1073,7 @@ func (m model) helpModalView() string {
 		fmt.Sprintf("  %s   Claude session — no state set (fresh window)", styleClaudeNeutral.Render("©")),
 		fmt.Sprintf("  %s   I approved this PR (current verdict)", styleApproved.Render("✓")),
 		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
+		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
 		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
 	)
 
@@ -1172,11 +1174,14 @@ func (m model) render() string {
 //	              ©   gray   = session exists, no state set (fresh window)
 //	Slot 3  ✓   I approved (green) — my current verdict is APPROVED
 //	            ·  engaged (dim) — I commented/CR'd but did not approve
+//	            either in amber when the author pushed after that review:
+//	            the glyph is what I did, the colour whether it still
+//	            covers the head (same grammar as the © slot)
 //	Slot 4  ⚠   any reviewer currently requesting changes (PR blocked)
 //
 // Absent = single space so column alignment stays. Slot 2 is always
 // 2 cells wide (glyph + `*`|space) because of the unread marker.
-func badges(ls LocalState, iApproved, iEngaged, hasCR bool) string {
+func badges(ls LocalState, iApproved, iEngaged, stale, hasCR bool) string {
 	var parts []string
 
 	if ls.Worktree != "" {
@@ -1204,8 +1209,12 @@ func badges(ls LocalState, iApproved, iEngaged, hasCR bool) string {
 	}
 
 	switch {
+	case iApproved && stale:
+		parts = append(parts, styleReviewStale.Render("✓"))
 	case iApproved:
 		parts = append(parts, styleApproved.Render("✓"))
+	case iEngaged && stale:
+		parts = append(parts, styleReviewStale.Render("·"))
 	case iEngaged:
 		parts = append(parts, styleDim.Render("·"))
 	default:
