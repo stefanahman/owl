@@ -288,7 +288,9 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	// doesn't reject). Digit-only filtering lives upstream in
 	// handleKey — non-digit runes are dropped before reaching textinput.
 
-	sp := spinner.New()
+	// The braille spinner: the default |/-\ bar is one thin cell that
+	// barely reads as motion in a row.
+	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	sp.Style = styleDim
 
 	m := model{
