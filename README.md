@@ -36,7 +36,8 @@ tmux popup so it's one keystroke away from any session.
   the workspace: worktree, branch and window go; the conversation on
   disk stays, so the next Enter resumes it.
 
-GitHub only — everything goes through `gh`.
+GitHub.com only — everything goes through `gh`; GitHub Enterprise
+hosts are not supported.
 
 ## Install
 
@@ -45,9 +46,10 @@ go install github.com/stefanahman/pr-owl@latest
 ```
 
 or from a checkout, `make install BIN=~/.local/bin`. Needs git, an
-authenticated `gh`, and tmux ≥ 3.2 (only for the popup; `open` itself
-works with any tmux). Go 1.25 to build. Linux: `xdg-open` for `o`,
-xclip/xsel/wl-clipboard for `y`.
+authenticated `gh`, tmux (any version for `open` and `close`, ≥ 3.2 for
+the popup) and [Claude Code](https://docs.claude.com/en/docs/claude-code),
+the agent `open` starts and resumes. Go 1.25 to build. Linux: `xdg-open`
+for `o`; `y` copies through OSC 52, which most terminals support.
 
 `pr-owl` opens the TUI for the repo of the current directory; set
 `default_repo` in the config to launch it from anywhere. To have it a
@@ -63,15 +65,17 @@ a plain terminal — set `on_open: switch` or `stay` so the TUI doesn't
 quit after opening a review; `switch` moves your tmux client straight
 to the review session.
 
-Two optional companions:
+Two companions:
 
 - [tmux-claude-status](https://github.com/stefanahman/tmux-claude-status)
   writes the `©` state pr-owl shows (and puts the same chips in your
-  status bar). Without it the badge only says "a session exists".
-- [pr-review](pr-review/README.md), the Claude Code plugin with the
-  review skill the workspace starts with:
+  status bar). Optional: without it the badge only says "a session
+  exists".
+- [pr-review](pr-review/README.md), the Claude Code plugin whose review
+  skill is the default `agent.prompt` of a fresh workspace:
   `/plugin marketplace add stefanahman/pr-owl`, then
-  `/plugin install pr-review@pr-owl`.
+  `/plugin install pr-review@pr-owl`. Without it, set `agent.prompt` to
+  the first prompt a review should start with.
 
 ## Keys
 
@@ -131,7 +135,7 @@ worktrees_dir: .worktrees.local  # relative to the repo root
 default_repo: ""                 # used when pr-owl starts outside a git repo
 
 agent:
-  cmd: claude --permission-mode auto   # -c is appended when the worktree has a prior conversation
+  cmd: claude --permission-mode auto   # Claude Code, with your flags; -c is appended when the worktree has a prior conversation
   prompt: "/pr-review:pr-review {pr}"  # first prompt of a fresh review
   feedback_prompt: "Please carefully check the feedback since your last review …"  # what f sends
   link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)
@@ -187,7 +191,10 @@ from anywhere.
 
 Re-running `open` never re-fetches: the worktree is yours once it
 exists. When the author pushes, `git pull origin pull/<N>/head` inside
-it.
+it (`origin`, or the `remote` you configured). pr-owl works on one repo
+at a time — the working directory's, or `default_repo` — and the review
+session is one per machine; window names carry the PR number, not the
+repo, so keep one repo per review session.
 
 ## Hacking
 
