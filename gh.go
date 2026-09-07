@@ -259,8 +259,8 @@ func currentUser() string {
 // self-comments on your own PRs put them in `reviewed-by:@me`.
 const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 
-// fetchPRs returns the list of open PRs in the current repo where you
-// are or were a reviewer (per prSearchQuery).
+// fetchPRs returns the open PRs in the current repo where you are or
+// were a reviewer (per prSearchQuery).
 //
 // Uses the GitHub GraphQL API (via `gh api graphql`) rather than
 // `gh pr list --json` because the latter returns each review's
@@ -268,44 +268,18 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 // detect stale reviews (my review is on a different commit than the
 // current head, so re-review is needed). GraphQL populates them.
 //
-// Why two sub-queries in one call: GitHub's search API doesn't accept
-// AND/OR between qualifiers — `review-requested:@me OR reviewed-by:@me`
-// returns zero regardless of parentheses or literal usernames (verified,
-// see GitHub Community discussion #181066). `gh pr list --search`
-// wasn't hitting the search API — it lists all pulls and applies OR
-// client-side — but that path doesn't populate commit.oid.
-//
-// Fix: one GraphQL request with TWO aliased `search` fields —
-// `requested` and `reviewed` — executed server-side, returned under
-// their alias keys. One HTTP round-trip, dedupe in Go by PR number.
-// Standard GraphQL alias pattern (graphql.org/learn/queries).
-//
-// Scope: repo (owner/name, from currentRepo) becomes a `repo:` filter
-// on both searches.
+// The search type is ISSUE_ADVANCED, the one `gh pr list --search`
+// uses itself: the classic ISSUE search returns nothing for an OR
+// between qualifiers, ISSUE_ADVANCED returns the union.
 func (m model) fetchPRs() tea.Msg {
 	repo := m.repo
 	if repo == "" {
 		return errMsg{fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
 	}
 
-	// $r and $v are the two search queries; the shared PR-shape
-	// sub-selection is duplicated below because GraphQL fragment
-	// inheritance on aliased fields adds boilerplate without saving
-	// bytes on the wire.
 	query := `
-query($r: String!, $v: String!) {
-  requested: search(query: $r, type: ISSUE, first: 100) {
-    nodes {
-      ... on PullRequest {
-        number title body url headRefName headRefOid updatedAt isDraft
-        author { login }
-        reviews(last: 100) {
-          nodes { author { login } state submittedAt commit { oid } }
-        }
-      }
-    }
-  }
-  reviewed: search(query: $v, type: ISSUE, first: 100) {
+query($q: String!) {
+  search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
         number title body url headRefName headRefOid updatedAt isDraft
@@ -317,11 +291,9 @@ query($r: String!, $v: String!) {
     }
   }
 }`
-	base := fmt.Sprintf("repo:%s is:pr is:open -author:@me", repo)
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", "r="+base+" review-requested:@me",
-		"-f", "v="+base+" reviewed-by:@me",
+		"-f", fmt.Sprintf("q=repo:%s is:pr is:open %s", repo, prSearchQuery),
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -331,7 +303,6 @@ query($r: String!, $v: String!) {
 		return errMsg{fmt.Errorf("gh api graphql: %w", err)}
 	}
 
-	// Both aliased results carry the same PR shape.
 	type prNode struct {
 		Number      int    `json:"number"`
 		Title       string `json:"title"`
@@ -348,44 +319,34 @@ query($r: String!, $v: String!) {
 			Nodes []Review `json:"nodes"`
 		} `json:"reviews"`
 	}
-	type searchResult struct {
-		Nodes []prNode `json:"nodes"`
-	}
 	var resp struct {
 		Data struct {
-			Requested searchResult `json:"requested"`
-			Reviewed  searchResult `json:"reviewed"`
+			Search struct {
+				Nodes []prNode `json:"nodes"`
+			} `json:"search"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &resp); err != nil {
 		return errMsg{fmt.Errorf("parse graphql: %w", err)}
 	}
 
-	// Dedupe by PR number, first-seen wins.
-	seen := make(map[int]bool)
-	out2 := make([]PR, 0, len(resp.Data.Requested.Nodes)+len(resp.Data.Reviewed.Nodes))
-	for _, list := range [][]prNode{resp.Data.Requested.Nodes, resp.Data.Reviewed.Nodes} {
-		for _, n := range list {
-			if seen[n.Number] {
-				continue
-			}
-			seen[n.Number] = true
-			pr := PR{
-				Number:      n.Number,
-				Title:       n.Title,
-				Body:        n.Body,
-				URL:         n.URL,
-				HeadRefName: n.HeadRefName,
-				HeadRefOid:  n.HeadRefOid,
-				UpdatedAt:   n.UpdatedAt,
-				IsDraft:     n.IsDraft,
-				Reviews:     n.Reviews.Nodes,
-			}
-			pr.Author.Login = n.Author.Login
-			out2 = append(out2, pr)
+	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
+	for _, n := range resp.Data.Search.Nodes {
+		pr := PR{
+			Number:      n.Number,
+			Title:       n.Title,
+			Body:        n.Body,
+			URL:         n.URL,
+			HeadRefName: n.HeadRefName,
+			HeadRefOid:  n.HeadRefOid,
+			UpdatedAt:   n.UpdatedAt,
+			IsDraft:     n.IsDraft,
+			Reviews:     n.Reviews.Nodes,
 		}
+		pr.Author.Login = n.Author.Login
+		prs = append(prs, pr)
 	}
-	return prsMsg(out2)
+	return prsMsg(prs)
 }
 
 // fetchMerged returns PRs merged in the last mergedWindow, so a PR you

@@ -201,11 +201,9 @@ func fakeGH(t *testing.T, root string) {
 		}
 	}
 	graphql := map[string]any{"data": map[string]any{
-		"requested": map[string]any{"nodes": []any{
+		"search": map[string]any{"nodes": []any{
 			pr(3543, "add billing migration", "alice", "aaa", 2*time.Hour),
 			pr(3550, "fix retry ordering", "bob", "bbb", 5*time.Hour),
-		}},
-		"reviewed": map[string]any{"nodes": []any{
 			pr(3491, "split ingestion worker", "carol", "ccc", 26*time.Hour, review("stefanahman", "COMMENTED", "old", 30*time.Hour)),
 			pr(3502, "bump node to 22", "dave", "ddd", 3*24*time.Hour, review("stefanahman", "APPROVED", "ddd", 3*24*time.Hour)),
 			pr(3510, "retry on 429", "erin", "eee", 8*time.Hour, review("stefanahman", "CHANGES_REQUESTED", "eee", 9*time.Hour)),
