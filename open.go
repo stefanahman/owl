@@ -20,6 +20,7 @@ func runOpen(cfg Config, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	prompt = oneLine(prompt)
 	repo, err := mainRepo(".")
 	if err != nil {
 		return err
@@ -55,6 +56,8 @@ func runOpen(cfg Config, args []string, out io.Writer) error {
 		} else {
 			fmt.Fprintf(out, "started %s\n", target)
 		}
+	case prompt != "" && claudeBlocked(target):
+		return fmt.Errorf("pr-%d: Claude is waiting for you in %s (a permission or a question) — answer it first", n, target)
 	case prompt != "" && paneAtShellPrompt(target):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
@@ -288,6 +291,19 @@ func agentCommand(a AgentConfig, n int, resume bool, prompt string) string {
 		line += " " + shellQuote(prompt)
 	}
 	return line
+}
+
+// oneLine folds newlines into spaces: the prompt is typed into the
+// window as keystrokes, and a newline would submit the first line.
+func oneLine(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }), " ")
+}
+
+// claudeBlocked reports whether tmux-claude-status says the window's
+// Claude is waiting on the user — keystrokes would answer its dialog.
+func claudeBlocked(target string) bool {
+	state, err := tmux("show-options", "-w", "-t", target, "-qv", claudeStateOption)
+	return err == nil && state == "blocked"
 }
 
 // paneAtShellPrompt reports whether the window's foreground process is

@@ -95,7 +95,7 @@ Three companions, each optional:
 | `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped |
 | `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
 | `↵` | open (or focus) the review workspace; then `on_open` |
-| `f` | send the check-feedback prompt to the PR's Claude session; then `on_open` |
+| `f` | send the check-feedback prompt to the PR's Claude session (refused while Claude is blocked on a question or a permission there); then `on_open` |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
 | `c` | close the workspace — worktree, branch and tmux window; refused while tracked files have uncommitted changes (`pr-owl close --force <N>` discards them) |
@@ -202,6 +202,13 @@ or switch to from anywhere.
 | git worktree | `<repo>/<worktrees_dir>/pr-<N>-<slug>` on branch `pr-<N>-<slug>`, fetched from `pull/N/head` | `open` creates, `close` removes |
 | tmux window | same name, in `tmux.session`, cwd = the worktree, running `agent.cmd` | `open` creates, `close` kills |
 | conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c` |
+
+A prompt (`f`, `open --prompt`) is typed into the window as one line
+of keystrokes. If the agent has exited — the window is back at sh,
+bash, zsh, fish, dash, ksh or nu — the agent is started again with `-c`
+and the prompt instead; while Claude is blocked on a question or a
+permission there, the prompt is refused, since the keystrokes would
+answer that dialog.
 
 Re-running `open` never re-fetches: the worktree is yours once it
 exists. When the author pushes, `git pull origin pull/<N>/head` inside

@@ -402,6 +402,21 @@ func TestOpenPromptHandling(t *testing.T) {
 		t.Errorf("prompt was wrapped in an agent command:\n%s", screen)
 	}
 
+	// A prompt is one line of keystrokes: a newline would submit early.
+	f.open("7", "--prompt", "first\nsecond")
+	f.waitPane("pr-7", "first second")
+
+	// Claude waiting on the user: the keystrokes would answer its dialog.
+	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption, "blocked"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOpen(f.cfg, []string{"7", "--prompt", "again"}, io.Discard); err == nil || !strings.Contains(err.Error(), "waiting for you") {
+		t.Errorf("prompt into a blocked window: %v, want a refusal", err)
+	}
+	if _, err := tmux("set-option", "-wu", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption); err != nil {
+		t.Fatal(err)
+	}
+
 	// Without a prompt, an existing window is only selected.
 	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
 	if out := f.open("7"); !strings.Contains(out, "selected") || f.activeWindow() != "pr-7" {
