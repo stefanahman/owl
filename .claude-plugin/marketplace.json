@@ -12,10 +12,7 @@
     {
       "name": "pr-review",
       "source": "./pr-review",
-      "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review",
-      "version": "0.1.0",
-      "license": "MIT",
-      "keywords": ["pull-request", "code-review", "github"]
+      "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review"
     }
   ]
 }

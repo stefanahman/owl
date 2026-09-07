@@ -28,7 +28,7 @@ allowed-tools:
 
 # PR Review Workflow
 
-Review pull request #$pr end to end: gather context, read the code carefully, run local checks, draft the review, get approval, post.
+Review pull request #$pr end to end: gather context, read the code carefully, run local checks, draft the review, get approval, post. If `$pr` is empty, ask for the PR number and stop.
 
 ## Golden rule: the user posts, not you
 
