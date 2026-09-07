@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -23,12 +24,17 @@ func claudeProjectsDir() (string, error) {
 	return filepath.Join(dir, "projects"), nil
 }
 
+// notAlnum is what Claude Code replaces when it names a project's
+// state directory after its path.
+var notAlnum = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
 // encodeProjectPath mirrors Claude Code's naming of a project's state
-// directory: every `/` and `.` in the absolute working directory
-// becomes `-`, so /home/me/src/app/.worktrees.local/pr-7 is stored
-// under -home-me-src-app--worktrees-local-pr-7.
+// directory: every character of the absolute working directory that is
+// not an ASCII letter or digit becomes `-`, so
+// /home/me/src/app/.worktrees.local/pr-7 is stored under
+// -home-me-src-app--worktrees-local-pr-7.
 func encodeProjectPath(cwd string) string {
-	return strings.NewReplacer("/", "-", ".", "-").Replace(cwd)
+	return notAlnum.ReplaceAllString(cwd, "-")
 }
 
 // hasConversationFor reports whether Claude has a transcript for a
