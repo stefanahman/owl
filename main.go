@@ -41,9 +41,16 @@ type prsMsg []PR
 type mergedMsg []PR
 type userMsg string // authenticated user login
 
+// errMsg is a failed fetch: the list is stale (or, with nothing to
+// show yet, absent) until a fetch succeeds.
 type errMsg struct{ err error }
 
 func (e errMsg) Error() string { return e.err.Error() }
+
+// noticeMsg is the outcome of a user action — opening a URL, copying,
+// switching client, open, close — shown in the action row until the
+// next key press. It never replaces the list.
+type noticeMsg struct{ err error }
 
 // openedMsg / closedMsg report the end of a `pr-owl open` / `close`
 // child: its stdout, or its failure with the child's stderr.
@@ -206,7 +213,8 @@ type model struct {
 
 	// load state
 	prsReady    bool
-	err         error
+	err         error     // the last fetch failure; cleared by a successful fetch or r
+	notice      error     // the last action failure; cleared by the next key press
 	lastFetched time.Time // set when prsMsg lands; drives "updated X ago"
 
 	// UI state
@@ -367,7 +375,7 @@ func runSelf(args ...string) (string, error) {
 func (m model) openPRInBrowser(pr *PR) tea.Cmd {
 	return func() tea.Msg {
 		if pr.URL == "" {
-			return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)}
+			return noticeMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)}
 		}
 		return openURL(m.cfg.OpenCmd, pr.URL)
 	}
@@ -390,7 +398,7 @@ func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
 func switchClient(session string) tea.Cmd {
 	return func() tea.Msg {
 		if _, err := tmux("switch-client", "-t", tmuxTarget(session, "")); err != nil {
-			return errMsg{err}
+			return noticeMsg{err}
 		}
 		return nil
 	}
@@ -409,7 +417,7 @@ func openURL(openCmd, url string) tea.Msg {
 	}
 	argv = append(argv, url)
 	if err := exec.Command(argv[0], argv[1:]...).Run(); err != nil {
-		return errMsg{fmt.Errorf("%s %s: %w", argv[0], url, err)}
+		return noticeMsg{fmt.Errorf("%s %s: %w", argv[0], url, err)}
 	}
 	return nil
 }
@@ -419,7 +427,7 @@ func openURL(openCmd, url string) tea.Msg {
 // (`set-clipboard on`) without pbcopy or xclip.
 func yankPRURL(pr *PR) tea.Cmd {
 	if pr.URL == "" {
-		return func() tea.Msg { return errMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)} }
+		return func() tea.Msg { return noticeMsg{fmt.Errorf("PR #%d: URL not loaded yet", pr.Number)} }
 	}
 	return tea.SetClipboard(pr.URL)
 }
@@ -475,6 +483,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prsMsg:
 		m.prs = []PR(msg)
 		m.prsReady = true
+		m.err = nil
 		m.lastFetched = time.Now()
 		m.clampCursor()
 		m.refreshList()
@@ -501,10 +510,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.prsReady = true
 
+	case noticeMsg:
+		m.notice = msg.err
+
 	case openedMsg:
 		m.busy = ""
 		if msg.err != nil {
-			m.err = msg.err
+			m.notice = msg.err
 			break
 		}
 		// The workspace is up. What happens to the TUI is `on_open`: a
@@ -522,7 +534,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case closedMsg:
 		m.busy = ""
 		if msg.err != nil {
-			m.err = msg.err
+			m.notice = msg.err
 			break
 		}
 		cmds = append(cmds, m.fetchLocal)
@@ -586,6 +598,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	m.notice = nil // a key press acknowledges the last action's outcome
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -617,7 +630,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// `open` runs to completion; openedMsg quits the popup on
 			// success and shows the failure otherwise.
 			m.busy = fmt.Sprintf("opening #%d…", pr.Number)
-			m.err = nil
 			return m, tea.Batch(m.openReview(pr.Number, ""), m.spinner.Tick)
 		}
 	case key.Matches(msg, m.keys.Feedback):
@@ -631,7 +643,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ls := findLocalForPR(m.localState, pr.Number)
 			if ls.Session != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
 				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
-				m.err = nil
 				return m, tea.Batch(m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)
 			}
 		}
@@ -653,7 +664,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// just noise the UI.
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
 				m.busy = fmt.Sprintf("closing #%d…", pr.Number)
-				m.err = nil
 				return m, tea.Batch(m.closeReview(pr.Number), m.spinner.Tick)
 			}
 		}
@@ -965,7 +975,8 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 //   - the loading spinner + "loading PRs…" while the initial fetch is pending
 //   - the search input when the user is typing
 //   - the filter chip when a filter is applied but the input is blurred
-//   - a subtle idle hint otherwise
+//   - the last action's failure, or a fetch failure while the list is stale
+//   - the counts summary otherwise
 //
 // Never more than one visible line — length may exceed width and be
 // truncated by the terminal; that's acceptable for a status row.
@@ -980,9 +991,21 @@ func (m model) actionRowView() string {
 	case m.search.Value() != "":
 		return styleSearchLabel.Render("filter /"+m.search.Value()) +
 			styleDim.Render("   [/] edit   [esc] clear")
+	case m.notice != nil:
+		return styleChangesReqd.Render("error: " + m.notice.Error())
+	case m.err != nil && m.hasData():
+		// The list is still the last good fetch; say so instead of
+		// replacing it (offline with a warm cache is the common case).
+		return styleChangesReqd.Render("error: " + m.err.Error())
 	default:
 		return m.countsSummary()
 	}
+}
+
+// hasData reports whether there is a list to show — from a fetch or
+// the cache.
+func (m model) hasData() bool {
+	return len(m.prs) > 0 || len(m.merged) > 0
 }
 
 // countsSummary is the idle-state action row content: a compact
@@ -1112,7 +1135,7 @@ func (m model) render() string {
 	b.WriteString(m.actionRowView() + "\n")
 	b.WriteString(strings.Repeat("─", clampInt(m.width, 20, 200)) + "\n")
 
-	if m.err != nil {
+	if m.err != nil && !m.hasData() {
 		b.WriteString(fmt.Sprintf("\nerror: %v\n", m.err))
 		b.WriteString("\n" + m.help.View(m.keys))
 		return b.String()

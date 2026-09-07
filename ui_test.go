@@ -281,8 +281,8 @@ func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected final model of type model, got %T", fm)
 	}
-	if m.err != nil {
-		t.Errorf("guard should have prevented cleanup, but got err = %v", m.err)
+	if m.err != nil || m.notice != nil {
+		t.Errorf("guard should have prevented cleanup, but got err = %v, notice = %v", m.err, m.notice)
 	}
 }
 
@@ -638,8 +638,8 @@ func TestBusyState(t *testing.T) {
 	}
 
 	failed, cmd := m.Update(openedMsg{err: errors.New("fetch failed")})
-	if fm := failed.(model); fm.busy != "" || fm.err == nil {
-		t.Errorf("after a failed open: busy=%q err=%v", fm.busy, fm.err)
+	if fm := failed.(model); fm.busy != "" || fm.notice == nil {
+		t.Errorf("after a failed open: busy=%q notice=%v", fm.busy, fm.notice)
 	}
 	if cmd != nil {
 		if _, quit := cmd().(tea.QuitMsg); quit {
@@ -726,5 +726,46 @@ func TestGoldenFrames(t *testing.T) {
 			}
 			teatest.RequireEqualOutput(t, readAll(t, tm.FinalOutput(t, teatest.WithFinalTimeout(2*time.Second))))
 		})
+	}
+}
+
+// TestErrorsKeepTheList: a failed fetch leaves the last good list on
+// screen and says so in the action row; an action's failure is a
+// notice that the next key press clears; only with nothing to show is
+// the error the body.
+func TestErrorsKeepTheList(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 100, 24
+	m.resizeViewport()
+	next, _ := m.Update(prsMsg(fixturePRs()))
+	m = next.(model)
+
+	failed, _ := m.Update(errMsg{errors.New("gh api graphql: HTTP 502")})
+	m = failed.(model)
+	if !strings.Contains(m.render(), "#3543") {
+		t.Error("a fetch failure hid the list")
+	}
+	if !strings.Contains(m.actionRowView(), "HTTP 502") {
+		t.Errorf("action row = %q, want the fetch error", m.actionRowView())
+	}
+	ok, _ := m.Update(prsMsg(fixturePRs()))
+	if m = ok.(model); m.err != nil {
+		t.Error("a successful fetch keeps the error")
+	}
+
+	noticed, _ := m.Update(noticeMsg{errors.New("open https://x: exit status 1")})
+	m = noticed.(model)
+	if !strings.Contains(m.actionRowView(), "exit status 1") {
+		t.Errorf("action row = %q, want the notice", m.actionRowView())
+	}
+	pressed, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	if m = pressed.(model); m.notice != nil {
+		t.Error("a key press keeps the notice")
+	}
+
+	empty := testModel(t)
+	bare, _ := empty.Update(errMsg{errors.New("HTTP 401: Bad credentials")})
+	if !strings.Contains(bare.(model).render(), "error: HTTP 401") {
+		t.Error("with nothing to show, the error should be the body")
 	}
 }

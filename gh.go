@@ -356,8 +356,7 @@ func (m model) fetchMerged() tea.Msg {
 	q := fmt.Sprintf("%s merged:>=%s", prSearchQuery, cutoff)
 	prs, err := ghPRList(m.repo, "merged", q)
 	if err != nil {
-		// Best-effort — don't fail the whole app for the merged section.
-		return mergedMsg(nil)
+		return errMsg{fmt.Errorf("merged: %w", err)}
 	}
 	return mergedMsg(prs)
 }
