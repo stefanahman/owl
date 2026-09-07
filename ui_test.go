@@ -769,3 +769,21 @@ func TestErrorsKeepTheList(t *testing.T) {
 		t.Error("with nothing to show, the error should be the body")
 	}
 }
+
+// TestQuitWhileSearching: ctrl+c quits with the search input focused —
+// it is a quit key that isn't text, unlike q, which the input owns.
+func TestQuitWhileSearching(t *testing.T) {
+	tm := newTestModel(t)
+	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(localMsg{})
+	tm.Send(mergedMsg(nil))
+	tm.Type("/35")
+	time.Sleep(50 * time.Millisecond)
+
+	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second))
+	if m := fm.(model); m.search.Value() != "35" {
+		t.Errorf("search value = %q, want 35 (ctrl+c must not be typed)", m.search.Value())
+	}
+}

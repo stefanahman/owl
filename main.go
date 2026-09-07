@@ -566,6 +566,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.search.Focused() {
+		// A quit key that isn't text (ctrl+c) still quits; a typed q is
+		// input, which the digit filter below drops.
+		if msg.Text == "" && key.Matches(msg, m.keys.Quit) {
+			return m, tea.Quit
+		}
 		// esc/enter are the input's own keys, independent of what the
 		// list actions are bound to.
 		switch msg.Code {
@@ -1108,15 +1113,12 @@ func (m model) helpModalView() string {
 }
 
 // View wraps the rendered frame with what used to be program options:
-// the alternate screen, focus reporting (auto-refresh on focus), and
-// the search input's cursor while it is focused.
+// the alternate screen and focus reporting (auto-refresh on focus).
+// The search input draws its own cursor.
 func (m model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.ReportFocus = true
-	if m.search.Focused() {
-		v.Cursor = m.search.Cursor()
-	}
 	return v
 }
 
