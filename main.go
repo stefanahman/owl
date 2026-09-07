@@ -348,6 +348,12 @@ func runSelf(args ...string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("locate pr-owl binary: %w", err)
 	}
+	// A test binary would run its whole suite as `pr-owl open`, and that
+	// suite would do it again. Tests inject runSelf; this catches the
+	// one that forgets.
+	if strings.HasSuffix(self, ".test") {
+		return "", fmt.Errorf("%s is a test binary, not pr-owl", self)
+	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return runOut(cmd)
