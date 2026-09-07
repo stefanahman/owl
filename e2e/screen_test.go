@@ -33,7 +33,7 @@ func TestScreen(t *testing.T) {
 	fakeGH(t, root)
 	env := hermeticEnv(t, root)
 
-	term, err := vttest.NewTerminal(t, 120, 30)
+	term, err := vttest.NewTerminal(t, cols, rows)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +41,11 @@ func TestScreen(t *testing.T) {
 	cmd := start(t, term, repo, env)
 
 	waitFor(t, term, "Waiting for author")
-	snapshot.TestdataEqual(t, "list", term)
+	snapshotWhenQuiet(t, term, "list")
 
 	term.SendKey(uv.KeyPressEvent{Code: '?', Text: "?"})
 	waitFor(t, term, "pr-owl · help")
-	snapshot.TestdataEqual(t, "help", term)
+	snapshotWhenQuiet(t, term, "help")
 
 	term.SendKey(uv.KeyPressEvent{Code: 'q', Text: "q"})
 	waitExit(t, term, cmd)
@@ -61,7 +61,7 @@ func TestOpenFromTheTUI(t *testing.T) {
 	fakeGH(t, root)
 	env := hermeticEnv(t, root)
 
-	term, err := vttest.NewTerminal(t, 120, 30)
+	term, err := vttest.NewTerminal(t, cols, rows)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +84,9 @@ func TestOpenFromTheTUI(t *testing.T) {
 		t.Errorf("review window missing: %v %q", err, out)
 	}
 }
+
+// The terminal's size; the snapshots in testdata/ were taken at it.
+const cols, rows = 120, 30
 
 // bin is the pr-owl binary under test, built once for the package.
 var bin string
@@ -293,11 +296,38 @@ func waitFor(t *testing.T, term *vttest.Terminal, want string) {
 	t.Fatalf("screen never showed %q:\n%s", want, screenText(term))
 }
 
+// snapshotWhenQuiet compares the screen with testdata/ once it has
+// stopped changing: two reads 100ms apart agree. vttest's Snapshot
+// takes the terminal's mutex and then the emulator's, while the
+// emulator's Write holds its own and calls back into the terminal's
+// (title, modes, cursor) — taking a snapshot while the program is
+// still drawing can deadlock, and did about one run in ten.
+func snapshotWhenQuiet(t *testing.T, term *vttest.Terminal, name string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	last := screenText(term)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		now := screenText(term)
+		if now == last {
+			snapshot.TestdataEqual(t, name, term)
+			return
+		}
+		last = now
+	}
+	t.Fatalf("screen kept changing:\n%s", last)
+}
+
+// screenText reads the cells through the emulator's own lock only —
+// never vttest's Snapshot, for the reason above — so polling it while
+// the program draws is safe.
 func screenText(term *vttest.Terminal) string {
 	var b strings.Builder
-	for _, row := range term.Snapshot().Cells {
-		for _, c := range row {
-			b.WriteString(c.Content)
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			if cell := term.Emulator.CellAt(c, r); cell != nil {
+				b.WriteString(cell.Content)
+			}
 		}
 		b.WriteByte('\n')
 	}
