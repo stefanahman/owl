@@ -1,0 +1,54 @@
+# goreleaser v2 — `goreleaser check` validates, `goreleaser release --clean`
+# runs on a v* tag (.github/workflows/release.yml).
+version: 2
+
+project_name: pr-owl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: pr-owl
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^test:", "^ci:", "^build:", "^style:"]
+
+# Homebrew cask in stefanahman/homebrew-tap: `brew install --cask stefanahman/tap/pr-owl`.
+# Casks (not formulas) are what goreleaser recommends for prebuilt binaries;
+# the binaries are unsigned, so the hook strips the quarantine attribute.
+homebrew_casks:
+  - name: pr-owl
+    repository:
+      owner: stefanahman
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/stefanahman/pr-owl
+    description: "TUI of the PRs waiting for your review; one key opens each as a git worktree + tmux window with Claude Code reviewing inside"
+    license: MIT
+    binaries: [pr-owl]
+    dependencies:
+      - formula: gh
+      - formula: tmux
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pr-owl"]
+          end

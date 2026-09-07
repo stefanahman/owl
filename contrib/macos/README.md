@@ -14,6 +14,13 @@ contrib/macos/
 
 Requirements: Ghostty, yabai, jq, tmux ≥ 3.3 (`display-popup -T`).
 
+If you keep several tmux sessions on their own spaces, not just the
+review one, [tmux-spaces](https://github.com/stefanahman/tmux-spaces)
+does what these two scripts do for every session from one config; then
+`hooks.after_open: tmux-spaces focus pr-reviews` replaces
+`pr-reviews-focus`, and a `pr-reviews` space with the popup as its
+`then` replaces `ws-review`.
+
 ## Install
 
 ```sh
