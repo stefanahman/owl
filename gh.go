@@ -221,13 +221,15 @@ func parseRepoURL(url string) string {
 // GitHub remote (`remote`, origin by default — `upstream` in a
 // fork-based workflow).
 //
-// Uses `git remote get-url` (reads `.git/config` locally, ~10ms)
-// rather than `gh repo view` (~700-1000ms — gh is a large binary that
-// initializes config/HTTP/auth even for non-network subcommands). This
+// Reads the URL as configured (`remote.<name>.url`, ~10ms) rather than
+// asking `gh repo view` (~700-1000ms — gh is a large binary that
+// initializes config/HTTP/auth even for non-network subcommands); this
 // is on the blocking path from initialModel(), so the difference is
-// user-visible as popup startup latency.
+// user-visible as popup startup latency. The configured URL, not
+// `remote get-url`'s rewritten one: an `insteadOf` rule may point the
+// fetch elsewhere, the repo is still the one named in the URL.
 func currentRepo(remote string) string {
-	out, err := exec.Command("git", "remote", "get-url", remote).Output()
+	out, err := exec.Command("git", "config", "--get", "remote."+remote+".url").Output()
 	if err != nil {
 		return ""
 	}
