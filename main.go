@@ -90,6 +90,7 @@ type keyMap struct {
 	PageUp   key.Binding
 	PageDown key.Binding
 	Enter    key.Binding
+	Start    key.Binding
 	Feedback key.Binding
 	Browser  key.Binding
 	Yank     key.Binding
@@ -116,6 +117,7 @@ func newKeyMap(k KeysConfig, links []LinkConfig) keyMap {
 		PageUp:   bind(k.PageUp, "page up"),
 		PageDown: bind(k.PageDown, "page down"),
 		Enter:    bind(k.Open, "open review"),
+		Start:    bind(k.Start, "start (stay)"),
 		Feedback: bind(k.Feedback, "check feedback"),
 		Browser:  bind(k.Browser, "open PR in browser"),
 		Yank:     bind(k.Yank, "yank PR URL"),
@@ -155,11 +157,11 @@ func (k keyNames) label() string {
 // ShortHelp drives the footer legend. FullHelp is rendered inside the
 // `?` modal (helpModalView) via help.FullHelpView.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Next, k.Enter, k.Feedback, k.Browser, k.Search, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Next, k.Enter, k.Start, k.Feedback, k.Browser, k.Search, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	actions := append([]key.Binding{k.Enter, k.Feedback, k.Browser, k.Yank, k.Cleanup}, k.Links...)
+	actions := append([]key.Binding{k.Enter, k.Start, k.Feedback, k.Browser, k.Yank, k.Cleanup}, k.Links...)
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Next, k.Home, k.End, k.PageUp, k.PageDown},
 		actions,
@@ -363,6 +365,14 @@ func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
+// startReview runs `pr-owl start <N>`: the workspace comes up, the
+// list stays — for starting several reviews one after another.
+func (m model) startReview(prNumber int) tea.Cmd {
+	return func() tea.Msg {
+		return openedMsg{prNumber, m.runSelf("start", strconv.Itoa(prNumber))}
+	}
+}
+
 // closeReview runs `pr-owl close <N>`; the TUI refreshes its overlay
 // when it succeeds. The agent's conversation survives on disk, so
 // Enter / f afterwards resume it.
@@ -372,17 +382,18 @@ func (m model) closeReview(prNumber int) tea.Cmd {
 	}
 }
 
-// launch starts an open or close child for a PR in the background.
-// The list stays usable meanwhile; a second key on the same PR is
-// refused until the child reports. An open with on_open: quit ends the
-// TUI at once — the popup closes, the child finishes behind it.
-func (m model) launch(pr int, label string, cmd tea.Cmd, isOpen bool) (tea.Model, tea.Cmd) {
+// launch starts an open, start or close child for a PR in the
+// background. The list stays usable meanwhile; a second key on the
+// same PR is refused until the child reports. An open (arrive) with
+// on_open: quit ends the TUI at once — the popup closes, the child
+// finishes behind it.
+func (m model) launch(pr int, label string, cmd tea.Cmd, arrive bool) (tea.Model, tea.Cmd) {
 	if running, ok := m.inflight[pr]; ok {
 		m.notice = fmt.Errorf("still %s", running)
 		return m, nil
 	}
 	m.inflight[pr] = label
-	if isOpen && m.cfg.OnOpen == "quit" {
+	if arrive && m.cfg.OnOpen == "quit" {
 		m.farewell = label
 		return m, tea.Batch(cmd, tea.Quit)
 	}
@@ -532,6 +543,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
+		}
+		if len(m.inflight) > 0 {
+			m.refreshList() // the rows in flight carry the spinner too
 		}
 
 	case prsMsg:
@@ -686,6 +700,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		if pr := m.selectedPR(); pr != nil {
 			return m.launch(pr.Number, fmt.Sprintf("opening #%d…", pr.Number), m.openReview(pr.Number, ""), true)
+		}
+	case key.Matches(msg, m.keys.Start):
+		if pr := m.selectedPR(); pr != nil {
+			return m.launch(pr.Number, fmt.Sprintf("starting #%d…", pr.Number), m.startReview(pr.Number), false)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
@@ -994,6 +1012,10 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		cursor = "▸ "
 	}
 	local := findLocalForPR(m.localState, row.pr.Number)
+	starting := "" // the spinner takes the worktree slot while a child works on this PR
+	if _, ok := m.inflight[row.pr.Number]; ok {
+		starting = m.spinner.View()
+	}
 	draft := ""
 	if row.pr.IsDraft {
 		draft = styleDraft.Render(" [draft]")
@@ -1006,7 +1028,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		"%s#%-5d %s %s%s (%s) — %s",
 		cursor,
 		row.pr.Number,
-		badges(local, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
+		badges(local, starting, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
 		trim(row.pr.Title, 70),
 		draft,
 		row.pr.Author.Login,
@@ -1221,7 +1243,8 @@ func (m model) render() string {
 
 // badges renders a fixed-width block of colored state glyphs.
 //
-//	Slot 1  ⎇   worktree present
+//	Slot 1  ⎇   worktree present — or the spinner while a child starts,
+//	            opens or closes this PR's workspace
 //	Slot 2  ©*  Claude session — the trailing `*` (or space) is an unread marker:
 //	              ©   yellow = working (actively processing)
 //	              ©   amber  = blocked (waiting on permission / question / plan)
@@ -1237,12 +1260,15 @@ func (m model) render() string {
 //
 // Absent = single space so column alignment stays. Slot 2 is always
 // 2 cells wide (glyph + `*`|space) because of the unread marker.
-func badges(ls LocalState, iApproved, iEngaged, stale, hasCR bool) string {
+func badges(ls LocalState, starting string, iApproved, iEngaged, stale, hasCR bool) string {
 	var parts []string
 
-	if ls.Worktree != "" {
+	switch {
+	case starting != "":
+		parts = append(parts, starting)
+	case ls.Worktree != "":
 		parts = append(parts, styleWorktree.Render("⎇"))
-	} else {
+	default:
 		parts = append(parts, " ")
 	}
 
@@ -1351,6 +1377,7 @@ func versionString() string {
 
 const usage = `usage: pr-owl                          PR overview TUI (run inside a git repo)
        pr-owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
+       pr-owl start <N> [--prompt TEXT]  the same without going there: no window selection, no after_open
        pr-owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
        pr-owl config init | path
        pr-owl --version`
@@ -1374,7 +1401,7 @@ func main() {
 		case "--help", "-h", "help":
 			fmt.Println(usage)
 			return
-		case "open", "close":
+		case "open", "start", "close":
 		default:
 			exitOn(usageError("unknown command " + args[0]))
 		}
@@ -1395,7 +1422,9 @@ func main() {
 			}
 		}
 	case args[0] == "open":
-		err = runOpen(cfg, args[1:], os.Stdout)
+		err = runOpen(cfg, args[1:], os.Stdout, true)
+	case args[0] == "start":
+		err = runOpen(cfg, args[1:], os.Stdout, false)
 	case args[0] == "close":
 		err = runClose(cfg, args[1:], os.Stdout)
 	}

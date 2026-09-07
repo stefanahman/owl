@@ -242,7 +242,7 @@ func TestStaleBadgeColour(t *testing.T) {
 		{"no review", false, false, false, " "},
 	}
 	for _, c := range cases {
-		got := badges(LocalState{}, c.approved, c.engaged, c.stale, false)
+		got := badges(LocalState{}, "", c.approved, c.engaged, c.stale, false)
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: badges = %q, want it to contain %q", c.name, got, c.want)
 		}
@@ -662,6 +662,44 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 	closed, cmd := m.Update(closedMsg{pr: 3543})
 	if cm := closed.(model); len(cm.inflight) != 0 || cmd == nil {
 		t.Errorf("after close: inflight=%v refresh cmd=%v", cm.inflight, cmd)
+	}
+}
+
+// TestStartStaysInTheList: s starts the workspace without on_open —
+// even with quit configured — and the row carries the spinner in the
+// worktree slot until the child reports.
+func TestStartStaysInTheList(t *testing.T) {
+	m := testModel(t) // on_open: quit by default
+	m.prs = fixturePRs()
+	m.prsReady = true
+	m.width, m.height = 100, 24
+	m.resizeViewport()
+	m.refreshList()
+	m.cursor = m.firstPRRowIndex()
+
+	started, cmd := m.handleKey(tea.KeyPressMsg{Code: 's', Text: "s"})
+	m = started.(model)
+	if cmd == nil || m.inflight[3543] != "starting #3543…" || m.farewell != "" {
+		t.Fatalf("s: cmd=%v inflight=%v farewell=%q", cmd, m.inflight, m.farewell)
+	}
+	if _, quit := cmd().(tea.QuitMsg); quit {
+		t.Error("s must not quit, whatever on_open says")
+	}
+	m.refreshList()
+	row := ""
+	for _, line := range strings.Split(m.render(), "\n") {
+		if strings.Contains(line, "#3543") {
+			row = line
+		}
+	}
+	if !strings.Contains(row, m.spinner.View()) || strings.Contains(row, "⎇") {
+		t.Errorf("row while starting = %q, want the spinner in the worktree slot", row)
+	}
+	done, _ := m.Update(openedMsg{pr: 3543})
+	m = done.(model)
+	m.refreshList()
+	if strings.Contains(m.render(), m.spinner.View()+"  ") && len(m.inflight) != 0 {
+		t.Error("the spinner outlived the child")
 	}
 }
 

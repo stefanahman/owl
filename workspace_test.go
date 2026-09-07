@@ -136,7 +136,7 @@ func (f *fixture) write(path, content string) {
 func (f *fixture) open(args ...string) string {
 	f.t.Helper()
 	var out strings.Builder
-	if err := runOpen(f.cfg, args, &out); err != nil {
+	if err := runOpen(f.cfg, args, &out, true); err != nil {
 		f.t.Fatalf("open %v: %v", args, err)
 	}
 	return out.String()
@@ -289,6 +289,47 @@ func mustRead(t *testing.T, path string) []byte {
 	return data
 }
 
+func TestStartStaysPut(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	hookOut := filepath.Join(f.root, "hook.out")
+	f.cfg.Hooks.AfterOpen = "touch " + hookOut
+
+	var out strings.Builder
+	if err := runOpen(f.cfg, []string{"42"}, &out, false); err != nil {
+		t.Fatal(err)
+	}
+
+	name := "pr-42-fix-crash-on-startup"
+	if !strings.Contains(out.String(), "started =reviews:="+name) {
+		t.Errorf("output: %q", out.String())
+	}
+	if !f.exists(filepath.Join(f.repo, ".worktrees.local", name, "pr42.txt")) {
+		t.Error("start did not create the worktree")
+	}
+	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	if got := f.activeWindow(); got != "scratch" {
+		t.Errorf("start selected the window (%q); it must stay where it was", got)
+	}
+	if f.exists(hookOut) {
+		t.Error("start ran the after_open hook")
+	}
+
+	out.Reset()
+	if err := runOpen(f.cfg, []string{"42"}, &out, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "ready =reviews:="+name) {
+		t.Errorf("second start: %q", out.String())
+	}
+
+	// open afterwards goes there: selects the window, runs the hook.
+	f.open("42")
+	if got := f.activeWindow(); got != name || !f.exists(hookOut) {
+		t.Errorf("open after start: active %q, hook ran %v", got, f.exists(hookOut))
+	}
+}
+
 func TestOpenOutsideTmuxHintsAttach(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
@@ -307,7 +348,7 @@ func TestOpenFetchesFromTheConfiguredRemote(t *testing.T) {
 	f.git(f.repo, "remote", "add", "origin", filepath.Join(f.root, "nowhere"))
 
 	var out strings.Builder
-	if err := runOpen(f.cfg, []string{"42"}, &out); err == nil {
+	if err := runOpen(f.cfg, []string{"42"}, &out, true); err == nil {
 		t.Fatal("open should fail when the default remote has no such PR")
 	}
 	f.cfg.Remote = "upstream"
@@ -427,7 +468,7 @@ func TestOpenPromptHandling(t *testing.T) {
 	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption, "blocked"); err != nil {
 		t.Fatal(err)
 	}
-	if err := runOpen(f.cfg, []string{"7", "--prompt", "again"}, io.Discard); err == nil || !strings.Contains(err.Error(), "waiting for you") {
+	if err := runOpen(f.cfg, []string{"7", "--prompt", "again"}, io.Discard, true); err == nil || !strings.Contains(err.Error(), "waiting for you") {
 		t.Errorf("prompt into a blocked window: %v, want a refusal", err)
 	}
 	if _, err := tmux("set-option", "-wu", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption); err != nil {

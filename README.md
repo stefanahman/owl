@@ -99,6 +99,7 @@ Three companions, each optional:
 | `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped |
 | `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
 | `↵` | open (or focus) the review workspace; then `on_open` |
+| `s` | start the review workspace and stay in the list — no `on_open`, no `after_open`; press it on one PR after another |
 | `f` | send the check-feedback prompt to the PR's Claude session (refused while Claude is blocked on a question or a permission there); then `on_open` |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
@@ -108,10 +109,11 @@ Three companions, each optional:
 | `?` | help, with the full badge legend |
 | `q` | quit |
 
-`↵`, `f` and `c` run in the background: the list stays usable while
-the child works, a second press on the same PR is refused until it
-reports, and a failure shows in the action row — or, once a popup has
-closed, on tmux's status line for eight seconds.
+`↵`, `s`, `f` and `c` run in the background: the list stays usable
+while the child works, the row shows a spinner in the worktree slot,
+a second press on the same PR is refused until it reports, and a
+failure shows in the action row — or, once a popup has closed, on
+tmux's status line for eight seconds.
 
 Every key is rebindable, and `links` add your own (below).
 
@@ -120,6 +122,7 @@ Every key is rebindable, and `links` add your own (below).
 ```
 pr-owl                          the TUI
 pr-owl open <N> [--prompt TEXT] open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
+pr-owl start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
 pr-owl close [--force] [<N>]    remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
 pr-owl config init | path
 ```
@@ -176,6 +179,7 @@ theme:                           # the three Claude-state colours (ANSI 0-255 or
 
 keys:                            # rebind any action: a key name or a list
   open: enter
+  start: s
   feedback: f
   quit: [q, ctrl+c]
 

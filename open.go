@@ -2,6 +2,8 @@
 // a tmux window running the agent, select that window, and run the
 // after_open hook. Idempotent — re-running selects the existing window
 // and, with --prompt, hands the prompt to the running agent.
+// `pr-owl start <N>` is the same without going there: no window
+// selection, no hook — for starting several reviews from the list.
 package main
 
 import (
@@ -15,7 +17,7 @@ import (
 	"strings"
 )
 
-func runOpen(cfg Config, args []string, out io.Writer) error {
+func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	n, prompt, err := parseOpenArgs(args)
 	if err != nil {
 		return err
@@ -70,14 +72,21 @@ func runOpen(cfg Config, args []string, out io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(out, "sent prompt to %s\n", target)
-	default:
+	case arrive:
 		fmt.Fprintf(out, "selected %s\n", target)
+	default:
+		fmt.Fprintf(out, "ready %s\n", target)
 	}
-	if _, err := tmux("select-window", "-t", target); err != nil {
-		return err
+	if arrive {
+		if _, err := tmux("select-window", "-t", target); err != nil {
+			return err
+		}
 	}
-	if os.Getenv("TMUX") == "" && cfg.Hooks.AfterOpen == "" {
+	if os.Getenv("TMUX") == "" && (cfg.Hooks.AfterOpen == "" || !arrive) {
 		fmt.Fprintf(out, "attach with: tmux attach -t %s\n", cfg.Tmux.Session)
+	}
+	if !arrive {
+		return nil // start: the workspace is up; the caller stays where it is
 	}
 	return runAfterOpen(cfg.Hooks.AfterOpen, out, map[string]string{
 		"PR_OWL_PR":       strconv.Itoa(n),

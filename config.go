@@ -95,6 +95,7 @@ type KeysConfig struct {
 	PageUp   keyNames `yaml:"page_up"`
 	PageDown keyNames `yaml:"page_down"`
 	Open     keyNames `yaml:"open"`
+	Start    keyNames `yaml:"start"`
 	Feedback keyNames `yaml:"feedback"`
 	Browser  keyNames `yaml:"browser"`
 	Yank     keyNames `yaml:"yank"`
@@ -116,6 +117,7 @@ func (k KeysConfig) each(fn func(action string, keys keyNames)) {
 	fn("page_up", k.PageUp)
 	fn("page_down", k.PageDown)
 	fn("open", k.Open)
+	fn("start", k.Start)
 	fn("feedback", k.Feedback)
 	fn("browser", k.Browser)
 	fn("yank", k.Yank)
@@ -218,6 +220,7 @@ keys:                            # one key name or a list; names as bubbletea sp
   page_up: [pgup, ctrl+u]
   page_down: [pgdown, ctrl+d]
   open: enter
+  start: s
   feedback: f
   browser: o
   yank: y
@@ -260,7 +263,7 @@ func defaultConfig() Config {
 		Up: keyNames{"up", "k"}, Down: keyNames{"down", "j"},
 		Top: keyNames{"g", "home"}, Bottom: keyNames{"G", "end"},
 		PageUp: keyNames{"pgup", "ctrl+u"}, PageDown: keyNames{"pgdown", "ctrl+d"},
-		Open: keyNames{"enter"}, Feedback: keyNames{"f"}, Browser: keyNames{"o"},
+		Open: keyNames{"enter"}, Start: keyNames{"s"}, Feedback: keyNames{"f"}, Browser: keyNames{"o"},
 		Yank: keyNames{"y"}, Next: keyNames{"n"}, Cleanup: keyNames{"c"},
 		Search: keyNames{"/"}, Cancel: keyNames{"esc"}, Refresh: keyNames{"r"}, Help: keyNames{"?"},
 		Quit: keyNames{"q", "ctrl+c"},
