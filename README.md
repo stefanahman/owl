@@ -100,7 +100,7 @@ Three companions, each optional:
 | `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
 | `↵` | open (or focus) the review workspace; then `on_open` |
 | `s` | start the review workspace and stay in the list — no `on_open`, no `after_open`; press it on one PR after another |
-| `f` | send the check-feedback prompt to the PR's Claude session (refused while Claude is blocked on a question or a permission there); then `on_open` |
+| `f` | send the check-feedback prompt to the PR's Claude session and stay in the list, like `s` (refused while Claude is blocked on a question or a permission there) |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
 | `c` | close the workspace — worktree, branch and tmux window; refused while tracked files have uncommitted changes (`pr-owl close --force <N>` discards them) |

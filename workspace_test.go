@@ -323,6 +323,15 @@ func TestStartStaysPut(t *testing.T) {
 	if !strings.Contains(out.String(), "ready =reviews:="+name) {
 		t.Errorf("second start: %q", out.String())
 	}
+	// f goes through start too: the prompt reaches the window, nothing
+	// is selected, no hook.
+	out.Reset()
+	if err := runOpen(f.cfg, []string{"42", "--prompt", "look again"}, &out, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "restarted agent") || f.activeWindow() != "scratch" || f.exists(hookOut) {
+		t.Errorf("start --prompt: %q, active %q, hook ran %v", out.String(), f.activeWindow(), f.exists(hookOut))
+	}
 
 	// open afterwards goes there: selects the window, runs the hook.
 	f.open("42")

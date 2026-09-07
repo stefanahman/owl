@@ -367,11 +367,16 @@ func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
-// startReview runs `pr-owl start <N>`: the workspace comes up, the
-// list stays — for starting several reviews one after another.
-func (m model) startReview(prNumber int) tea.Cmd {
+// startReview runs `pr-owl start <N> [--prompt TEXT]`: the workspace
+// comes up, or gets the prompt, and the list stays — for starting
+// several reviews one after another, and for f.
+func (m model) startReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		return openedMsg{prNumber, m.runSelf("start", strconv.Itoa(prNumber))}
+		args := []string{"start", strconv.Itoa(prNumber)}
+		if prompt != "" {
+			args = append(args, "--prompt", prompt)
+		}
+		return openedMsg{prNumber, m.runSelf(args...)}
 	}
 }
 
@@ -705,19 +710,19 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Start):
 		if pr := m.selectedPR(); pr != nil {
-			return m.launch(pr.Number, fmt.Sprintf("starting #%d…", pr.Number), m.startReview(pr.Number), false)
+			return m.launch(pr.Number, fmt.Sprintf("starting #%d…", pr.Number), m.startReview(pr.Number, ""), false)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
-			// `open --prompt` hands the prompt to the running agent, or
+			// `start --prompt` hands the prompt to the running agent, or
 			// resumes the conversation with it when the window is gone
-			// but Claude's state survives on disk. Truly fresh (no
-			// window, no prior conversation) is a no-op — f is scoped to
-			// "check feedback on what you already reviewed"; press Enter
-			// first to open an initial review.
+			// but Claude's state survives on disk — and stays in the list,
+			// like s. Truly fresh (no window, no prior conversation) is a
+			// no-op — f is scoped to "check feedback on what you already
+			// reviewed"; press Enter or s first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
 			if ls.Session != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
-				return m.launch(pr.Number, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), true)
+				return m.launch(pr.Number, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.startReview(pr.Number, m.cfg.Agent.FeedbackPrompt), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):

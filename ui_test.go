@@ -701,6 +701,16 @@ func TestStartStaysInTheList(t *testing.T) {
 	if strings.Contains(m.render(), m.spinner.View()+"  ") && len(m.inflight) != 0 {
 		t.Error("the spinner outlived the child")
 	}
+
+	// f is the same kind of key: it stays in the list too.
+	m.localState = map[string]LocalState{"pr-3543-feat": {Session: "pr-3543-feat"}}
+	fed, cmd := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if fm := fed.(model); cmd == nil || fm.inflight[3543] != "sending feedback to #3543…" || fm.farewell != "" {
+		t.Errorf("f: cmd=%v inflight=%v farewell=%q", cmd, fm.inflight, fm.farewell)
+	}
+	if _, quit := cmd().(tea.QuitMsg); quit {
+		t.Error("f must not quit")
+	}
 }
 
 // TestOpenQuitsAtOnce: with on_open: quit the TUI ends the moment an
