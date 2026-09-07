@@ -310,12 +310,25 @@ func snapshotWhenQuiet(t *testing.T, term *vttest.Terminal, name string) {
 		time.Sleep(100 * time.Millisecond)
 		now := screenText(term)
 		if now == last {
-			snapshot.TestdataEqual(t, name, term)
+			snapshot.TestdataEqual(t, name, screen{term})
 			return
 		}
 		last = now
 	}
 	t.Fatalf("screen kept changing:\n%s", last)
+}
+
+// screen is the terminal as the snapshots compare it: with the cursor
+// hidden, where the renderer happened to park it is timing, not output
+// — it differed between two Macs on the same frame.
+type screen struct{ *vttest.Terminal }
+
+func (s screen) Snapshot() vttest.Snapshot {
+	snap := s.Terminal.Snapshot()
+	if !snap.Cursor.Visible {
+		snap.Cursor.Position = vttest.Position{}
+	}
+	return snap
 }
 
 // screenText reads the cells through the emulator's own lock only —
