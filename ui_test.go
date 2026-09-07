@@ -111,9 +111,9 @@ func mustQuit(tm *teatest.TestModel) {
 func TestRendersGroupSections(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	// Give the update loop a beat to render.
 	time.Sleep(100 * time.Millisecond)
@@ -141,9 +141,9 @@ func TestRendersGroupSections(t *testing.T) {
 func TestMergedSection(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(fixtureMerged()))
+	tm.Send(mergedMsg{prs: fixtureMerged()})
 
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -164,9 +164,9 @@ func TestMergedSection(t *testing.T) {
 func TestSearchFilters(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	// Give initial render a beat.
 	time.Sleep(100 * time.Millisecond)
@@ -209,9 +209,9 @@ func TestSearchFilters(t *testing.T) {
 func TestApprovedBadgeRenders(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
 
@@ -266,9 +266,9 @@ func TestStaleBadgeColour(t *testing.T) {
 func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{}) // empty — no worktrees, no sessions
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	time.Sleep(50 * time.Millisecond)
 
 	// Press `c` on the currently-selected row (first Todo PR).
@@ -291,9 +291,9 @@ func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 func TestSearchRejectsNonDigits(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	time.Sleep(50 * time.Millisecond)
 
 	// Enter search mode + type a letter (should be rejected by Validate).
@@ -320,9 +320,9 @@ func TestSearchRejectsNonDigits(t *testing.T) {
 func TestHelpModalOpensAndDismisses(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	time.Sleep(50 * time.Millisecond)
 
 	// Open modal
@@ -349,9 +349,9 @@ func TestHelpModalOpensAndDismisses(t *testing.T) {
 func TestHelpModalQuitBypassesDismiss(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	time.Sleep(50 * time.Millisecond)
 
 	tm.Send(tea.KeyPressMsg{Code: '?', Text: "?"})
@@ -373,9 +373,9 @@ func TestHelpModalQuitBypassesDismiss(t *testing.T) {
 func TestFocusRestoresSearch(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	// Type a search then blur it (Enter). Search value persists,
 	// input loses focus.
@@ -411,9 +411,9 @@ func TestFocusRestoresSearch(t *testing.T) {
 func TestFocusIgnoredWithoutFilter(t *testing.T) {
 	tm := newTestModel(t)
 
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	tm.Send(tea.FocusMsg{})
 	time.Sleep(50 * time.Millisecond)
@@ -435,7 +435,7 @@ func TestEmptyState(t *testing.T) {
 
 	tm.Send(prsMsg{})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -453,7 +453,7 @@ func TestHeaderShowsRepo(t *testing.T) {
 
 	tm.Send(prsMsg{})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -683,26 +683,26 @@ func TestGoldenFrames(t *testing.T) {
 		"loading": func(tm *teatest.TestModel) {},
 		"empty": func(tm *teatest.TestModel) {
 			tm.Send(prsMsg{})
-			tm.Send(mergedMsg(nil))
+			tm.Send(mergedMsg{})
 		},
 		"sections": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg(fixturePRs()))
+			tm.Send(prsMsg{prs: fixturePRs()})
 			tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Session: "pr-3543-feat", ClaudeState: "blocked"}})
-			tm.Send(mergedMsg(fixtureMerged()))
+			tm.Send(mergedMsg{prs: fixtureMerged()})
 		},
 		"search": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg(fixturePRs()))
-			tm.Send(mergedMsg(nil))
+			tm.Send(prsMsg{prs: fixturePRs()})
+			tm.Send(mergedMsg{})
 			tm.Send(tea.KeyPressMsg{Code: '/', Text: "/"})
 			tm.Send(tea.KeyPressMsg{Code: '3', Text: "3"})
 			tm.Send(tea.KeyPressMsg{Code: '5', Text: "5"})
 		},
 		"error": func(tm *teatest.TestModel) {
-			tm.Send(errMsg{errors.New("gh api graphql: HTTP 401: Bad credentials")})
+			tm.Send(errMsg{err: errors.New("gh api graphql: HTTP 401: Bad credentials")})
 		},
 		"busy": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg(fixturePRs()))
-			tm.Send(mergedMsg(nil))
+			tm.Send(prsMsg{prs: fixturePRs()})
+			tm.Send(mergedMsg{})
 			tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 		},
 	}
@@ -737,10 +737,10 @@ func TestErrorsKeepTheList(t *testing.T) {
 	m := testModel(t)
 	m.width, m.height = 100, 24
 	m.resizeViewport()
-	next, _ := m.Update(prsMsg(fixturePRs()))
+	next, _ := m.Update(prsMsg{prs: fixturePRs()})
 	m = next.(model)
 
-	failed, _ := m.Update(errMsg{errors.New("gh api graphql: HTTP 502")})
+	failed, _ := m.Update(errMsg{err: errors.New("gh api graphql: HTTP 502")})
 	m = failed.(model)
 	if !strings.Contains(m.render(), "#3543") {
 		t.Error("a fetch failure hid the list")
@@ -748,7 +748,7 @@ func TestErrorsKeepTheList(t *testing.T) {
 	if !strings.Contains(m.actionRowView(), "HTTP 502") {
 		t.Errorf("action row = %q, want the fetch error", m.actionRowView())
 	}
-	ok, _ := m.Update(prsMsg(fixturePRs()))
+	ok, _ := m.Update(prsMsg{prs: fixturePRs()})
 	if m = ok.(model); m.err != nil {
 		t.Error("a successful fetch keeps the error")
 	}
@@ -764,7 +764,7 @@ func TestErrorsKeepTheList(t *testing.T) {
 	}
 
 	empty := testModel(t)
-	bare, _ := empty.Update(errMsg{errors.New("HTTP 401: Bad credentials")})
+	bare, _ := empty.Update(errMsg{err: errors.New("HTTP 401: Bad credentials")})
 	if !strings.Contains(bare.(model).render(), "error: HTTP 401") {
 		t.Error("with nothing to show, the error should be the body")
 	}
@@ -774,9 +774,9 @@ func TestErrorsKeepTheList(t *testing.T) {
 // it is a quit key that isn't text, unlike q, which the input owns.
 func TestQuitWhileSearching(t *testing.T) {
 	tm := newTestModel(t)
-	tm.Send(prsMsg(fixturePRs()))
+	tm.Send(prsMsg{prs: fixturePRs()})
 	tm.Send(localMsg{})
-	tm.Send(mergedMsg(nil))
+	tm.Send(mergedMsg{})
 	tm.Type("/35")
 	time.Sleep(50 * time.Millisecond)
 
@@ -785,5 +785,34 @@ func TestQuitWhileSearching(t *testing.T) {
 	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second))
 	if m := fm.(model); m.search.Value() != "35" {
 		t.Errorf("search value = %q, want 35 (ctrl+c must not be typed)", m.search.Value())
+	}
+}
+
+// TestStaleFetchIsIgnored: r starts a new round without blanking the
+// list; a result from an older round is dropped so a slow fetch can't
+// overwrite a newer one.
+func TestStaleFetchIsIgnored(t *testing.T) {
+	m := testModel(t)
+	m.width, m.height = 100, 24
+	m.resizeViewport()
+	loaded, _ := m.Update(prsMsg{prs: fixturePRs()})
+	m = loaded.(model)
+
+	refreshed, _ := m.handleKey(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	m = refreshed.(model)
+	if !m.refreshing || len(m.prs) != len(fixturePRs()) || m.fetchGen != 1 {
+		t.Errorf("after r: refreshing=%v prs=%d gen=%d", m.refreshing, len(m.prs), m.fetchGen)
+	}
+	if !strings.Contains(m.actionRowView(), "refreshing") {
+		t.Errorf("action row = %q", m.actionRowView())
+	}
+
+	stale, _ := m.Update(prsMsg{gen: 0, prs: nil})
+	if m = stale.(model); len(m.prs) == 0 || !m.refreshing {
+		t.Error("a result from the previous round replaced the list")
+	}
+	fresh, _ := m.Update(prsMsg{gen: 1, prs: fixturePRs()[:1]})
+	if m = fresh.(model); len(m.prs) != 1 || m.refreshing {
+		t.Errorf("the current round's result was not applied: prs=%d refreshing=%v", len(m.prs), m.refreshing)
 	}
 }

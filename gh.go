@@ -272,9 +272,10 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 // uses itself: the classic ISSUE search returns nothing for an OR
 // between qualifiers, ISSUE_ADVANCED returns the union.
 func (m model) fetchPRs() tea.Msg {
+	gen := m.fetchGen // the round this fetch belongs to
 	repo := m.repo
 	if repo == "" {
-		return errMsg{fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
+		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
 	}
 
 	query := `
@@ -298,9 +299,9 @@ query($q: String!) {
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return errMsg{fmt.Errorf("gh api graphql: %s", ee.Stderr)}
+			return errMsg{gen, fmt.Errorf("gh api graphql: %s", ee.Stderr)}
 		}
-		return errMsg{fmt.Errorf("gh api graphql: %w", err)}
+		return errMsg{gen, fmt.Errorf("gh api graphql: %w", err)}
 	}
 
 	type prNode struct {
@@ -327,7 +328,7 @@ query($q: String!) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &resp); err != nil {
-		return errMsg{fmt.Errorf("parse graphql: %w", err)}
+		return errMsg{gen, fmt.Errorf("parse graphql: %w", err)}
 	}
 
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
@@ -346,19 +347,20 @@ query($q: String!) {
 		pr.Author.Login = n.Author.Login
 		prs = append(prs, pr)
 	}
-	return prsMsg(prs)
+	return prsMsg{gen, prs}
 }
 
 // fetchMerged returns PRs merged in the last mergedWindow, so a PR you
 // reviewed doesn't vanish from view the instant it merges.
 func (m model) fetchMerged() tea.Msg {
+	gen := m.fetchGen
 	cutoff := time.Now().Add(-mergedWindow).UTC().Format("2006-01-02T15:04:05Z")
 	q := fmt.Sprintf("%s merged:>=%s", prSearchQuery, cutoff)
 	prs, err := ghPRList(m.repo, "merged", q)
 	if err != nil {
-		return errMsg{fmt.Errorf("merged: %w", err)}
+		return errMsg{gen, fmt.Errorf("merged: %w", err)}
 	}
-	return mergedMsg(prs)
+	return mergedMsg{gen, prs}
 }
 
 // ghPRList runs `gh pr list` against an explicit repo — gh's own

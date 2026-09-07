@@ -37,13 +37,25 @@ import (
 // Messages
 // ------------------------------------------------------------
 
-type prsMsg []PR
-type mergedMsg []PR
+// prsMsg and mergedMsg carry the round (model.fetchGen) they were
+// started in; a result from an older round is ignored, so a slow
+// fetch can't overwrite a newer one.
+type prsMsg struct {
+	gen int
+	prs []PR
+}
+type mergedMsg struct {
+	gen int
+	prs []PR
+}
 type userMsg string // authenticated user login
 
 // errMsg is a failed fetch: the list is stale (or, with nothing to
 // show yet, absent) until a fetch succeeds.
-type errMsg struct{ err error }
+type errMsg struct {
+	gen int
+	err error
+}
 
 func (e errMsg) Error() string { return e.err.Error() }
 
@@ -213,6 +225,8 @@ type model struct {
 
 	// load state
 	prsReady    bool
+	fetchGen    int       // the current fetch round; results from older rounds are ignored
+	refreshing  bool      // r pressed: the list stays, the action row spins
 	err         error     // the last fetch failure; cleared by a successful fetch or r
 	notice      error     // the last action failure; cleared by the next key press
 	lastFetched time.Time // set when prsMsg lands; drives "updated X ago"
@@ -467,6 +481,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// window shows current state. Debounced at 2s so rapid
 		// focus/unfocus (window-manager churn) doesn't storm gh.
 		if time.Since(m.lastFetched) > 2*time.Second {
+			m.fetchGen++
 			cmds = append(cmds, m.fetchPRs, m.fetchLocal, m.fetchMerged)
 		}
 
@@ -474,15 +489,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// bubbles/spinner has no Stop method — you stop it by not
 		// forwarding its next tick. It spins during the initial fetch
 		// and while an open/close child runs.
-		if !m.prsReady || m.busy != "" {
+		if !m.prsReady || m.busy != "" || m.refreshing {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 
 	case prsMsg:
-		m.prs = []PR(msg)
+		if msg.gen != m.fetchGen {
+			break // an older round; a newer one has landed or is coming
+		}
+		m.prs = msg.prs
 		m.prsReady = true
+		m.refreshing = false
 		m.err = nil
 		m.lastFetched = time.Now()
 		m.clampCursor()
@@ -490,7 +509,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.persistCache()
 
 	case mergedMsg:
-		m.merged = []PR(msg)
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.merged = msg.prs
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()
@@ -507,8 +529,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.persistCache()
 
 	case errMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
 		m.err = msg.err
 		m.prsReady = true
+		m.refreshing = false
 
 	case noticeMsg:
 		m.notice = msg.err
@@ -608,8 +634,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Refresh):
-		m.prsReady = false
-		m.merged = nil
+		// The list stays while the new round runs — the same as the
+		// refresh on focus, with a spinner because it was asked for.
+		m.fetchGen++
+		m.refreshing = true
 		m.err = nil
 		return m, tea.Batch(m.fetchPRs, m.fetchLocal, m.fetchMerged, m.spinner.Tick)
 	case key.Matches(msg, m.keys.Up):
@@ -991,6 +1019,8 @@ func (m model) actionRowView() string {
 		return m.spinner.View() + " " + styleDim.Render(m.busy)
 	case !m.prsReady && m.err == nil:
 		return m.spinner.View() + " " + styleDim.Render("loading PRs…")
+	case m.refreshing:
+		return m.spinner.View() + " " + styleDim.Render("refreshing…")
 	case m.search.Focused():
 		return styleSearchLabel.Render("search /") + m.search.View()
 	case m.search.Value() != "":

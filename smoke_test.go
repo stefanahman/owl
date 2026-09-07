@@ -30,11 +30,11 @@ func TestFetchSmoke(t *testing.T) {
 	case errMsg:
 		t.Fatalf("fetchPRs errored: %v", v.err)
 	case prsMsg:
-		if len(v) == 0 {
+		if len(v.prs) == 0 {
 			t.Log("fetchPRs returned zero PRs (fine if you have none)")
 		}
-		t.Logf("fetchPRs returned %d PRs from repo %s", len(v), m.repo)
-		for i, pr := range v {
+		t.Logf("fetchPRs returned %d PRs from repo %s", len(v.prs), m.repo)
+		for i, pr := range v.prs {
 			if i >= 3 {
 				break
 			}
@@ -49,7 +49,7 @@ func TestFetchSmoke(t *testing.T) {
 
 	merged := m.fetchMerged()
 	if mm, ok := merged.(mergedMsg); ok {
-		t.Logf("fetchMerged returned %d PRs (last %s)", len(mm), mergedWindow)
+		t.Logf("fetchMerged returned %d PRs (last %s)", len(mm.prs), mergedWindow)
 	} else {
 		t.Fatalf("fetchMerged returned unexpected type %T", merged)
 	}
@@ -57,7 +57,7 @@ func TestFetchSmoke(t *testing.T) {
 	// Group counts using the derived status.
 	if prs, ok := msg.(prsMsg); ok && me != "" {
 		counts := map[ReviewStatus]int{}
-		for _, pr := range prs {
+		for _, pr := range prs.prs {
 			counts[pr.MyReviewStatus(me)]++
 		}
 		t.Logf("grouping: todo=%d waiting=%d approved=%d",
