@@ -200,7 +200,7 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once a review is open: quit (a popup closes), stay (keep the list), switch (tmux switch-client to the review session, for pr-owl in a tmux window)
+on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (tmux switch-client to the review session, for pr-owl in a tmux window)
 
 hooks:
   after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO set; ~ is expanded

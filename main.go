@@ -13,12 +13,15 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -65,12 +68,15 @@ func (e errMsg) Error() string { return e.err.Error() }
 type noticeMsg struct{ err error }
 
 // openedMsg / closedMsg report the end of a `pr-owl open` / `close`
-// child: its stdout, or its failure with the child's stderr.
+// child for a PR: nil, or its failure with the child's stderr.
 type openedMsg struct {
-	out string
+	pr  int
 	err error
 }
-type closedMsg struct{ err error }
+type closedMsg struct {
+	pr  int
+	err error
+}
 
 // ------------------------------------------------------------
 // Keymap
@@ -232,8 +238,8 @@ type model struct {
 	lastFetched time.Time // set when prsMsg lands; drives "updated X ago"
 
 	// UI state
-	cursor int    // index into the current visibleRows() output
-	busy   string // "opening #42…" while an open/close child runs; keys are ignored
+	cursor   int            // index into the current visibleRows() output
+	inflight map[int]string // PR → "opening #42…": open/close children running; the list stays usable
 
 	// widgets
 	keys    keyMap
@@ -255,7 +261,7 @@ type model struct {
 
 	// runSelf runs this binary with args (`open`, `close`). Tests
 	// replace it — os.Executable() is the test binary there.
-	runSelf func(args ...string) (string, error)
+	runSelf func(args ...string) error
 }
 
 // initialModel gathers what the model needs from the environment —
@@ -284,14 +290,15 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	sp.Style = styleDim
 
 	m := model{
-		cfg:     cfg,
-		runSelf: runSelf,
-		repo:    repo,
-		keys:    newKeyMap(cfg.Keys, cfg.Links),
-		help:    help.New(),
-		search:  ti,
-		list:    viewport.New(),
-		spinner: sp,
+		cfg:      cfg,
+		runSelf:  runSelf,
+		repo:     repo,
+		keys:     newKeyMap(cfg.Keys, cfg.Links),
+		help:     help.New(),
+		search:   ti,
+		list:     viewport.New(),
+		spinner:  sp,
+		inflight: map[int]string{},
 	}
 	// Cache-first: if a previous session left a cache for this repo,
 	// seed the state so the popup renders instantly. The live fetches
@@ -341,21 +348,18 @@ func (m model) persistCache() {
 	})
 }
 
-// openReview runs `pr-owl open <N> [--prompt TEXT]` and waits for it.
-// The child gets its own session (Setsid): pr-owl usually runs inside
-// a tmux popup, and if the popup is closed while a fetch is under way
-// tmux SIGHUPs everything still in the popup's session — the child
-// must not be killed mid-flight. Its result still comes back here, so
-// a failure (offline, gh not authenticated) is shown instead of the
-// popup closing on nothing.
+// openReview runs `pr-owl open <N> [--prompt TEXT]` and reports when
+// it ends. The child gets its own session (Setsid): pr-owl usually
+// runs inside a tmux popup, and with on_open: quit the popup closes
+// the moment the child starts — it must finish on its own, and it
+// does (see runSelf for where its failure goes then).
 func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"open", strconv.Itoa(prNumber)}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		out, err := m.runSelf(args...)
-		return openedMsg{out, err}
+		return openedMsg{prNumber, m.runSelf(args...)}
 	}
 }
 
@@ -364,27 +368,58 @@ func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 // Enter / f afterwards resume it.
 func (m model) closeReview(prNumber int) tea.Cmd {
 	return func() tea.Msg {
-		_, err := m.runSelf("close", strconv.Itoa(prNumber))
-		return closedMsg{err}
+		return closedMsg{prNumber, m.runSelf("close", strconv.Itoa(prNumber))}
 	}
 }
 
+// launch starts an open or close child for a PR in the background.
+// The list stays usable meanwhile; a second key on the same PR is
+// refused until the child reports. An open with on_open: quit ends the
+// TUI at once — the popup closes, the child finishes behind it.
+func (m model) launch(pr int, label string, cmd tea.Cmd, isOpen bool) (tea.Model, tea.Cmd) {
+	if running, ok := m.inflight[pr]; ok {
+		m.notice = fmt.Errorf("still %s", running)
+		return m, nil
+	}
+	m.inflight[pr] = label
+	if isOpen && m.cfg.OnOpen == "quit" {
+		m.farewell = label
+		return m, tea.Batch(cmd, tea.Quit)
+	}
+	return m, tea.Batch(cmd, m.spinner.Tick)
+}
+
 // runSelf runs this binary with args in its own session and returns
-// its stdout, or its failure with the child's stderr in the message.
-func runSelf(args ...string) (string, error) {
+// nil, or its failure with the child's stderr in the message.
+//
+// The child outlives the TUI with on_open: quit, and a Go program
+// writing to a broken pipe on stdout or stderr is killed by SIGPIPE —
+// so its stdout is discarded rather than piped, and its failure also
+// goes to tmux's status line before it is printed (see exitOn).
+func runSelf(args ...string) error {
 	self, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("locate pr-owl binary: %w", err)
+		return fmt.Errorf("locate pr-owl binary: %w", err)
 	}
 	// A test binary would run its whole suite as `pr-owl open`, and that
 	// suite would do it again. Tests inject runSelf; this catches the
 	// one that forgets.
 	if strings.HasSuffix(self, ".test") {
-		return "", fmt.Errorf("%s is a test binary, not pr-owl", self)
+		return fmt.Errorf("%s is a test binary, not pr-owl", self)
 	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	return runOut(cmd)
+	cmd.Env = append(os.Environ(), "PR_OWL_NOTIFY=tmux")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("pr-owl %s: %s", strings.Join(args, " "), msg)
+	}
+	return nil
 }
 
 // openPRInBrowser opens the PR's page. pr.URL comes from the API, so
@@ -493,7 +528,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// bubbles/spinner has no Stop method — you stop it by not
 		// forwarding its next tick. It spins during the initial fetch
 		// and while an open/close child runs.
-		if !m.prsReady || m.busy != "" || m.refreshing {
+		if !m.prsReady || len(m.inflight) > 0 || m.refreshing {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
@@ -544,25 +579,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = msg.err
 
 	case openedMsg:
-		m.busy = ""
+		delete(m.inflight, msg.pr)
 		if msg.err != nil {
 			m.notice = msg.err
 			break
 		}
-		// The workspace is up. What happens to the TUI is `on_open`: a
-		// popup closes, a standalone TUI stays (optionally moving the
-		// tmux client to the review session).
-		switch m.cfg.OnOpen {
-		case "quit":
-			m.farewell = msg.out
-			return m, tea.Quit
-		case "switch":
+		// The workspace is up (with on_open: quit the TUI is already
+		// gone). switch moves the tmux client to the review session.
+		if m.cfg.OnOpen == "switch" {
 			cmds = append(cmds, switchClient(m.cfg.Tmux.Session))
 		}
 		cmds = append(cmds, m.fetchLocal)
 
 	case closedMsg:
-		m.busy = ""
+		delete(m.inflight, msg.pr)
 		if msg.err != nil {
 			m.notice = msg.err
 			break
@@ -583,15 +613,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.showHelp = false
-		return m, nil
-	}
-
-	// A child is running: don't start another, don't move the cursor
-	// it acts on. Quit still works; the child is in its own session.
-	if m.busy != "" {
-		if key.Matches(msg, m.keys.Quit) {
-			return m, tea.Quit
-		}
 		return m, nil
 	}
 
@@ -664,10 +685,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 	case key.Matches(msg, m.keys.Enter):
 		if pr := m.selectedPR(); pr != nil {
-			// `open` runs to completion; openedMsg quits the popup on
-			// success and shows the failure otherwise.
-			m.busy = fmt.Sprintf("opening #%d…", pr.Number)
-			return m, tea.Batch(m.openReview(pr.Number, ""), m.spinner.Tick)
+			return m.launch(pr.Number, fmt.Sprintf("opening #%d…", pr.Number), m.openReview(pr.Number, ""), true)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
@@ -679,8 +697,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
 			if ls.Session != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
-				m.busy = fmt.Sprintf("sending feedback prompt to #%d…", pr.Number)
-				return m, tea.Batch(m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), m.spinner.Tick)
+				return m.launch(pr.Number, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.openReview(pr.Number, m.cfg.Agent.FeedbackPrompt), true)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):
@@ -700,8 +717,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
-				m.busy = fmt.Sprintf("closing #%d…", pr.Number)
-				return m, tea.Batch(m.closeReview(pr.Number), m.spinner.Tick)
+				return m.launch(pr.Number, fmt.Sprintf("closing #%d…", pr.Number), m.closeReview(pr.Number), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -1004,6 +1020,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 
 // actionRowView renders the single-line row under the title. It's
 // always present (chrome math is simpler that way) and shows one of:
+//   - the spinner + what is in flight ("opening #42…") while children run
 //   - the loading spinner + "loading PRs…" while the initial fetch is pending
 //   - the search input when the user is typing
 //   - the filter chip when a filter is applied but the input is blurred
@@ -1014,8 +1031,12 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 // truncated by the terminal; that's acceptable for a status row.
 func (m model) actionRowView() string {
 	switch {
-	case m.busy != "":
-		return m.spinner.View() + " " + styleDim.Render(m.busy)
+	case len(m.inflight) > 0:
+		labels := make([]string, 0, len(m.inflight))
+		for _, pr := range slices.Sorted(maps.Keys(m.inflight)) {
+			labels = append(labels, m.inflight[pr])
+		}
+		return m.spinner.View() + " " + styleDim.Render(strings.Join(labels, "  "))
 	case !m.prsReady && m.err == nil:
 		return m.spinner.View() + " " + styleDim.Render("loading PRs…")
 	case m.refreshing:
@@ -1399,6 +1420,13 @@ func enterDefaultRepo(defaultRepo string) error {
 func exitOn(err error) {
 	if err == nil {
 		return
+	}
+	// Started by the TUI, which may already have quit (on_open: quit):
+	// the failure goes to the status line of the tmux client the popup
+	// was in, for eight seconds — before stderr, which may be a broken
+	// pipe by now and would end the process.
+	if os.Getenv("PR_OWL_NOTIFY") == "tmux" && os.Getenv("TMUX") != "" {
+		_ = exec.Command("tmux", "display-message", "-d", "8000", "pr-owl: "+err.Error()).Run()
 	}
 	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
 	var ue usageError

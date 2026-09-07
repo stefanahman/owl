@@ -108,6 +108,11 @@ Three companions, each optional:
 | `?` | help, with the full badge legend |
 | `q` | quit |
 
+`↵`, `f` and `c` run in the background: the list stays usable while
+the child works, a second press on the same PR is refused until it
+reports, and a failure shows in the action row — or, once a popup has
+closed, on tmux's status line for eight seconds.
+
 Every key is rebindable, and `links` add your own (below).
 
 ## Commands
@@ -159,7 +164,7 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once a review is open: quit (popup), stay, or switch (tmux switch-client to the review session)
+on_open: quit                    # the TUI once an open starts: quit (popup closes at once), stay, or switch (tmux switch-client to the review session)
 
 hooks:
   after_open: ""                 # runs after every open with PR_OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO set

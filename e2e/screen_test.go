@@ -69,20 +69,33 @@ func TestOpenFromTheTUI(t *testing.T) {
 	cmd := start(t, term, repo, env)
 	waitFor(t, term, "Waiting for author")
 	term.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
-	waitExit(t, term, cmd)
-	if !strings.Contains(screenText(term), "started =pr-reviews:=pr-3543-add-billing-migration") {
+	waitExit(t, term, cmd) // on_open: quit — the TUI is gone at once
+	if !strings.Contains(screenText(term), "opening #3543") {
 		t.Errorf("no farewell on screen:\n%s", screenText(term))
 	}
+	// The child finishes on its own.
 	wt := filepath.Join(repo, ".worktrees.local", "pr-3543-add-billing-migration")
-	if _, err := os.Stat(filepath.Join(wt, ".git")); err != nil {
-		t.Errorf("worktree not created: %v", err)
+	windows := func() string {
+		tmux := exec.Command("tmux", "list-windows", "-t", "=pr-reviews", "-F", "#{window_name}")
+		tmux.Env = env
+		out, _ := tmux.Output()
+		return string(out)
 	}
-	tmux := exec.Command("tmux", "list-windows", "-t", "=pr-reviews", "-F", "#{window_name}")
-	tmux.Env = env
-	out, err := tmux.Output()
-	if err != nil || !strings.Contains(string(out), "pr-3543-add-billing-migration") {
-		t.Errorf("review window missing: %v %q", err, out)
+	waitUntil(t, "the worktree and the review window", func() bool {
+		_, err := os.Stat(filepath.Join(wt, ".git"))
+		return err == nil && strings.Contains(windows(), "pr-3543-add-billing-migration")
+	})
+}
+
+// waitUntil polls ok for up to ten seconds.
+func waitUntil(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if ok() {
+			return
+		}
 	}
+	t.Fatalf("%s never appeared", what)
 }
 
 // The terminal's size; the snapshots in testdata/ were taken at it.

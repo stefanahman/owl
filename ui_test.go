@@ -38,9 +38,9 @@ func testModel(t *testing.T) model {
 	m := newModel(defaultConfig(), "acme/example", nil)
 	m.noInit = true
 	m.me = "stefanahman" // stable login for MyReviewStatus derivation
-	m.runSelf = func(args ...string) (string, error) {
+	m.runSelf = func(args ...string) error {
 		<-done
-		return "", errors.New("test ended")
+		return errors.New("test ended")
 	}
 	return m
 }
@@ -614,60 +614,71 @@ func TestFindLocalForPR(t *testing.T) {
 	}
 }
 
-// TestBusyState covers the open/close child lifecycle without spawning
-// one: while busy, keys other than quit are ignored; a failed child
-// surfaces its error and unblocks; a successful open quits the popup.
-func TestBusyState(t *testing.T) {
+// TestChildrenRunInTheBackground: open and close children don't lock
+// the list — keys keep working, the action row shows what is in
+// flight, a second key on the same PR is refused until the child
+// reports, a failure is a notice, success refreshes the overlay.
+func TestChildrenRunInTheBackground(t *testing.T) {
 	m := testModel(t)
+	m.cfg.OnOpen = "stay"
 	m.prs = fixturePRs()
 	m.prsReady = true
-	m.me = "stefanahman"
+	m.width, m.height = 100, 24
+	m.resizeViewport()
 	m.refreshList()
 	m.cursor = m.firstPRRowIndex()
-	m.busy = "opening #3543…"
 
-	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
-	if got := next.(model); got.cursor != m.cursor {
-		t.Errorf("cursor moved while busy: %d → %d", m.cursor, got.cursor)
+	started, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = started.(model)
+	if cmd == nil || m.inflight[3543] == "" {
+		t.Fatalf("Enter did not start an open: inflight=%v", m.inflight)
 	}
 	if !strings.Contains(m.actionRowView(), "opening #3543…") {
-		t.Errorf("action row should show the busy label, got %q", m.actionRowView())
+		t.Errorf("action row = %q", m.actionRowView())
+	}
+	if moved, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown}); moved.(model).cursor == m.cursor {
+		t.Error("the cursor is stuck while a child runs")
+	}
+	again, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if am := again.(model); cmd != nil || am.notice == nil || !strings.Contains(am.notice.Error(), "still opening #3543") {
+		t.Errorf("a second Enter on the same PR: cmd=%v notice=%v", cmd, am.notice)
 	}
 
-	failed, cmd := m.Update(openedMsg{err: errors.New("fetch failed")})
-	if fm := failed.(model); fm.busy != "" || fm.notice == nil {
-		t.Errorf("after a failed open: busy=%q notice=%v", fm.busy, fm.notice)
-	}
-	if cmd != nil {
-		if _, quit := cmd().(tea.QuitMsg); quit {
-			t.Error("a failed open must not quit the popup")
-		}
+	failed, _ := m.Update(openedMsg{pr: 3543, err: errors.New("fetch failed")})
+	if fm := failed.(model); len(fm.inflight) != 0 || fm.notice == nil {
+		t.Errorf("after a failed open: inflight=%v notice=%v", fm.inflight, fm.notice)
 	}
 
-	opened, cmd := m.Update(openedMsg{out: "started =pr-reviews:=pr-3543"})
-	if cmd == nil {
-		t.Fatal("a successful open should quit")
-	}
-	if _, quit := cmd().(tea.QuitMsg); !quit {
-		t.Error("a successful open should quit the popup")
-	}
-	if om := opened.(model); om.farewell != "started =pr-reviews:=pr-3543" {
-		t.Errorf("farewell = %q", om.farewell)
-	}
-
-	closed, cmd := m.Update(closedMsg{})
-	if cm := closed.(model); cm.busy != "" || cmd == nil {
-		t.Errorf("after close: busy=%q, refresh cmd=%v", cm.busy, cmd)
-	}
-
-	// on_open: stay keeps the TUI and refreshes instead of quitting.
-	m.cfg.OnOpen = "stay"
-	stayed, cmd := m.Update(openedMsg{out: "selected"})
-	if sm := stayed.(model); sm.busy != "" || sm.farewell != "" || cmd == nil {
-		t.Errorf("on_open stay: busy=%q farewell=%q cmd=%v", sm.busy, sm.farewell, cmd)
+	m.inflight[3543] = "opening #3543…"
+	opened, cmd := m.Update(openedMsg{pr: 3543})
+	if om := opened.(model); len(om.inflight) != 0 || om.farewell != "" || cmd == nil {
+		t.Errorf("on_open stay after a successful open: inflight=%v farewell=%q cmd=%v", om.inflight, om.farewell, cmd)
 	}
 	if _, quit := cmd().(tea.QuitMsg); quit {
 		t.Error("on_open stay must not quit")
+	}
+
+	m.inflight[3543] = "closing #3543…"
+	closed, cmd := m.Update(closedMsg{pr: 3543})
+	if cm := closed.(model); len(cm.inflight) != 0 || cmd == nil {
+		t.Errorf("after close: inflight=%v refresh cmd=%v", cm.inflight, cmd)
+	}
+}
+
+// TestOpenQuitsAtOnce: with on_open: quit the TUI ends the moment an
+// open starts — the popup closes, the child finishes behind it.
+func TestOpenQuitsAtOnce(t *testing.T) {
+	tm := newTestModel(t)
+	tm.Send(prsMsg{prs: fixturePRs()})
+	tm.Send(localMsg{})
+	tm.Send(mergedMsg{})
+	time.Sleep(50 * time.Millisecond)
+
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second)).(model)
+	if fm.farewell != "opening #3543…" || fm.inflight[3543] == "" {
+		t.Errorf("farewell=%q inflight=%v", fm.farewell, fm.inflight)
 	}
 }
 
