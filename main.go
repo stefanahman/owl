@@ -238,7 +238,16 @@ type model struct {
 	runSelf func(args ...string) (string, error)
 }
 
+// initialModel gathers what the model needs from the environment —
+// the repo of the working directory and its cache — and builds it.
 func initialModel(cfg Config) model {
+	repo := currentRepo(cfg.Remote)
+	return newModel(cfg, repo, loadCache(repo))
+}
+
+// newModel builds the model from its inputs. Tests call it directly, so
+// nothing in here shells out or reads the cache.
+func newModel(cfg Config, repo string, cache *cacheFile) model {
 	applyTheme(cfg.Theme)
 
 	ti := textinput.New()
@@ -255,7 +264,7 @@ func initialModel(cfg Config) model {
 	m := model{
 		cfg:     cfg,
 		runSelf: runSelf,
-		repo:    currentRepo(cfg.Remote),
+		repo:    repo,
 		keys:    newKeyMap(cfg.Keys, cfg.Links),
 		help:    help.New(),
 		search:  ti,
@@ -267,12 +276,12 @@ func initialModel(cfg Config) model {
 	// still fire in Init and overwrite the state when they land — the
 	// "updated Xm ago" indicator shows freshness so the user sees when
 	// they're looking at stale data.
-	if c := loadCache(m.repo); c != nil {
-		m.prs = c.Prs
-		m.merged = c.Merged
-		m.me = c.Me
+	if cache != nil {
+		m.prs = cache.Prs
+		m.merged = cache.Merged
+		m.me = cache.Me
 		m.prsReady = true
-		m.lastFetched = c.FetchedAt
+		m.lastFetched = cache.FetchedAt
 	}
 	return m
 }

@@ -28,17 +28,18 @@ func newTestModel(t *testing.T) *teatest.TestModel {
 	return teatest.NewTestModel(t, testModel(t), teatest.WithInitialTermSize(120, 30))
 }
 
-// testModel is a model that never shells out: no Init fetches, and a
-// runSelf that blocks until the test ends instead of executing the
-// test binary as `pr-owl open`.
+// testModel is a model that never touches the machine: built by
+// newModel (no git, no cache read), no Init fetches, the cache written
+// to a throwaway directory, and a runSelf that blocks until the test
+// ends instead of executing the test binary as `pr-owl open`.
 func testModel(t *testing.T) model {
 	t.Helper()
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	done := make(chan struct{})
 	t.Cleanup(func() { close(done) })
-	m := initialModel(defaultConfig())
+	m := newModel(defaultConfig(), "acme/example", nil)
 	m.initCmds = []tea.Cmd{} // suppress fetchPRs/fetchLocal/etc
 	m.me = "stefanahman"     // stable login for MyReviewStatus derivation
-	m.repo = "acme/example"  // deterministic header regardless of cwd
 	m.runSelf = func(args ...string) (string, error) {
 		<-done
 		return "", errors.New("test ended")
