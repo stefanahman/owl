@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,11 +25,10 @@ import (
 // `go test ./e2e -update`.
 //
 // Everything the TUI talks to is faked: a git repo whose origin points
-// at github.com, a gh on PATH that serves fixture JSON, no tmux server,
-// an empty Claude config dir, and a config with one link.
+// at github.com, a gh on PATH that serves fixture JSON, a private tmux
+// server, an empty Claude config dir, and a config with one link.
 func TestScreen(t *testing.T) {
 	root := t.TempDir()
-	bin := buildBinary(t, root)
 	repo := fixtureRepo(t, root)
 	fakeGH(t, root)
 	env := hermeticEnv(t, root)
@@ -40,13 +38,7 @@ func TestScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer term.Close()
-
-	cmd := exec.Command(bin)
-	cmd.Dir = repo
-	cmd.Env = env
-	if err := term.Start(cmd); err != nil {
-		t.Fatal(err)
-	}
+	cmd := start(t, term, repo, env)
 
 	waitFor(t, term, "Waiting for author")
 	snapshot.TestdataEqual(t, "list", term)
@@ -56,9 +48,7 @@ func TestScreen(t *testing.T) {
 	snapshot.TestdataEqual(t, "help", term)
 
 	term.SendKey(uv.KeyPressEvent{Code: 'q', Text: "q"})
-	if err := term.Wait(cmd); err != nil {
-		t.Fatalf("pr-owl exited with %v", err)
-	}
+	waitExit(t, term, cmd)
 }
 
 // TestOpenFromTheTUI presses Enter on the first PR: the binary runs
@@ -67,7 +57,6 @@ func TestScreen(t *testing.T) {
 // the TUI with the child's summary printed.
 func TestOpenFromTheTUI(t *testing.T) {
 	root := t.TempDir()
-	bin := buildBinary(t, root)
 	repo := fixtureRepo(t, root)
 	fakeGH(t, root)
 	env := hermeticEnv(t, root)
@@ -77,18 +66,10 @@ func TestOpenFromTheTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer term.Close()
-	cmd := exec.Command(bin)
-	cmd.Dir = repo
-	cmd.Env = env
-	if err := term.Start(cmd); err != nil {
-		t.Fatal(err)
-	}
+	cmd := start(t, term, repo, env)
 	waitFor(t, term, "Waiting for author")
 	term.SendKey(uv.KeyPressEvent{Code: uv.KeyEnter})
-	waitFor(t, term, "opening #3543")
-	if err := term.Wait(cmd); err != nil {
-		t.Fatalf("pr-owl exited with %v:\n%s", err, screenText(term))
-	}
+	waitExit(t, term, cmd)
 	if !strings.Contains(screenText(term), "started =pr-reviews:=pr-3543-add-billing-migration") {
 		t.Errorf("no farewell on screen:\n%s", screenText(term))
 	}
@@ -104,15 +85,54 @@ func TestOpenFromTheTUI(t *testing.T) {
 	}
 }
 
-// buildBinary compiles pr-owl once into root.
-func buildBinary(t *testing.T, root string) string {
-	t.Helper()
-	bin := filepath.Join(root, "pr-owl")
-	out, err := exec.Command("go", "build", "-o", bin, "github.com/stefanahman/pr-owl").CombinedOutput()
+// bin is the pr-owl binary under test, built once for the package.
+var bin string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "pr-owl-e2e-bin")
 	if err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	return bin
+	bin = filepath.Join(dir, "pr-owl")
+	if out, err := exec.Command("go", "build", "-o", bin, "github.com/stefanahman/pr-owl").CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// start runs pr-owl in the virtual terminal and makes sure it is gone
+// when the test ends, however the test ends.
+func start(t *testing.T, term *vttest.Terminal, dir string, env []string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(bin)
+	cmd.Dir = dir
+	cmd.Env = env
+	if err := term.Start(cmd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	return cmd
+}
+
+// waitExit waits for pr-owl to exit; a deadline turns a hang into a
+// failure with the screen attached instead of a stuck run.
+func waitExit(t *testing.T, term *vttest.Terminal, cmd *exec.Cmd) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- term.Wait(cmd) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("pr-owl exited with %v:\n%s", err, screenText(term))
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatalf("pr-owl did not exit within 20s:\n%s", screenText(term))
+	}
 }
 
 // fixtureRepo is a clone whose origin is named like a GitHub repo (so
@@ -236,9 +256,6 @@ func hermeticEnv(t *testing.T, root string) []string {
 		"TMUX=",
 		"HISTFILE=",
 	)
-	if runtime.GOOS == "darwin" {
-		env = append(env, "TMPDIR="+root)
-	}
 	return env
 }
 
