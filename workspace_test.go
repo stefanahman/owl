@@ -159,13 +159,15 @@ func (f *fixture) activeWindow() string {
 	return ""
 }
 
-// waitPane polls the window's screen until it contains want.
+// waitPane polls the window's screen until it contains want. -J joins
+// wrapped lines: with a long prompt (macOS's /bin/sh puts the hostname
+// in it) the typed command spans two screen lines.
 func (f *fixture) waitPane(window, want string) string {
 	f.t.Helper()
 	target := tmuxTarget(f.cfg.Tmux.Session, window)
 	var screen string
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-		screen, _ = tmux("capture-pane", "-p", "-t", target)
+		screen, _ = tmux("capture-pane", "-p", "-J", "-t", target)
 		if strings.Contains(screen, want) {
 			return screen
 		}
