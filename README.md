@@ -55,8 +55,9 @@ Prebuilt binaries for macOS and Linux (amd64, arm64) are on the
 checkout, `make install BIN=~/.local/bin`. Needs git, an authenticated
 `gh`, tmux (any version for `open` and `close`, ≥ 3.2 for the popup) and
 [Claude Code](https://docs.claude.com/en/docs/claude-code), the agent
-`open` starts and resumes. Linux: `xdg-open` for `o`; `y` copies through
-OSC 52, which most terminals support.
+`open` starts and resumes. Windows is not supported (no tmux). Linux:
+`xdg-open` for `o`; `y` copies through OSC 52, which most terminals
+support.
 
 `pr-owl` opens the TUI for the repo of the current directory; set
 `default_repo` in the config to launch it from anywhere. To have it a
