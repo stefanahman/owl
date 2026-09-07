@@ -1,4 +1,3 @@
-# Terminal output snapshots are byte-exact (CRLF from raw mode); never normalise them.
-testdata/**/*.golden -text
+# Screen snapshots are byte-exact; never normalise them.
 e2e/testdata/*.json -text
 e2e/testdata/*.png binary

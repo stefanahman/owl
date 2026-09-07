@@ -17,7 +17,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 )
 
@@ -674,57 +673,83 @@ func TestBusyState(t *testing.T) {
 	}
 }
 
-// TestGoldenFrames snapshots the full program output for the states
-// the screen test (e2e/) can't reach without a live backend: loading,
-// empty, a search filter, an error, and a running open. Refresh with
-// `go test -run TestGoldenFrames -update .` and review the diff.
-func TestGoldenFrames(t *testing.T) {
-	frames := map[string]func(tm *teatest.TestModel){
-		"loading": func(tm *teatest.TestModel) {},
-		"empty": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg{})
-			tm.Send(mergedMsg{})
+// TestFrames drives the model through the states the screen test
+// (e2e/) can't reach without a live backend — loading, empty, a search
+// filter, an error, a running open — and asserts on what the final
+// frame says. The e2e snapshots are the pixel-exact layer; this one
+// only has to survive a renderer change.
+func TestFrames(t *testing.T) {
+	frames := map[string]struct {
+		drive       func(tm *teatest.TestModel)
+		want, avoid []string
+	}{
+		"loading": {
+			drive: func(tm *teatest.TestModel) {},
+			want:  []string{"loading PRs…"},
+			avoid: []string{"Todo", "no PRs"},
 		},
-		"sections": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg{prs: fixturePRs()})
-			tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Session: "pr-3543-feat", ClaudeState: "blocked"}})
-			tm.Send(mergedMsg{prs: fixtureMerged()})
+		"empty": {
+			drive: func(tm *teatest.TestModel) {
+				tm.Send(prsMsg{})
+				tm.Send(mergedMsg{})
+			},
+			want:  []string{"no PRs need your review", "0 open"},
+			avoid: []string{"Todo"},
 		},
-		"search": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg{prs: fixturePRs()})
-			tm.Send(mergedMsg{})
-			tm.Send(tea.KeyPressMsg{Code: '/', Text: "/"})
-			tm.Send(tea.KeyPressMsg{Code: '3', Text: "3"})
-			tm.Send(tea.KeyPressMsg{Code: '5', Text: "5"})
+		"sections": {
+			drive: func(tm *teatest.TestModel) {
+				tm.Send(prsMsg{prs: fixturePRs()})
+				tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Session: "pr-3543-feat", ClaudeState: "blocked"}})
+				tm.Send(mergedMsg{prs: fixtureMerged()})
+			},
+			want: []string{"Todo", "Waiting for author", "Approved", "Merged (last 1d)",
+				"#3543", "#3510", "#3502", "#3550", "#3488", "⎇", "©", "✓", "·",
+				"4 open · 1 todo · 0 you · 2 author · 1 approved · 1 merged (1d)"},
 		},
-		"error": func(tm *teatest.TestModel) {
-			tm.Send(errMsg{err: errors.New("gh api graphql: HTTP 401: Bad credentials")})
+		"search": {
+			drive: func(tm *teatest.TestModel) {
+				tm.Send(prsMsg{prs: fixturePRs()})
+				tm.Send(mergedMsg{})
+				tm.Type("/354") // every fixture number starts with 35
+			},
+			want:  []string{"search /", "#3543"},
+			avoid: []string{"#3550", "#3510", "#3502"},
 		},
-		"busy": func(tm *teatest.TestModel) {
-			tm.Send(prsMsg{prs: fixturePRs()})
-			tm.Send(mergedMsg{})
-			tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+		"error": {
+			drive: func(tm *teatest.TestModel) {
+				tm.Send(errMsg{err: errors.New("gh api graphql: HTTP 401: Bad credentials")})
+			},
+			want:  []string{"error: gh api graphql: HTTP 401: Bad credentials"},
+			avoid: []string{"loading"},
+		},
+		"busy": {
+			drive: func(tm *teatest.TestModel) {
+				tm.Send(prsMsg{prs: fixturePRs()})
+				tm.Send(mergedMsg{})
+				tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+			},
+			want: []string{"opening #3543…", "#3543"},
 		},
 	}
-	for name, drive := range frames {
+	for name, f := range frames {
 		t.Run(name, func(t *testing.T) {
-			// The renderer picks escape-sequence optimisations from
-			// $TERM (repeat, vertical position…), so pin the terminal
-			// type and colour profile: the frames must not depend on
-			// the shell the tests run from.
-			tm := teatest.NewTestModel(t, testModel(t),
-				teatest.WithInitialTermSize(100, 24),
-				teatest.WithProgramOptions(
-					tea.WithColorProfile(colorprofile.ANSI256),
-					tea.WithEnvironment([]string{"TERM=xterm-256color"}),
-				),
-			)
-			drive(tm)
+			tm := newTestModel(t)
+			f.drive(tm)
 			time.Sleep(150 * time.Millisecond)
 			if err := tm.Quit(); err != nil {
 				t.Fatal(err)
 			}
-			teatest.RequireEqualOutput(t, readAll(t, tm.FinalOutput(t, teatest.WithFinalTimeout(2*time.Second))))
+			frame := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second)).(model).render()
+			for _, want := range f.want {
+				if !strings.Contains(frame, want) {
+					t.Errorf("frame lacks %q:\n%s", want, frame)
+				}
+			}
+			for _, avoid := range f.avoid {
+				if strings.Contains(frame, avoid) {
+					t.Errorf("frame has %q:\n%s", avoid, frame)
+				}
+			}
 		})
 	}
 }

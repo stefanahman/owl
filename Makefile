@@ -15,10 +15,9 @@ test:
 	go test .
 	go test -count=1 ./e2e
 
-# Rewrite the golden frames (model level) and the screen snapshots
-# (real binary in a virtual terminal, JSON + PNG). Review the diff.
+# Rewrite the screen snapshots (the real binary in a virtual terminal,
+# JSON + PNG). Review the diff.
 update-snapshots:
-	go test . -run TestGoldenFrames -update
 	go test -count=1 ./e2e -update
 
 lint:
