@@ -1,8 +1,7 @@
 // UI tests via charmbracelet/x/exp/teatest/v2 — exercise the bubbletea
-// program without a real TTY. Fetches are suppressed by setting
-// initCmds to an empty slice; tests then Send synthetic msgs
-// (prsMsg, mergedMsg, localMsg, userMsg) and assert on the
-// rendered View output.
+// program without a real TTY. Init is a no-op (noInit); tests Send
+// synthetic msgs (prsMsg, mergedMsg, localMsg, userMsg) and assert on
+// the rendered View output.
 //
 // These tests complement smoke_test.go, which exercises the data
 // layer against a real gh/git/tmux environment.
@@ -37,8 +36,8 @@ func testModel(t *testing.T) model {
 	done := make(chan struct{})
 	t.Cleanup(func() { close(done) })
 	m := newModel(defaultConfig(), "acme/example", nil)
-	m.initCmds = []tea.Cmd{} // suppress fetchPRs/fetchLocal/etc
-	m.me = "stefanahman"     // stable login for MyReviewStatus derivation
+	m.noInit = true
+	m.me = "stefanahman" // stable login for MyReviewStatus derivation
 	m.runSelf = func(args ...string) (string, error) {
 		<-done
 		return "", errors.New("test ended")
@@ -260,8 +259,7 @@ func TestStaleBadgeColour(t *testing.T) {
 
 // TestCleanupGuardSkipsPRWithoutLocal verifies the guard at handleKey:
 // pressing `c` on a PR with no worktree AND no tmux session doesn't
-// fire pr-review-done (which would fail with "no such worktree" and
-// bubble up as an errMsg).
+// run close (which would find nothing and surface as a notice).
 func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 	tm := newTestModel(t)
 
@@ -285,8 +283,8 @@ func TestCleanupGuardSkipsPRWithoutLocal(t *testing.T) {
 	}
 }
 
-// TestSearchRejectsNonDigits verifies the textinput Validate closure
-// keeps non-digit input out of the search buffer.
+// TestSearchRejectsNonDigits verifies handleKey drops non-digit input
+// before it reaches the textinput.
 func TestSearchRejectsNonDigits(t *testing.T) {
 	tm := newTestModel(t)
 
@@ -295,7 +293,7 @@ func TestSearchRejectsNonDigits(t *testing.T) {
 	tm.Send(mergedMsg{})
 	time.Sleep(50 * time.Millisecond)
 
-	// Enter search mode + type a letter (should be rejected by Validate).
+	// Enter search mode + type letters (dropped before the input sees them).
 	tm.Type("/abc")
 	time.Sleep(50 * time.Millisecond)
 

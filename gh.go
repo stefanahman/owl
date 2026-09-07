@@ -17,7 +17,10 @@ import (
 // cover a day of team activity so "merged without my review" cases
 // stay visible for audit; short enough to keep the list from turning
 // into a firehose.
-const mergedWindow = 24 * time.Hour
+const (
+	mergedWindow      = 24 * time.Hour
+	mergedWindowLabel = "1d" // mergedWindow, as the UI says it
+)
 
 // PR mirrors the JSON shape returned by `gh pr list --json ...`.
 // Fields intentionally kept minimal to keep the query fast.

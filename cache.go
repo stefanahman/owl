@@ -83,9 +83,17 @@ func saveCache(repo string, c cacheFile) {
 	if err != nil {
 		return
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// A unique temp file: two pr-owl instances writing at once must not
+	// rename each other's half-written file into place.
+	f, err := os.CreateTemp(filepath.Dir(p), ".cache-*")
+	if err != nil {
 		return
 	}
-	_ = os.Rename(tmp, p)
+	if _, err := f.Write(b); err != nil || f.Close() != nil {
+		os.Remove(f.Name())
+		return
+	}
+	if err := os.Rename(f.Name(), p); err != nil {
+		os.Remove(f.Name())
+	}
 }

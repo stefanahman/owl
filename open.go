@@ -139,7 +139,9 @@ func ensureWorktree(cfg Config, repo, slug string, n int, out io.Writer) (name, 
 	}
 	path = filepath.Join(repo, cfg.WorktreesDir, name)
 	fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)
-	if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("pull/%d/head:%s", n, name)); err != nil {
+	// `+`: the branch is pr-owl's own, and one left behind by a
+	// hand-removed worktree may not fast-forward to today's head.
+	if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, name)); err != nil {
 		return "", "", err
 	}
 	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {

@@ -246,10 +246,8 @@ type model struct {
 
 	width, height int
 
-	// initCmds overrides the default Init() batch. Tests set this to an
-	// empty slice to suppress the shell-out fetches; production leaves
-	// it nil so the real fetches fire.
-	initCmds []tea.Cmd
+	// noInit makes Init() do nothing: tests feed messages themselves.
+	noInit bool
 
 	// farewell is printed by main after the TUI exits: what `open` did,
 	// for the terminal the popup leaves behind.
@@ -311,8 +309,8 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 }
 
 func (m model) Init() tea.Cmd {
-	if m.initCmds != nil {
-		return tea.Batch(m.initCmds...)
+	if m.noInit {
+		return nil
 	}
 	return tea.Batch(
 		m.fetchPRs, m.fetchLocal, m.fetchMerged, fetchUser,
@@ -797,13 +795,8 @@ func (m *model) jumpToNextAttention() {
 		if r.status == StatusTodo && !r.merged {
 			return true
 		}
-		if r.pr != nil {
-			ls := findLocalForPR(m.localState, r.pr.Number)
-			if ls.ClaudeState == "blocked" || ls.ClaudeState == "done" {
-				return true
-			}
-		}
-		return false
+		ls := findLocalForPR(m.localState, r.pr.Number)
+		return ls.ClaudeState == "blocked" || ls.ClaudeState == "done"
 	}
 	// Scan forward from cursor+1, then wrap.
 	for offset := 1; offset <= len(rows); offset++ {
@@ -926,7 +919,7 @@ func (m model) visibleRows() []visibleRow {
 		}
 	}
 	if len(mergedVisible) > 0 {
-		title := fmt.Sprintf("Merged (last %s)", humanizeDuration(mergedWindow))
+		title := "Merged (last " + mergedWindowLabel + ")"
 		out = append(out, visibleRow{sectionTitle: title, sectionStyle: styleSectionMerged, merged: true})
 		for i := range mergedVisible {
 			out = append(out, visibleRow{pr: &mergedVisible[i], merged: true})
@@ -1061,7 +1054,7 @@ func (m model) countsSummary() string {
 		counts[StatusWaitingForAuthor],
 		counts[StatusApproved],
 		len(m.merged),
-		humanizeDuration(mergedWindow),
+		mergedWindowLabel,
 	))
 }
 
@@ -1298,17 +1291,6 @@ func relativeAge(iso string) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	default:
 		return fmt.Sprintf("%dw", int(d.Hours()/(24*7)))
-	}
-}
-
-func humanizeDuration(d time.Duration) string {
-	switch {
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
 

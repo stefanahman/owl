@@ -124,6 +124,7 @@ func TestParseConfigRejects(t *testing.T) {
 		"unknown key":         "tmux:\n  sesion: x\n",
 		"empty session":       "tmux:\n  session: ''\n",
 		"absolute worktrees":  "worktrees_dir: /tmp/wt\n",
+		"repo root worktrees": "worktrees_dir: .\n",
 		"parent worktrees":    "worktrees_dir: ../wt\n",
 		"hidden parent":       "worktrees_dir: wt/../../x\n",
 		"bad colour":          "theme:\n  done: green\n",

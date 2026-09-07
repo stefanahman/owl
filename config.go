@@ -338,7 +338,7 @@ func (cfg *Config) validate() error {
 			return fmt.Errorf("%s must not be empty", r.name)
 		}
 	}
-	if d := filepath.Clean(cfg.WorktreesDir); filepath.IsAbs(d) || d == ".." || strings.HasPrefix(d, "../") {
+	if d := filepath.Clean(cfg.WorktreesDir); filepath.IsAbs(d) || d == "." || d == ".." || strings.HasPrefix(d, "../") {
 		return fmt.Errorf("worktrees_dir must be a relative path inside the repo, got %q", cfg.WorktreesDir)
 	}
 	switch cfg.OnOpen {
