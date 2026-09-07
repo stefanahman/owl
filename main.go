@@ -304,6 +304,10 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		m.me = cache.Me
 		m.prsReady = true
 		m.lastFetched = cache.FetchedAt
+		// The row, not the PR: the list is where it was, so start where
+		// the last session ended — clamped, in case it shrank.
+		m.cursor = cache.Cursor
+		m.clampCursor()
 	}
 	return m
 }
@@ -322,16 +326,18 @@ func (m model) Init() tea.Cmd {
 
 func fetchUser() tea.Msg { return userMsg(currentUser()) }
 
-// persistCache writes the current prs/merged/me snapshot to the
-// per-repo cache file. Called after any of the three land so the
-// next popup startup has warm data. All errors swallowed inside
-// saveCache — cache is best-effort.
+// persistCache writes the current prs/merged/me snapshot and the
+// cursor row to the per-repo cache file. Called after any of the three
+// land, and once more on exit for the cursor, so the next popup
+// startup has warm data and the same row selected. All errors
+// swallowed inside saveCache — cache is best-effort.
 func (m model) persistCache() {
 	saveCache(m.repo, cacheFile{
 		Prs:       m.prs,
 		Merged:    m.merged,
 		Me:        m.me,
 		FetchedAt: m.lastFetched,
+		Cursor:    m.cursor,
 	})
 }
 
@@ -1361,8 +1367,10 @@ func main() {
 		p := tea.NewProgram(initialModel(cfg))
 		var final tea.Model
 		if final, err = p.Run(); err == nil {
-			if farewell := final.(model).farewell; farewell != "" {
-				fmt.Println(farewell)
+			fm := final.(model)
+			fm.persistCache() // the cursor row, for the next start
+			if fm.farewell != "" {
+				fmt.Println(fm.farewell)
 			}
 		}
 	case args[0] == "open":

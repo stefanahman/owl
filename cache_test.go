@@ -31,3 +31,29 @@ func TestCacheRoundTrip(t *testing.T) {
 		t.Error("no repo, no cache file")
 	}
 }
+
+// TestCursorResumes: the cursor row is saved with the cache on exit
+// and restored at the next start, clamped to the list that is there.
+func TestCursorResumes(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	m := testModel(t)
+	m.prs, m.prsReady, m.cursor = fixturePRs(), true, 3
+	m.persistCache()
+	if got := loadCache("acme/example"); got == nil || got.Cursor != 3 {
+		t.Fatalf("cache cursor = %+v, want 3", got)
+	}
+
+	resumed := newModel(defaultConfig(), "acme/example", loadCache("acme/example"))
+	resumed.me = "stefanahman"
+	if resumed.cursor != 3 || resumed.selectedPR() == nil {
+		t.Errorf("resumed cursor = %d (PR %v), want row 3 on a PR", resumed.cursor, resumed.selectedPR())
+	}
+
+	beyond := loadCache("acme/example")
+	beyond.Cursor = 99
+	clamped := newModel(defaultConfig(), "acme/example", beyond)
+	clamped.me = "stefanahman"
+	if last := clamped.lastPRRowIndex(); clamped.cursor != last {
+		t.Errorf("cursor beyond the list: %d, want the last PR row %d", clamped.cursor, last)
+	}
+}

@@ -27,6 +27,7 @@ type cacheFile struct {
 	Merged    []PR      `json:"merged"`
 	Me        string    `json:"me"`
 	FetchedAt time.Time `json:"fetchedAt"`
+	Cursor    int       `json:"cursor"` // the row the cursor was on at exit; the next start resumes there
 }
 
 // cachePath returns the per-repo cache file path. `repo` is owner/name;

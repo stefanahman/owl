@@ -31,6 +31,9 @@ Merged (last 1d)
   you / done, with `*` until you look) — `✓` you approved, `·` you
   engaged (both amber when the author pushed after that review), `⚠`
   someone requested changes.
+- The list comes back as you left it: the last fetch from a per-repo
+  cache until the live one lands, with the cursor on the row it was
+  on when you quit (the row, not the PR).
 - **Enter** opens the review: `pr-owl open` fetches the PR into
   `<repo>/.worktrees.local/pr-<N>-<slug>`, creates a window in the
   `pr-reviews` tmux session and starts Claude there with the
