@@ -176,6 +176,18 @@ func (f *fixture) waitPane(window, want string) string {
 	return ""
 }
 
+// waitFile polls until the file holds exactly want.
+func (f *fixture) waitFile(path, want string) {
+	f.t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if got, err := os.ReadFile(path); err == nil && string(got) == want {
+			return
+		}
+	}
+	got, _ := os.ReadFile(path)
+	f.t.Fatalf("%s never held %q; last: %q", path, want, got)
+}
+
 func (f *fixture) branches() []string {
 	return strings.Fields(f.git(f.repo, "branch", "--list", "--format=%(refname:short)"))
 }
@@ -333,9 +345,13 @@ func TestParseRepoURL(t *testing.T) {
 func TestOpenIsIdempotent(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
+	// The agent leaves a line per start; the screen can't be counted —
+	// a readline shell echoes a typed-ahead command twice (macOS's sh).
+	runs := filepath.Join(f.root, "agent.runs")
+	f.cfg.Agent.Cmd = "echo run >> " + runs + " #" // the prompt lands after # and is ignored
 	f.open("42")
 	name := "pr-42-fix-crash-on-startup"
-	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	f.waitFile(runs, "run\n")
 	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
 
 	out := f.open("42")
@@ -349,8 +365,9 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if got := f.activeWindow(); got != name {
 		t.Errorf("active window %q, want %q", got, name)
 	}
-	if screen := f.waitPane(name, "true"); strings.Count(screen, "true '/pr-review") != 1 {
-		t.Errorf("second open typed the agent command again:\n%s", screen)
+	time.Sleep(300 * time.Millisecond) // long enough for a second start to have left its line
+	if got := string(mustRead(t, runs)); got != "run\n" {
+		t.Errorf("agent starts after two opens: %q, want one", got)
 	}
 }
 
