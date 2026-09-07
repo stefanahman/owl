@@ -91,7 +91,7 @@ Two companions:
 | `f` | send the check-feedback prompt to the PR's Claude session; then `on_open` |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
-| `c` | close the workspace — worktree, branch and tmux window; uncommitted changes in the worktree are discarded |
+| `c` | close the workspace — worktree, branch and tmux window; refused while tracked files have uncommitted changes (`pr-owl close --force <N>` discards them) |
 | `/` | filter by PR number; `esc` clears |
 | `r` | refresh |
 | `?` | help, with the full badge legend |
@@ -104,7 +104,7 @@ Every key is rebindable, and `links` add your own (below).
 ```
 pr-owl                          the TUI
 pr-owl open <N> [--prompt TEXT] open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
-pr-owl close [<N>]              remove the worktree, branch and window; N is inferred from inside a workspace
+pr-owl close [--force] [<N>]    remove the worktree, branch and window; N is inferred from inside a workspace; --force discards uncommitted changes
 pr-owl config init | path | get <key>
 ```
 

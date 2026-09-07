@@ -1,7 +1,8 @@
-// `pr-owl close [<N>]`: remove PR N's worktree and branches, then kill
-// its tmux window. The review session, its keepalive window and the
-// agent's conversation on disk all survive — `open` resumes it. With
-// no argument, N is inferred from the current worktree, branch, or
+// `pr-owl close [--force] [<N>]`: remove PR N's worktree and branches,
+// then kill its tmux window. The review session, its keepalive window
+// and the agent's conversation on disk all survive — `open` resumes
+// it. Uncommitted changes to tracked files stop it unless --force.
+// With no number, N is inferred from the current worktree, branch, or
 // tmux window, so it can be run from inside the review itself.
 package main
 
@@ -27,13 +28,22 @@ func (e nothingToCloseError) Error() string {
 }
 
 func runClose(cfg Config, args []string, out io.Writer) error {
-	if len(args) > 1 {
+	var force bool
+	var rest []string
+	for _, a := range args {
+		if a == "--force" {
+			force = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+	if len(rest) > 1 {
 		return usageError("close: expected at most one PR number")
 	}
 	var n int
 	var err error
-	if len(args) == 1 {
-		n, err = parsePRNumber(args[0])
+	if len(rest) == 1 {
+		n, err = parsePRNumber(rest[0])
 	} else {
 		n, err = inferPR(cfg.WorktreesDir)
 	}
@@ -51,6 +61,14 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	branches := reviewBranches(repo, n)
 	if wt == "" && len(branches) == 0 && window == "" {
 		return nothingToCloseError{pr: n, repo: repo}
+	}
+	// Changed tracked files are the reviewer's work in progress — an
+	// experiment, a fix to suggest — and only --force discards them.
+	// Untracked files don't count: the links `open` makes are among them.
+	if wt != "" && !force {
+		if dirty, err := git(wt, "status", "--porcelain", "--untracked-files=no"); err == nil && dirty != "" {
+			return fmt.Errorf("pr-%d: uncommitted changes in %s (close --force discards them)", n, wt)
+		}
 	}
 
 	// We may be running inside the worktree and window being removed:

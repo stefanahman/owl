@@ -438,8 +438,16 @@ func TestClose(t *testing.T) {
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
 	f.waitPane(name, "true")
 
+	// Work in progress in the worktree stops close; --force discards it.
+	f.write(filepath.Join(wt, "pr42.txt"), "edited during the review\n")
+	if err := runClose(f.cfg, []string{"42"}, io.Discard); err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("close on a dirty worktree: %v, want a refusal", err)
+	}
+	if !f.exists(wt) {
+		t.Fatal("the refusal removed the worktree")
+	}
 	var out strings.Builder
-	if err := runClose(f.cfg, []string{"42"}, &out); err != nil {
+	if err := runClose(f.cfg, []string{"--force", "42"}, &out); err != nil {
 		t.Fatal(err)
 	}
 
