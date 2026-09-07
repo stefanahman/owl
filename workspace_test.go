@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -328,6 +329,32 @@ func TestStartStaysPut(t *testing.T) {
 	if got := f.activeWindow(); got != name || !f.exists(hookOut) {
 		t.Errorf("open after start: active %q, hook ran %v", got, f.exists(hookOut))
 	}
+}
+
+func TestLockPR(t *testing.T) {
+	f := newFixture(t)
+	unlock, err := lockPR(f.repo, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.Open(filepath.Join(f.repo, ".git", "pr-owl", "pr-42.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) {
+		t.Fatalf("a second pr-owl on the same PR while the first works: %v, want EWOULDBLOCK", err)
+	}
+	unlock()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatalf("lock after release: %v", err)
+	}
+	// Another PR is not held up.
+	other, err := lockPR(f.repo, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other()
 }
 
 func TestOpenOutsideTmuxHintsAttach(t *testing.T) {

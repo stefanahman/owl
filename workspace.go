@@ -7,11 +7,13 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // prHandleRe matches workspace names: `pr-<N>` optionally followed by
@@ -86,18 +88,52 @@ func runOut(cmd *exec.Cmd) (string, error) {
 // The result has symlinks resolved, like every path git itself prints,
 // so it compares equal to `git worktree list` entries.
 func mainRepo(dir string) (string, error) {
-	common, err := git(dir, "rev-parse", "--git-common-dir")
+	common, err := gitCommonDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("%s is not inside a git repository", dir)
+	}
+	return filepath.EvalSymlinks(filepath.Dir(common))
+}
+
+// gitCommonDir is the repository's shared git directory, absolute —
+// the same answer from the main tree and from every linked worktree.
+func gitCommonDir(dir string) (string, error) {
+	common, err := git(dir, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(common) {
 		common = filepath.Join(dir, common) // git prints it relative to dir
 	}
-	common, err = filepath.Abs(common)
+	return filepath.Abs(common)
+}
+
+// lockPR serialises open, start and close on one PR across processes:
+// a key pressed twice before the TUI registered the first, two pr-owl
+// instances, a shell command during a TUI open — each would create the
+// worktree; with the lock the second waits, then finds it. The lock
+// file lives in the repository's git dir, the scope of its worktrees.
+func lockPR(repo string, n int) (unlock func(), err error) {
+	common, err := gitCommonDir(repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return filepath.EvalSymlinks(filepath.Dir(common))
+	dir := filepath.Join(common, "pr-owl")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("pr-%d.lock", n)), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("lock %s: %w", f.Name(), err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
 }
 
 // worktree is one entry of `git worktree list`.

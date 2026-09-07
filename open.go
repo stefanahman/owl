@@ -27,6 +27,11 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := lockPR(repo, n)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	name, wt, err := ensureWorktree(cfg, repo, currentRepo(cfg.Remote), n, out)
 	if err != nil {
 		return err
@@ -170,12 +175,9 @@ func ensureWorktree(cfg Config, repo, slug string, n int, out io.Writer) (name, 
 // never show up as untracked in `git status`, without touching the
 // project's .gitignore.
 func excludeFromStatus(repo, dir string) error {
-	common, err := git(repo, "rev-parse", "--git-common-dir")
+	common, err := gitCommonDir(repo)
 	if err != nil {
 		return err
-	}
-	if !filepath.IsAbs(common) {
-		common = filepath.Join(repo, common)
 	}
 	exclude := filepath.Join(common, "info", "exclude")
 	line := "/" + filepath.ToSlash(filepath.Clean(dir)) + "/"
@@ -280,8 +282,15 @@ func ensureSession(t TmuxConfig, dir string) error {
 	if _, err := tmux("has-session", "-t", tmuxTarget(t.Session, "")); err == nil {
 		return nil
 	}
-	_, err := tmux("new-session", "-d", "-s", t.Session, "-n", t.KeepaliveWindow, "-c", dir)
-	return err
+	if _, err := tmux("new-session", "-d", "-s", t.Session, "-n", t.KeepaliveWindow, "-c", dir); err != nil {
+		// Two children starting at once (s on two PRs) both saw no
+		// session; the loser of the race finds the winner's.
+		if _, again := tmux("has-session", "-t", tmuxTarget(t.Session, "")); again == nil {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // agentCommand composes the shell line that starts the agent: the

@@ -58,6 +58,11 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("close: not inside a git repository (default_repo makes pr-owl work from anywhere)")
 	}
+	unlock, err := lockPR(repo, n)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	wt := findReviewWorktree(repo, cfg.WorktreesDir, n)
 	branches := reviewBranches(repo, n)
 	if wt == "" && len(branches) == 0 && window == "" {
