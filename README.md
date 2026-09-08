@@ -1,8 +1,8 @@
 # owl
 
 *pr-owl became owl: the tool is named after the bird, not the noun.
-The PR list is `owl pr`; the issue list, `owl issue`, is arriving — a
-table today, a workspace per ticket next.*
+The PR list is `owl pr`; the issue list is `owl issue`, with a
+workspace per ticket the way a review has one per PR.*
 
 A terminal UI of the PRs waiting for your review — and one key to turn
 any of them into a review workspace: a git worktree (a second checkout
@@ -215,7 +215,10 @@ owl pr                           the PR list
 owl pr open <N> [--prompt TEXT]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
 owl pr close [--force] [<N>]     remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
-owl issue                        the open issues assigned to you, from Linear, newest change first
+owl issue                        the open issues assigned to you, from Linear; a table when stdout is not a terminal
+owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY; with --prompt, hand the prompt to the agent
+owl issue start <KEY> [--prompt TEXT] the same without going there
+owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window; KEY is inferred from inside a workspace
 owl issue new <title…>           file an issue in linear.team, assigned to you
 owl hoot <title…>                the same, from the owl
 owl config init | path
@@ -242,12 +245,34 @@ that remote.
 
 ## Issues
 
-`owl issue` lists the open issues Linear assigns to you: key, priority
-(`!!!` urgent to `-` low), age of the last change, state and title.
-`owl hoot "what needs doing"` files one in `linear.team`, assigned to
-you, and prints its key and URL. The workspace per ticket — a worktree
-on the branch Linear names, a window in the multiplexer, Claude on the
-feature — is the next step.
+`owl issue` is the PR list's twin for the issues Linear assigns to
+you: three sections by state — in progress, todo, backlog — newest
+change first, each row with its key, the workspace badges (`⎇` a
+worktree on the issue's branch, `©` what Claude is doing in it),
+priority (`!!!` urgent to `-` low), age of the last change, title,
+state, and the open PR on the issue's branch when there is one —
+`#N✓` approved by someone, `#N⚠` changes requested, `#N draft`. The
+keys are the PR list's: Enter opens the feature workspace, `s` starts
+it and stays, `c` removes it, `o` opens the issue in Linear, `y` copies
+its key, `n` jumps to the next issue whose Claude needs you, `/`
+filters by key or title. `f` is a review's key and does nothing here.
+Off a terminal, `owl issue` prints a table.
+
+A feature workspace is a worktree on the branch Linear names for the
+issue (`bar-4159-company-fuzzy-match`): tracking the remote's branch
+when it is already there, started from the remote's default branch
+otherwise, with no upstream set, so a `git push` cannot land it on
+main by accident. The window, in the tmux session `issue.session` or
+as a herdr/cmux workspace, carries the branch's name, and Claude is
+started in it on `issue.prompt` — `/owl:feature BAR-4159` — resuming a
+prior conversation with `-c`. The issue's key is read back from the
+name, which is how the row finds its workspace and how `close` works
+from inside it. `close` removes the worktree, the local branch and the
+window; the remote branch is never touched, and a branch with commits
+that exist nowhere else is refused unless `--force`.
+
+`owl hoot "what needs doing"` files an issue in `linear.team`,
+assigned to you, and prints its key and URL.
 
 Linear is reached with a personal API key (Settings → Security &
 access), which the config holds as a *reference*, never as a value:
@@ -298,6 +323,10 @@ agent:
     - .claude/settings.local.json
     - .claude/*.local.md
     - .claude/skills/*.local
+
+issue:
+  session: features              # tmux: one window per feature lives here; herdr and cmux need no container
+  prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: quit                    # the TUI once an open starts: quit (popup closes at once), stay, or switch (move your client to the reviews)
