@@ -75,11 +75,16 @@ func readWorktrees() map[string]string {
 	return result
 }
 
-// findLocalForPR looks up a LocalState for the given PR number by
-// matching names of the form `pr-<N>` or `pr-<N>-<slug>`.
+// findLocalForPR looks up the LocalState of PR n: the entry named
+// `pr-<N>` or `pr-<N>-<slug>`.
 func findLocalForPR(state map[string]LocalState, prNumber int) LocalState {
+	return findLocalBy(state, func(name string) bool { return matchesPR(name, prNumber) })
+}
+
+// findLocalBy looks up the LocalState the match names.
+func findLocalBy(state map[string]LocalState, match func(name string) bool) LocalState {
 	for name, ls := range state {
-		if matchesPR(name, prNumber) {
+		if match(name) {
 			return ls
 		}
 	}

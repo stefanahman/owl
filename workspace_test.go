@@ -368,7 +368,7 @@ func TestStartStaysPut(t *testing.T) {
 
 func TestLockPR(t *testing.T) {
 	f := newFixture(t)
-	unlock, err := lockPR(f.repo, 42)
+	unlock, err := lockWorkspace(f.repo, "pr-42")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestLockPR(t *testing.T) {
 		t.Fatalf("lock after release: %v", err)
 	}
 	// Another PR is not held up.
-	other, err := lockPR(f.repo, 7)
+	other, err := lockWorkspace(f.repo, "pr-7")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,8 +713,8 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
-func TestAgentCommand(t *testing.T) {
-	a := AgentConfig{Cmd: "claude --permission-mode auto", Prompt: "/review {pr}"}
+func TestStartLine(t *testing.T) {
+	cmd, first := "claude --permission-mode auto", "/review 42"
 	cases := []struct {
 		resume bool
 		prompt string
@@ -726,8 +726,8 @@ func TestAgentCommand(t *testing.T) {
 		{true, "it's", `claude --permission-mode auto -c 'it'\''s'`},
 	}
 	for _, c := range cases {
-		if got := agentCommand(a, 42, c.resume, c.prompt); got != c.want {
-			t.Errorf("agentCommand(resume=%v, %q) = %q, want %q", c.resume, c.prompt, got, c.want)
+		if got := startLine(cmd, first, c.resume, c.prompt); got != c.want {
+			t.Errorf("startLine(resume=%v, %q) = %q, want %q", c.resume, c.prompt, got, c.want)
 		}
 	}
 }
@@ -740,14 +740,20 @@ func TestParseOpenArgs(t *testing.T) {
 		"equals":       {"42", "--prompt=hi"},
 	}
 	for name, args := range ok {
-		n, prompt, err := parseOpenArgs(args)
-		if err != nil || n != 42 || (len(args) > 1 && prompt != "hi") {
-			t.Errorf("%s: got %d %q %v", name, n, prompt, err)
+		id, prompt, err := parseOpenArgs("pr", "PR number", args)
+		if err != nil || id != "42" || (len(args) > 1 && prompt != "hi") {
+			t.Errorf("%s: got %q %q %v", name, id, prompt, err)
 		}
 	}
-	for _, args := range [][]string{nil, {"x"}, {"0"}, {"-1"}, {"42", "7"}, {"42", "--bogus"}, {"42", "--prompt"}} {
-		if _, _, err := parseOpenArgs(args); err == nil {
+	for _, args := range [][]string{nil, {"42", "7"}, {"42", "--bogus"}, {"42", "--prompt"}} {
+		if _, _, err := parseOpenArgs("pr", "PR number", args); err == nil {
 			t.Errorf("%v: expected an error", args)
+		}
+	}
+	// The id's shape is the scope's business: a PR number must be one.
+	for _, bad := range []string{"x", "0", "-1"} {
+		if _, err := parsePRNumber(bad); err == nil {
+			t.Errorf("%q: expected an error", bad)
 		}
 	}
 }

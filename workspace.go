@@ -93,12 +93,13 @@ func gitCommonDir(dir string) (string, error) {
 	return filepath.Abs(common)
 }
 
-// lockPR serialises open, start and close on one PR across processes:
-// a key pressed twice before the TUI registered the first, two owl
-// instances, a shell command during a TUI open — each would create the
-// worktree; with the lock the second waits, then finds it. The lock
-// file lives in the repository's git dir, the scope of its worktrees.
-func lockPR(repo string, n int) (unlock func(), err error) {
+// lockWorkspace serialises open, start and close on one workspace
+// (pr-42, BAR-4159) across processes: a key pressed twice before the
+// TUI registered the first, two owl instances, a shell command during
+// a TUI open — each would create the worktree; with the lock the
+// second waits, then finds it. The lock file lives in the repository's
+// git dir, the scope of its worktrees.
+func lockWorkspace(repo, label string) (unlock func(), err error) {
 	common, err := gitCommonDir(repo)
 	if err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func lockPR(repo string, n int) (unlock func(), err error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("pr-%d.lock", n)), os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, label+".lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err
 	}

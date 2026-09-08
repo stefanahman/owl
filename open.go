@@ -19,16 +19,20 @@ import (
 )
 
 func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
-	n, prompt, err := parseOpenArgs(args)
+	num, prompt, err := parseOpenArgs("pr", "PR number", args)
 	if err != nil {
 		return err
 	}
-	prompt = oneLine(prompt)
+	n, err := parsePRNumber(num)
+	if err != nil {
+		return err
+	}
 	repo, err := mainRepo(".")
 	if err != nil {
 		return err
 	}
-	unlock, err := lockPR(repo, n)
+	label := "pr-" + strconv.Itoa(n)
+	unlock, err := lockWorkspace(repo, label)
 	if err != nil {
 		return err
 	}
@@ -37,19 +41,44 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err != nil {
 		return err
 	}
-	if err := linkLocal(cfg.Agent.LinkLocal, repo, wt); err != nil {
+	ws := workspace{
+		label: label,
+		name:  name,
+		dir:   wt,
+		first: strings.ReplaceAll(cfg.Agent.Prompt, "{pr}", strconv.Itoa(n)),
+		env:   map[string]string{"OWL_PR": strconv.Itoa(n)},
+	}
+	return ws.open(cfg, newWindows(cfg, reviews), repo, prompt, arrive, out)
+}
+
+// workspace is what open and start act on once its worktree exists —
+// a review's or a feature's: the window named after the worktree, the
+// agent's first prompt, and what the hook is told about it.
+type workspace struct {
+	label string            // how messages name it: pr-42, BAR-4159
+	name  string            // the window's and the worktree's name
+	dir   string            // the worktree
+	first string            // the agent's prompt for a fresh conversation
+	env   map[string]string // the scope's variables for after_open
+}
+
+// open brings the workspace up in the multiplexer: the window with
+// the agent started in it, or the prompt handed to the agent already
+// there; with arrive, the window selected and the after_open hook run.
+func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive bool, out io.Writer) error {
+	prompt = oneLine(prompt)
+	if err := linkLocal(cfg.Agent.LinkLocal, repo, ws.dir); err != nil {
 		return err
 	}
-	mx := newWindows(cfg, reviews)
 	if err := mx.Prepare(repo); err != nil {
 		return err
 	}
 
-	resume := hasConversationFor(wt)
-	where := mx.Describe(name)
+	resume := hasConversationFor(ws.dir)
+	where := mx.Describe(ws.name)
 	switch {
-	case !slices.Contains(mx.Windows(), name):
-		if err := mx.Open(name, wt, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
+	case !slices.Contains(mx.Windows(), ws.name):
+		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, ws.first, resume, prompt)); err != nil {
 			return err
 		}
 		if resume {
@@ -57,18 +86,18 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		} else {
 			fmt.Fprintf(out, "started %s\n", where)
 		}
-	case prompt != "" && mx.States()[name] == agentBlocked:
+	case prompt != "" && mx.States()[ws.name] == agentBlocked:
 		// Keystrokes would answer the agent's dialog.
-		return fmt.Errorf("pr-%d: Claude is waiting for you in %s (a permission or a question) — answer it first", n, where)
-	case prompt != "" && mx.AtShell(name):
+		return fmt.Errorf("%s: Claude is waiting for you in %s (a permission or a question) — answer it first", ws.label, where)
+	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(name, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
+		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, ws.first, resume, prompt)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)
 	case prompt != "":
-		if err := mx.Prompt(name, prompt); err != nil {
+		if err := mx.Prompt(ws.name, prompt); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "sent prompt to %s\n", where)
@@ -78,7 +107,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		fmt.Fprintf(out, "ready %s\n", where)
 	}
 	if arrive {
-		if err := mx.Select(name); err != nil {
+		if err := mx.Select(ws.name); err != nil {
 			return err
 		}
 	}
@@ -90,41 +119,40 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		return nil // start: the workspace is up; the caller stays where it is
 	}
 	env := map[string]string{
-		"OWL_PR":       strconv.Itoa(n),
-		"OWL_WORKTREE": wt,
+		"OWL_WORKTREE": ws.dir,
 		"OWL_REPO":     repo,
 		"OWL_MUX":      mx.Kind(),
 	}
-	maps.Copy(env, mx.Env(name))
+	maps.Copy(env, ws.env)
+	maps.Copy(env, mx.Env(ws.name))
 	return runAfterOpen(hook, out, env)
 }
 
-// parseOpenArgs accepts `<N> [--prompt TEXT]` in either order.
-func parseOpenArgs(args []string) (n int, prompt string, err error) {
-	var num string
+// parseOpenArgs accepts `<id> [--prompt TEXT]` in either order; noun
+// and what name the id in the usage errors (pr, "PR number").
+func parseOpenArgs(noun, what string, args []string) (id, prompt string, err error) {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "--prompt":
 			if i+1 == len(args) {
-				return 0, "", usageError("pr open: --prompt needs a value")
+				return "", "", usageError(noun + " open: --prompt needs a value")
 			}
 			prompt = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--prompt="):
 			prompt = strings.TrimPrefix(a, "--prompt=")
 		case strings.HasPrefix(a, "-"):
-			return 0, "", usageError("pr open: unknown flag " + a)
-		case num == "":
-			num = a
+			return "", "", usageError(noun + " open: unknown flag " + a)
+		case id == "":
+			id = a
 		default:
-			return 0, "", usageError("pr open: unexpected argument " + a)
+			return "", "", usageError(noun + " open: unexpected argument " + a)
 		}
 	}
-	if num == "" {
-		return 0, "", usageError("pr open: PR number required")
+	if id == "" {
+		return "", "", usageError(noun + " open: " + what + " required")
 	}
-	n, err = parsePRNumber(num)
-	return n, prompt, err
+	return id, prompt, nil
 }
 
 // ensureWorktree returns the workspace name and worktree path for PR n,
@@ -273,17 +301,17 @@ func linkLocal(globs []string, repo, wt string) error {
 	return nil
 }
 
-// agentCommand composes the shell line that starts the agent: the
+// startLine composes the shell line that starts the agent: the
 // configured command, `-c` to resume a prior conversation, then the
-// prompt — the explicit one, or agent.prompt for a fresh conversation.
-// A resumed conversation without an explicit prompt gets none: the
-// agent shows the transcript and waits.
-func agentCommand(a AgentConfig, n int, resume bool, prompt string) string {
-	line := a.Cmd
+// prompt — the explicit one, or first for a fresh conversation. A
+// resumed conversation without an explicit prompt gets none: the agent
+// shows the transcript and waits.
+func startLine(cmd, first string, resume bool, prompt string) string {
+	line := cmd
 	if resume {
 		line += " -c"
 	} else if prompt == "" {
-		prompt = strings.ReplaceAll(a.Prompt, "{pr}", strconv.Itoa(n))
+		prompt = first
 	}
 	if prompt != "" {
 		line += " " + shellQuote(prompt)

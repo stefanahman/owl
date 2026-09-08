@@ -4,7 +4,8 @@
 // resumes it. Uncommitted changes to tracked files stop it unless
 // --force. With no number, N is inferred from the current worktree,
 // branch, or window, so it can be run from inside the review itself.
-// Like open, it acts on the repository of the working directory.
+// Like open, it acts on the repository of the working directory. The
+// removal itself, closeWorkspace, is shared with the features.
 package main
 
 import (
@@ -13,24 +14,24 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
 
-// nothingToCloseError is `close` finding no workspace for the PR; main
+// nothingToCloseError is `close` finding no workspace to remove; main
 // maps it to exit status 2 so callers can tell it from a failure.
 type nothingToCloseError struct {
-	pr   int
-	repo string
+	label string // pr-42, BAR-4159
+	repo  string
 }
 
 func (e nothingToCloseError) Error() string {
-	return fmt.Sprintf("no pr-%d workspace in %s (already closed?)", e.pr, e.repo)
+	return fmt.Sprintf("no %s workspace in %s (already closed?)", e.label, e.repo)
 }
 
-func runClose(cfg Config, args []string, out io.Writer) error {
-	var force bool
-	var rest []string
+// closeFlags takes --force off the arguments.
+func closeFlags(args []string) (force bool, rest []string) {
 	for _, a := range args {
 		if a == "--force" {
 			force = true
@@ -38,6 +39,11 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 			rest = append(rest, a)
 		}
 	}
+	return force, rest
+}
+
+func runClose(cfg Config, args []string, out io.Writer) error {
+	force, rest := closeFlags(args)
 	if len(rest) > 1 {
 		return usageError("pr close: expected at most one PR number")
 	}
@@ -52,28 +58,37 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	isPR := func(name string) bool { return matchesPR(name, n) }
+	return closeWorkspace(cfg, mx, "pr-"+strconv.Itoa(n), isPR, force, out)
+}
 
-	window := findWindow(mx, func(name string) bool { return matchesPR(name, n) })
+// closeWorkspace removes the workspace the match names in the
+// repository of the working directory: its worktree under
+// worktrees_dir, the local branches named like it (the ones open
+// creates; a branch the user switched to meanwhile is theirs), and its
+// window. The agent's conversation on disk survives.
+func closeWorkspace(cfg Config, mx windows, label string, match func(name string) bool, force bool, out io.Writer) error {
+	window := findWindow(mx, match)
 	repo, err := mainRepo(".")
 	if err != nil {
-		return fmt.Errorf("pr close: not inside a git repository (default_repo makes owl work from anywhere)")
+		return fmt.Errorf("close: not inside a git repository (default_repo makes owl work from anywhere)")
 	}
-	unlock, err := lockPR(repo, n)
+	unlock, err := lockWorkspace(repo, label)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	wt := findReviewWorktree(repo, cfg.WorktreesDir, n)
-	branches := reviewBranches(repo, n)
+	wt := findWorktreeBy(repo, cfg.WorktreesDir, match)
+	branches := localBranches(repo, match)
 	if wt == "" && len(branches) == 0 && window == "" {
-		return nothingToCloseError{pr: n, repo: repo}
+		return nothingToCloseError{label: label, repo: repo}
 	}
-	// Changed tracked files are the reviewer's work in progress — an
-	// experiment, a fix to suggest — and only --force discards them.
-	// Untracked files don't count: the links `open` makes are among them.
+	// Changed tracked files are work in progress — an experiment, a fix
+	// to suggest — and only --force discards them. Untracked files
+	// don't count: the links `open` makes are among them.
 	if wt != "" && !force {
 		if dirty, err := git(wt, "status", "--porcelain", "--untracked-files=no"); err == nil && dirty != "" {
-			return fmt.Errorf("pr-%d: uncommitted changes in %s (close --force discards them)", n, wt)
+			return fmt.Errorf("%s: uncommitted changes in %s (close --force discards them)", label, wt)
 		}
 	}
 
@@ -113,9 +128,9 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("pr-%d: could not remove %s", n, strings.Join(failed, ", "))
+		return fmt.Errorf("%s: could not remove %s", label, strings.Join(failed, ", "))
 	}
-	fmt.Fprintf(out, "pr-%d closed\n", n)
+	fmt.Fprintf(out, "%s closed\n", label)
 	return nil
 }
 
@@ -143,35 +158,35 @@ func inferPR(mx windows, worktreesDir string) (int, error) {
 	return 0, usageError("pr close: PR number required (or run it from inside a pr-<N> worktree or window)")
 }
 
-// findReviewWorktree returns the registered worktree for PR n under
-// <repo>/<worktreesDir>, matched by directory name — the branch inside
+// findWorktreeBy returns the registered worktree the match names
+// under <repo>/<worktreesDir>, by directory name — the branch inside
 // may have been switched since open. Worktrees elsewhere are never
 // touched, however they are named.
-func findReviewWorktree(repo, worktreesDir string, n int) string {
+func findWorktreeBy(repo, worktreesDir string, match func(name string) bool) string {
 	list, err := listWorktrees(repo)
 	if err != nil {
 		return ""
 	}
 	base := filepath.Join(repo, worktreesDir)
 	for _, wt := range list {
-		if filepath.Dir(wt.Path) == base && matchesPR(filepath.Base(wt.Path), n) {
+		if filepath.Dir(wt.Path) == base && match(filepath.Base(wt.Path)) {
 			return wt.Path
 		}
 	}
 	return ""
 }
 
-// reviewBranches lists local branches named pr-<N> or pr-<N>-*: the
-// ones `open` creates. Any other branch checked out in the worktree
+// localBranches lists the local branches the match names: the ones
+// `open` creates. Any other branch checked out in the worktree
 // meanwhile is the user's and is left alone.
-func reviewBranches(repo string, n int) []string {
+func localBranches(repo string, match func(name string) bool) []string {
 	out, err := git(repo, "branch", "--list", "--format=%(refname:short)")
 	if err != nil {
 		return nil
 	}
 	var list []string
 	for _, br := range strings.Fields(out) {
-		if matchesPR(br, n) {
+		if match(br) {
 			list = append(list, br)
 		}
 	}
