@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -252,7 +253,7 @@ esac
 func hermeticEnv(t *testing.T, root string) []string {
 	t.Helper()
 	cfg := filepath.Join(root, "config.yaml")
-	config := "agent:\n  cmd: \"true\"\nlinks:\n  - key: l\n    name: Linear\n    pattern: 'PROJ-\\d+'\n    url: https://linear.app/acme/issue/{id}\n"
+	config := "mux: tmux\nagent:\n  cmd: \"true\"\nlinks:\n  - key: l\n    name: Linear\n    pattern: 'PROJ-\\d+'\n    url: https://linear.app/acme/issue/{id}\n"
 	if err := os.WriteFile(cfg, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +271,11 @@ func hermeticEnv(t *testing.T, root string) []string {
 		"TMUX=",
 		"HISTFILE=",
 	)
+	// Whatever the test runs in — a herdr pane, a cmux terminal — the
+	// binary must see only the private tmux server.
+	env = slices.DeleteFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, "CMUX_") || strings.HasPrefix(kv, "HERDR_")
+	})
 	return env
 }
 

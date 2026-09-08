@@ -100,8 +100,14 @@ func newFixture(t *testing.T) *fixture {
 	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
 	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
 	t.Setenv("TMUX", socket+",0,0") // as inside a pane of the test server
+	// The test's multiplexer is that server, whatever the test itself
+	// runs in: a herdr pane or a cmux terminal would otherwise be
+	// detected, and get the test's windows.
+	t.Setenv("HERDR_ENV", "")
+	t.Setenv("CMUX_WORKSPACE_ID", "")
 
 	f.cfg = defaultConfig()
+	f.cfg.Mux = "tmux"
 	f.cfg.Tmux.Session = "reviews"
 	f.cfg.Agent.Cmd = "true" // exits at once: the pane is back at a shell prompt
 	return f
