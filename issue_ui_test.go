@@ -173,3 +173,24 @@ func runBatch(cmd tea.Cmd) {
 		}
 	}()
 }
+
+func TestIssueListLegendNamesFeatures(t *testing.T) {
+	m := newIssueModel(defaultConfig(), "acme/app", nil, nil)
+	var short []string
+	for _, b := range m.keys.ShortHelp() {
+		if b.Enabled() { // the footer hides disabled bindings
+			short = append(short, b.Help().Desc)
+		}
+	}
+	legend := strings.Join(short, " • ")
+	for _, want := range []string{"open feature", "open issue in browser"} {
+		if !strings.Contains(legend, want) {
+			t.Errorf("legend lacks %q: %s", want, legend)
+		}
+	}
+	for _, stale := range []string{"open review", "open PR in browser", "feedback"} {
+		if strings.Contains(legend, stale) {
+			t.Errorf("legend still says %q: %s", stale, legend)
+		}
+	}
+}

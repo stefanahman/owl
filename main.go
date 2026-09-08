@@ -341,6 +341,9 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	m.search.Placeholder = "key or title"
 	m.search.CharLimit = 64
 	m.keys.Feedback.SetEnabled(false) // feedback is a review's key
+	// The legend names what the keys do here: features, not reviews.
+	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, "open feature")
+	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
 	if cache != nil {
 		m.issues = cache.Issues
 		m.branchPRs = byBranch(cache.BranchPRs)
