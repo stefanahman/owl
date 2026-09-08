@@ -160,7 +160,7 @@ Under cmux, run `owl` in a cmux terminal: cmux's socket admits only
 processes started inside it, unless cmux itself was started with
 `CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
 integration (`automation.claudeCodeIntegration` in
-`~/.config/cmux/cmux.json`). cmux 0.64.22 gives its terminals
+`~/.config/cmux/cmux.json`).
 cmux gives its terminals the `CMUX_SURFACE_ID` its wrapper checks
 before injecting the hooks, unless `TMUX` leaked into cmux's own
 environment (an app launched from a shell inside tmux), when its
