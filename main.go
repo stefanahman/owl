@@ -1401,7 +1401,8 @@ func versionString() string {
 	return "dev"
 }
 
-const usage = `usage: pr-owl                          PR overview TUI (run inside a git repo)
+const usage = `usage: pr-owl [--config FILE] [--mux tmux|herdr|cmux] [command]
+       pr-owl                          PR overview TUI (run inside a git repo)
        pr-owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
        pr-owl start <N> [--prompt TEXT]  the same without going there: no window selection, no after_open
        pr-owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
@@ -1415,7 +1416,8 @@ type usageError string
 func (e usageError) Error() string { return string(e) }
 
 func main() {
-	args := os.Args[1:]
+	args, err := globalOptions(os.Args[1:])
+	exitOn(err)
 	if len(args) > 0 {
 		switch args[0] {
 		case "config":
@@ -1435,6 +1437,9 @@ func main() {
 
 	cfg, err := loadConfig()
 	exitOn(err)
+	if muxOverride != "" {
+		cfg.Mux = muxOverride
+	}
 	exitOn(enterDefaultRepo(cfg.DefaultRepo))
 	switch {
 	case len(args) == 0:
@@ -1455,6 +1460,40 @@ func main() {
 		err = runClose(cfg, args[1:], os.Stdout)
 	}
 	exitOn(err)
+}
+
+// muxOverride is the --mux flag, when given: the multiplexer to use
+// whatever the config says.
+var muxOverride string
+
+// globalOptions takes --config FILE and --mux KIND off the front of
+// the arguments — they apply to every command — and returns the rest.
+func globalOptions(args []string) ([]string, error) {
+	for len(args) > 0 {
+		name, value, joined := strings.Cut(args[0], "=")
+		if name != "--config" && name != "--mux" {
+			break
+		}
+		if !joined {
+			if len(args) < 2 {
+				return nil, usageError(name + " needs a value")
+			}
+			value, args = args[1], args[1:]
+		}
+		args = args[1:]
+		switch name {
+		case "--config":
+			configOverride = value
+		case "--mux":
+			switch value {
+			case "tmux", "herdr", "cmux":
+				muxOverride = value
+			default:
+				return nil, usageError("--mux must be tmux, herdr or cmux, got " + value)
+			}
+		}
+	}
+	return args, nil
 }
 
 // enterDefaultRepo changes into `default_repo` when the working

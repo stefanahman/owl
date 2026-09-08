@@ -82,7 +82,8 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 			return err
 		}
 	}
-	if hint := mx.AttachHint(); hint != "" && (cfg.Hooks.AfterOpen == "" || !arrive) {
+	hook := cfg.Hooks.AfterOpen.For(mx.Kind())
+	if hint := mx.AttachHint(); hint != "" && (hook == "" || !arrive) {
 		fmt.Fprintf(out, "attach with: %s\n", hint)
 	}
 	if !arrive {
@@ -95,7 +96,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		"PR_OWL_MUX":      mx.Kind(),
 	}
 	maps.Copy(env, mx.Env(name))
-	return runAfterOpen(cfg.Hooks.AfterOpen, out, env)
+	return runAfterOpen(hook, out, env)
 }
 
 // parseOpenArgs accepts `<N> [--prompt TEXT]` in either order.

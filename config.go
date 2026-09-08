@@ -82,7 +82,41 @@ func (l LinkConfig) expand(repo string, pr *PR) (url string, ok bool) {
 }
 
 type HooksConfig struct {
-	AfterOpen string `yaml:"after_open"`
+	AfterOpen hookByMux `yaml:"after_open"`
+}
+
+// hookByMux is a hook command, one for every multiplexer (a string)
+// or one per multiplexer (a mapping keyed tmux, herdr, cmux): a hook
+// that focuses a tmux session has no meaning under herdr or cmux.
+type hookByMux map[string]string
+
+func (h *hookByMux) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		var s string
+		if err := n.Decode(&s); err != nil {
+			return err
+		}
+		if s == "" {
+			*h = nil
+		} else {
+			*h = hookByMux{"": s}
+		}
+		return nil
+	}
+	var m map[string]string
+	if err := n.Decode(&m); err != nil {
+		return err
+	}
+	*h = m
+	return nil
+}
+
+// For is the hook for a multiplexer: its own, else the one for all.
+func (h hookByMux) For(kind string) string {
+	if cmd, ok := h[kind]; ok {
+		return cmd
+	}
+	return h[""]
 }
 
 type ThemeConfig struct {
@@ -216,7 +250,8 @@ open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for pr-owl in a tmux window; under herdr the focus has already moved)
 
 hooks:
-  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set; ~ is expanded
+  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set; ~ is expanded.
+                                 # A mapping gives one per multiplexer, e.g. {tmux: spaces focus pr-reviews}: none under herdr and cmux, where the window is already in front
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb
   working: "#dbbc7f"
@@ -283,9 +318,15 @@ func defaultConfig() Config {
 	return c
 }
 
-// configPath is $PR_OWL_CONFIG, else $XDG_CONFIG_HOME/pr-owl/config.yaml,
-// else ~/.config/pr-owl/config.yaml.
+// configOverride is the --config flag, when given.
+var configOverride string
+
+// configPath is --config, else $PR_OWL_CONFIG, else
+// $XDG_CONFIG_HOME/pr-owl/config.yaml, else ~/.config/pr-owl/config.yaml.
 func configPath() (string, error) {
+	if configOverride != "" {
+		return expandHome(configOverride), nil
+	}
 	if p := os.Getenv("PR_OWL_CONFIG"); p != "" {
 		return p, nil
 	}
@@ -330,7 +371,9 @@ func parseConfig(data []byte) (Config, error) {
 		return Config{}, err
 	}
 	cfg.DefaultRepo = expandHome(cfg.DefaultRepo)
-	cfg.Hooks.AfterOpen = expandHome(cfg.Hooks.AfterOpen)
+	for k, v := range cfg.Hooks.AfterOpen {
+		cfg.Hooks.AfterOpen[k] = expandHome(v)
+	}
 	cfg.Herdr.Socket = expandHome(cfg.Herdr.Socket)
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
@@ -366,6 +409,13 @@ func (cfg *Config) validate() error {
 	case "auto", "tmux", "herdr", "cmux":
 	default:
 		return fmt.Errorf("mux must be auto, tmux, herdr or cmux, got %q", cfg.Mux)
+	}
+	for k := range cfg.Hooks.AfterOpen {
+		switch k {
+		case "", "tmux", "herdr", "cmux":
+		default:
+			return fmt.Errorf("hooks.after_open: keys are multiplexers (tmux, herdr, cmux), got %q", k)
+		}
 	}
 	for _, c := range []struct{ name, value string }{
 		{"theme.working", cfg.Theme.Working}, {"theme.blocked", cfg.Theme.Blocked}, {"theme.done", cfg.Theme.Done},

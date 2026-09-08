@@ -158,7 +158,7 @@ func TestParseConfigExpandsHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DefaultRepo != "/home/owl/src/app" || cfg.Hooks.AfterOpen != "/home/owl/bin/focus" {
+	if cfg.DefaultRepo != "/home/owl/src/app" || cfg.Hooks.AfterOpen.For("tmux") != "/home/owl/bin/focus" {
 		t.Errorf("got default_repo=%q after_open=%q", cfg.DefaultRepo, cfg.Hooks.AfterOpen)
 	}
 }

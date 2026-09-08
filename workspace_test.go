@@ -215,7 +215,7 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_PR|$PR_OWL_SESSION|$PR_OWL_WINDOW|$PR_OWL_WORKTREE|$PR_OWL_REPO" > ` + hookOut
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_PR|$PR_OWL_SESSION|$PR_OWL_WINDOW|$PR_OWL_WORKTREE|$PR_OWL_REPO" > ` + hookOut}
 
 	out := f.open("42")
 
@@ -307,7 +307,7 @@ func TestStartStaysPut(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = "touch " + hookOut
+	f.cfg.Hooks.AfterOpen = hookByMux{"": "touch " + hookOut}
 
 	var out strings.Builder
 	if err := runOpen(f.cfg, []string{"42"}, &out, false); err != nil {

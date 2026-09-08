@@ -71,7 +71,7 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("HERDR_SESSION", "work")
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut}
 
 	name := "pr-42-fix-crash-on-startup"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
@@ -134,7 +134,7 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 	fake := muxtest.InstallFakeCmux(t)
 	f.cfg.Mux = "cmux"
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut}
 
 	name := "pr-42-fix-crash-on-startup"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
@@ -182,5 +182,55 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 	}
 	if _, still := fake.Workspace(name); !strings.Contains(buf.String(), "closed window "+name) || still || f.exists(wt) {
 		t.Errorf("close: %q; workspace gone: %v; worktree gone: %v", buf.String(), !still, !f.exists(wt))
+	}
+}
+
+func TestGlobalOptions(t *testing.T) {
+	t.Cleanup(func() { configOverride, muxOverride = "", "" })
+	rest, err := globalOptions([]string{"--config", "~/x.yaml", "--mux=cmux", "open", "42"})
+	if err != nil || !reflect.DeepEqual(rest, []string{"open", "42"}) || configOverride != "~/x.yaml" || muxOverride != "cmux" {
+		t.Errorf("rest %v, err %v, config %q, mux %q", rest, err, configOverride, muxOverride)
+	}
+	if p, _ := configPath(); !strings.HasSuffix(p, "/x.yaml") || strings.HasPrefix(p, "~") {
+		t.Errorf("configPath with --config = %q", p)
+	}
+	configOverride, muxOverride = "", ""
+	if rest, err := globalOptions([]string{"open", "--mux", "42"}); err != nil || len(rest) != 3 {
+		t.Errorf("options after the command are the command's: %v, %v", rest, err)
+	}
+	for _, bad := range [][]string{{"--mux", "screen"}, {"--mux"}, {"--config"}} {
+		if _, err := globalOptions(bad); err == nil {
+			t.Errorf("%v: expected a usage error", bad)
+		}
+	}
+}
+
+func TestHookByMux(t *testing.T) {
+	cases := []struct {
+		yaml       string
+		tmux, cmux string
+	}{
+		{`hooks: {after_open: ""}`, "", ""},
+		{`hooks: {after_open: "spaces focus pr-reviews"}`, "spaces focus pr-reviews", "spaces focus pr-reviews"},
+		{"hooks:\n  after_open: {tmux: spaces focus pr-reviews}", "spaces focus pr-reviews", ""},
+		{"hooks:\n  after_open: {tmux: a, cmux: b}", "a", "b"},
+	}
+	for _, c := range cases {
+		cfg, err := parseConfig([]byte(c.yaml))
+		if err != nil {
+			t.Fatalf("%s: %v", c.yaml, err)
+		}
+		if got := cfg.Hooks.AfterOpen.For("tmux"); got != c.tmux {
+			t.Errorf("%s: tmux hook %q, want %q", c.yaml, got, c.tmux)
+		}
+		if got := cfg.Hooks.AfterOpen.For("cmux"); got != c.cmux {
+			t.Errorf("%s: cmux hook %q, want %q", c.yaml, got, c.cmux)
+		}
+	}
+	if _, err := parseConfig([]byte("hooks:\n  after_open: {screen: x}")); err == nil || !strings.Contains(err.Error(), "keys are multiplexers") {
+		t.Errorf("unknown multiplexer key: %v", err)
+	}
+	if cfg, _ := parseConfig([]byte("hooks:\n  after_open: {tmux: ~/bin/focus}")); !strings.HasSuffix(cfg.Hooks.AfterOpen["tmux"], "/bin/focus") || strings.HasPrefix(cfg.Hooks.AfterOpen["tmux"], "~") {
+		t.Errorf("~ not expanded: %q", cfg.Hooks.AfterOpen["tmux"])
 	}
 }
