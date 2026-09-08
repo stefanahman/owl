@@ -622,7 +622,7 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 	m := testModel(t)
 	m.cfg.OnOpen = "stay"
 	m.prs = fixturePRs()
-	m.prsReady = true
+	m.ready = true
 	m.width, m.height = 100, 24
 	m.resizeViewport()
 	m.refreshList()
@@ -630,7 +630,7 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 
 	started, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = started.(model)
-	if cmd == nil || m.inflight[3543] == "" {
+	if cmd == nil || m.inflight["3543"] == "" {
 		t.Fatalf("Enter did not start an open: inflight=%v", m.inflight)
 	}
 	if !strings.Contains(m.actionRowView(), "opening #3543…") {
@@ -644,13 +644,13 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 		t.Errorf("a second Enter on the same PR: cmd=%v notice=%v", cmd, am.notice)
 	}
 
-	failed, _ := m.Update(openedMsg{pr: 3543, err: errors.New("fetch failed")})
+	failed, _ := m.Update(openedMsg{id: "3543", err: errors.New("fetch failed")})
 	if fm := failed.(model); len(fm.inflight) != 0 || fm.notice == nil {
 		t.Errorf("after a failed open: inflight=%v notice=%v", fm.inflight, fm.notice)
 	}
 
-	m.inflight[3543] = "opening #3543…"
-	opened, cmd := m.Update(openedMsg{pr: 3543})
+	m.inflight["3543"] = "opening #3543…"
+	opened, cmd := m.Update(openedMsg{id: "3543"})
 	if om := opened.(model); len(om.inflight) != 0 || om.farewell != "" || cmd == nil {
 		t.Errorf("on_open stay after a successful open: inflight=%v farewell=%q cmd=%v", om.inflight, om.farewell, cmd)
 	}
@@ -658,8 +658,8 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 		t.Error("on_open stay must not quit")
 	}
 
-	m.inflight[3543] = "closing #3543…"
-	closed, cmd := m.Update(closedMsg{pr: 3543})
+	m.inflight["3543"] = "closing #3543…"
+	closed, cmd := m.Update(closedMsg{id: "3543"})
 	if cm := closed.(model); len(cm.inflight) != 0 || cmd == nil {
 		t.Errorf("after close: inflight=%v refresh cmd=%v", cm.inflight, cmd)
 	}
@@ -671,7 +671,7 @@ func TestChildrenRunInTheBackground(t *testing.T) {
 func TestStartStaysInTheList(t *testing.T) {
 	m := testModel(t) // on_open: quit by default
 	m.prs = fixturePRs()
-	m.prsReady = true
+	m.ready = true
 	m.width, m.height = 100, 24
 	m.resizeViewport()
 	m.refreshList()
@@ -679,7 +679,7 @@ func TestStartStaysInTheList(t *testing.T) {
 
 	started, cmd := m.handleKey(tea.KeyPressMsg{Code: 's', Text: "s"})
 	m = started.(model)
-	if cmd == nil || m.inflight[3543] != "starting #3543…" || m.farewell != "" {
+	if cmd == nil || m.inflight["3543"] != "starting #3543…" || m.farewell != "" {
 		t.Fatalf("s: cmd=%v inflight=%v farewell=%q", cmd, m.inflight, m.farewell)
 	}
 	if _, quit := cmd().(tea.QuitMsg); quit {
@@ -695,7 +695,7 @@ func TestStartStaysInTheList(t *testing.T) {
 	if !strings.Contains(row, m.spinner.View()) || strings.Contains(row, "⎇") {
 		t.Errorf("row while starting = %q, want the spinner in the worktree slot", row)
 	}
-	done, _ := m.Update(openedMsg{pr: 3543})
+	done, _ := m.Update(openedMsg{id: "3543"})
 	m = done.(model)
 	m.refreshList()
 	if strings.Contains(m.render(), m.spinner.View()+"  ") && len(m.inflight) != 0 {
@@ -711,7 +711,7 @@ func TestStartStaysInTheList(t *testing.T) {
 	// f is the same kind of key: it stays in the list too.
 	m.localState = map[string]LocalState{"pr-3543-feat": {Window: "pr-3543-feat"}}
 	fed, cmd := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if fm := fed.(model); cmd == nil || fm.inflight[3543] != "sending feedback to #3543…" || fm.farewell != "" {
+	if fm := fed.(model); cmd == nil || fm.inflight["3543"] != "sending feedback to #3543…" || fm.farewell != "" {
 		t.Errorf("f: cmd=%v inflight=%v farewell=%q", cmd, fm.inflight, fm.farewell)
 	}
 	if _, quit := cmd().(tea.QuitMsg); quit {
@@ -731,7 +731,7 @@ func TestOpenQuitsAtOnce(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	fm := tm.FinalModel(t, teatest.WithFinalTimeout(2*time.Second)).(model)
-	if fm.farewell != "opening #3543…" || fm.inflight[3543] == "" {
+	if fm.farewell != "opening #3543…" || fm.inflight["3543"] == "" {
 		t.Errorf("farewell=%q inflight=%v", fm.farewell, fm.inflight)
 	}
 }

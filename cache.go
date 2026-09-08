@@ -1,10 +1,11 @@
-// On-disk cache for the last-fetched PR list, keyed by repo. Read at
-// startup so the popup shows something within milliseconds instead of
-// waiting on gh (~1-2s). Overwritten atomically whenever prsMsg lands.
+// On-disk caches for the last-fetched lists. Read at startup so the
+// popup shows something within milliseconds instead of waiting on gh
+// or Linear (~1-2s). Overwritten atomically whenever a fetch lands.
 //
-// Cache location: $XDG_CACHE_HOME/owl/<owner>-<name>.json (falls
-// back to ~/.cache/owl/…). One file per repo — different repos
-// don't stomp on each other.
+// The PR list's cache is $XDG_CACHE_HOME/owl/<owner>-<name>.json
+// (falls back to ~/.cache/owl/…), one file per repo — different repos
+// don't stomp on each other. The issue list's is issues.json beside
+// them: the issues are the user's, not a repo's.
 //
 // Freshness is user-visible via the "updated Xm ago" indicator in
 // the title bar (driven by cache.FetchedAt on load, then m.lastFetched
@@ -29,13 +30,17 @@ type cacheFile struct {
 	Cursor    int       `json:"cursor"` // the row the cursor was on at exit; the next start resumes there
 }
 
-// cachePath returns the per-repo cache file path. `repo` is owner/name;
-// slashes flatten to hyphens for a safe filename. Empty repo → empty
-// path (caller should skip cache).
-func cachePath(repo string) string {
-	if repo == "" {
-		return ""
-	}
+// issueCacheFile is the issue list's on-disk shape.
+type issueCacheFile struct {
+	Issues    []Issue   `json:"issues"`
+	BranchPRs []PR      `json:"branchPrs"`
+	FetchedAt time.Time `json:"fetchedAt"`
+	Cursor    int       `json:"cursor"`
+}
+
+// cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl; "" when neither
+// can be found.
+func cacheDir() string {
 	base := os.Getenv("XDG_CACHE_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
@@ -44,8 +49,25 @@ func cachePath(repo string) string {
 		}
 		base = filepath.Join(home, ".cache")
 	}
-	safe := strings.ReplaceAll(repo, "/", "-")
-	return filepath.Join(base, "owl", safe+".json")
+	return filepath.Join(base, "owl")
+}
+
+// cachePath returns the per-repo cache file path. `repo` is owner/name;
+// slashes flatten to hyphens for a safe filename. Empty repo → empty
+// path (caller should skip cache).
+func cachePath(repo string) string {
+	if repo == "" || cacheDir() == "" {
+		return ""
+	}
+	return filepath.Join(cacheDir(), strings.ReplaceAll(repo, "/", "-")+".json")
+}
+
+// issueCachePath is the issue list's cache file.
+func issueCachePath() string {
+	if cacheDir() == "" {
+		return ""
+	}
+	return filepath.Join(cacheDir(), "issues.json")
 }
 
 // loadCache reads and parses the cache file for the given repo. Any
@@ -53,26 +75,44 @@ func cachePath(repo string) string {
 // caller falls back to an empty initial state and waits for the live
 // fetch.
 func loadCache(repo string) *cacheFile {
-	p := cachePath(repo)
-	if p == "" {
-		return nil
-	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return nil
-	}
 	var c cacheFile
-	if err := json.Unmarshal(b, &c); err != nil {
+	if !readJSON(cachePath(repo), &c) {
 		return nil
 	}
 	return &c
 }
 
-// saveCache writes the cache atomically (temp file + rename) so a
+// loadIssueCache is loadCache for the issue list.
+func loadIssueCache() *issueCacheFile {
+	var c issueCacheFile
+	if !readJSON(issueCachePath(), &c) {
+		return nil
+	}
+	return &c
+}
+
+// readJSON parses the file into v; false when there is nothing usable.
+func readJSON(path string, v any) bool {
+	if path == "" {
+		return false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(b, v) == nil
+}
+
+// saveCache writes the PR list's cache; saveIssueCache the issue
+// list's.
+func saveCache(repo string, c cacheFile) { writeJSON(cachePath(repo), c) }
+
+func saveIssueCache(c issueCacheFile) { writeJSON(issueCachePath(), c) }
+
+// writeJSON writes the cache atomically (temp file + rename) so a
 // crash mid-write never leaves a truncated JSON on disk. All errors
 // are swallowed — cache is a best-effort optimization, never critical.
-func saveCache(repo string, c cacheFile) {
-	p := cachePath(repo)
+func writeJSON(p string, c any) {
 	if p == "" {
 		return
 	}

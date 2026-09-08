@@ -27,7 +27,13 @@ type localMsg map[string]LocalState
 // list's scope and merges them into a per-workspace map. Failures in
 // either source degrade gracefully — you get whatever partial data was
 // available.
-func (m model) fetchLocal() tea.Msg { return m.fetchLocalIn(reviews) }
+func (m model) fetchLocal() tea.Msg {
+	sc := m.sc
+	if sc.owns == nil {
+		sc = reviews
+	}
+	return m.fetchLocalIn(sc)
+}
 
 // fetchLocalIn is fetchLocal for one scope.
 func (m model) fetchLocalIn(sc scope) tea.Msg {

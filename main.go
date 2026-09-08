@@ -1,6 +1,7 @@
-// owl — TUI overview of PRs where you're a reviewer, with local
-// state (worktree, review window in the multiplexer, Claude activity)
-// and review involvement (approved / engaged / any-CR) overlaid.
+// owl — TUI overview of the PRs where you're a reviewer, or of the
+// issues assigned to you, with local state (worktree, window in the
+// multiplexer, Claude activity) overlaid: review involvement (approved
+// / engaged / any-CR) on a PR, the branch's PR on an issue.
 //
 // Widgets used, all from charm.land/bubbles/v2:
 //
@@ -33,6 +34,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 )
 
 // ------------------------------------------------------------
@@ -51,6 +53,18 @@ type mergedMsg struct {
 	prs []PR
 }
 type userMsg string // authenticated user login
+
+// issuesMsg and branchPRsMsg are the issue list's fetches: the open
+// issues assigned to the user, and the repo's open PRs by head branch,
+// which is how an issue's row shows the PR for its branch.
+type issuesMsg struct {
+	gen    int
+	issues []Issue
+}
+type branchPRsMsg struct {
+	gen int
+	prs []PR
+}
 
 // localTickMsg asks for the local overlay again. Claude's state is
 // whatever the multiplexer reports as Claude works; following it every
@@ -78,14 +92,15 @@ func (e errMsg) Error() string { return e.err.Error() }
 // next key press. It never replaces the list.
 type noticeMsg struct{ err error }
 
-// openedMsg / closedMsg report the end of a `owl pr open` / `close`
-// child for a PR: nil, or its failure with the child's stderr.
+// openedMsg / closedMsg report the end of an `open` / `close` child
+// for a workspace — a PR's number or an issue's key — nil, or its
+// failure with the child's stderr.
 type openedMsg struct {
-	pr  int
+	id  string
 	err error
 }
 type closedMsg struct {
-	pr  int
+	id  string
 	err error
 }
 
@@ -166,7 +181,8 @@ func (k keyNames) label() string {
 }
 
 // ShortHelp drives the footer legend. FullHelp is rendered inside the
-// `?` modal (helpModalView) via help.FullHelpView.
+// `?` modal (helpModalView) via help.FullHelpView. A disabled binding
+// (Feedback on the issue list) is left out by the help view itself.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Up, k.Down, k.Next, k.Enter, k.Start, k.Feedback, k.Browser, k.Search, k.Help, k.Quit}
 }
@@ -217,13 +233,29 @@ func applyTheme(t ThemeConfig) {
 // Row model
 // ------------------------------------------------------------
 
-// visibleRow is either a section header (pr == nil) or a PR row.
+// visibleRow is a section header, a PR row or an issue row.
 type visibleRow struct {
 	sectionTitle string
 	sectionStyle lipgloss.Style
 	pr           *PR
 	status       ReviewStatus
 	merged       bool
+	issue        *Issue
+}
+
+// header reports whether the row is a section title.
+func (r visibleRow) header() bool { return r.pr == nil && r.issue == nil }
+
+// id names what the row is about, for inflight and the children: a
+// PR's number, an issue's key.
+func (r visibleRow) id() string {
+	if r.pr != nil {
+		return strconv.Itoa(r.pr.Number)
+	}
+	if r.issue != nil {
+		return r.issue.Key
+	}
+	return ""
 }
 
 // ------------------------------------------------------------
@@ -232,6 +264,12 @@ type visibleRow struct {
 
 type model struct {
 	cfg Config
+	// kind is the list: "pr" (the PRs waiting for your review) or
+	// "issue" (the issues assigned to you); sc the scope of workspaces
+	// it overlays.
+	kind    string
+	sc      scope
+	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
 	repo       string // owner/name on GitHub
@@ -239,10 +277,12 @@ type model struct {
 	me         string
 	prs        []PR
 	merged     []PR
+	issues     []Issue
+	branchPRs  map[string]PR // the repo's open PRs by head branch, for the issue rows
 	localState map[string]LocalState
 
 	// load state
-	prsReady    bool
+	ready       bool      // the list has been fetched (or read from the cache)
 	fetchGen    int       // the current fetch round; results from older rounds are ignored
 	refreshing  bool      // r pressed: the list stays, the action row spins
 	err         error     // the last fetch failure; cleared by a successful fetch or r
@@ -250,8 +290,8 @@ type model struct {
 	lastFetched time.Time // set when prsMsg lands; drives "updated X ago"
 
 	// UI state
-	cursor   int            // index into the current visibleRows() output
-	inflight map[int]string // PR → "opening #42…": open/close children running; the list stays usable
+	cursor   int               // index into the current visibleRows() output
+	inflight map[string]string // row id → "opening #42…": open/close children running; the list stays usable
 
 	// widgets
 	keys    keyMap
@@ -285,8 +325,35 @@ func initialModel(cfg Config) model {
 	return m
 }
 
-// newModel builds the model from its inputs. Tests call it directly, so
-// nothing in here shells out or reads the cache.
+// initialIssueModel is initialModel for the issue list: the tracker,
+// and the issue cache.
+func initialIssueModel(cfg Config, tracker Tracker) model {
+	repo := currentRepo(cfg.Remote)
+	m := newIssueModel(cfg, repo, tracker, loadIssueCache())
+	m.repoDir, _ = mainRepo(".")
+	return m
+}
+
+// newIssueModel builds the issue list's model. Tests call it directly.
+func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFile) model {
+	m := newModel(cfg, repo, nil)
+	m.kind, m.sc, m.tracker = "issue", features, tracker
+	m.search.Placeholder = "key or title"
+	m.search.CharLimit = 64
+	m.keys.Feedback.SetEnabled(false) // feedback is a review's key
+	if cache != nil {
+		m.issues = cache.Issues
+		m.branchPRs = byBranch(cache.BranchPRs)
+		m.ready = true
+		m.lastFetched = cache.FetchedAt
+		m.cursor = cache.Cursor
+		m.clampCursor()
+	}
+	return m
+}
+
+// newModel builds the PR list's model from its inputs. Tests call it
+// directly, so nothing in here shells out or reads the cache.
 func newModel(cfg Config, repo string, cache *cacheFile) model {
 	applyTheme(cfg.Theme)
 
@@ -304,17 +371,19 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	sp.Style = styleDim
 
 	m := model{
-		cfg: cfg,
-		runSelf: func(args ...string) error {
-			return runChild(newWindows(cfg, reviews).ChildEnv(), append(append(globalArgs(), "pr"), args...)...)
-		},
+		cfg:      cfg,
+		kind:     "pr",
+		sc:       reviews,
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
 		help:     help.New(),
 		search:   ti,
 		list:     viewport.New(),
 		spinner:  sp,
-		inflight: map[int]string{},
+		inflight: map[string]string{},
+	}
+	m.runSelf = func(args ...string) error {
+		return runChild(newWindows(cfg, m.sc).ChildEnv(), append(append(globalArgs(), m.kind), args...)...)
 	}
 	// Cache-first: if a previous session left a cache for this repo,
 	// seed the state so the popup renders instantly. The live fetches
@@ -325,7 +394,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		m.prs = cache.Prs
 		m.merged = cache.Merged
 		m.me = cache.Me
-		m.prsReady = true
+		m.ready = true
 		m.lastFetched = cache.FetchedAt
 		// The row, not the PR: the list is where it was, so start where
 		// the last session ended — clamped, in case it shrank.
@@ -339,23 +408,35 @@ func (m model) Init() tea.Cmd {
 	if m.noInit {
 		return nil
 	}
-	return tea.Batch(
-		m.fetchPRs, m.fetchLocal, m.fetchMerged, fetchUser,
+	return tea.Batch(append(m.fetches(),
+		m.fetchLocal,
 		localTick(),
 		m.spinner.Tick,
 		textinput.Blink,
 		tea.RequestBackgroundColor,
-	)
+	)...)
+}
+
+// fetches are the list's remote fetches, for Init, refresh and focus.
+func (m model) fetches() []tea.Cmd {
+	if m.kind == "issue" {
+		return []tea.Cmd{m.fetchIssues, m.fetchBranchPRs}
+	}
+	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
 }
 
 func fetchUser() tea.Msg { return userMsg(currentUser()) }
 
-// persistCache writes the current prs/merged/me snapshot and the
-// cursor row to the per-repo cache file. Called after any of the three
-// land, and once more on exit for the cursor, so the next popup
-// startup has warm data and the same row selected. All errors
-// swallowed inside saveCache — cache is best-effort.
+// persistCache writes the list's snapshot and the cursor row to its
+// cache file. Called after a fetch lands, and once more on exit for
+// the cursor, so the next popup startup has warm data and the same
+// row selected. All errors swallowed inside the writer — cache is
+// best-effort.
 func (m model) persistCache() {
+	if m.kind == "issue" {
+		saveIssueCache(issueCacheFile{Issues: m.issues, BranchPRs: slices.Collect(maps.Values(m.branchPRs)), FetchedAt: m.lastFetched, Cursor: m.cursor})
+		return
+	}
 	saveCache(m.repo, cacheFile{
 		Prs:       m.prs,
 		Merged:    m.merged,
@@ -365,54 +446,54 @@ func (m model) persistCache() {
 	})
 }
 
-// openReview runs `owl pr open <N> [--prompt TEXT]` and reports when
-// it ends. The child gets its own session (Setsid): owl usually
+// openWorkspace runs `owl <kind> open <id> [--prompt TEXT]` and reports
+// when it ends. The child gets its own session (Setsid): owl usually
 // runs inside a tmux popup, and with on_open: quit the popup closes
 // the moment the child starts — it must finish on its own, and it
 // does (see runChild for where its failure goes then).
-func (m model) openReview(prNumber int, prompt string) tea.Cmd {
+func (m model) openWorkspace(id, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{"open", strconv.Itoa(prNumber)}
+		args := []string{"open", id}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{prNumber, m.runSelf(args...)}
+		return openedMsg{id, m.runSelf(args...)}
 	}
 }
 
-// startReview runs `owl pr start <N> [--prompt TEXT]`: the workspace
-// comes up, or gets the prompt, and the list stays — for starting
-// several reviews one after another, and for f.
-func (m model) startReview(prNumber int, prompt string) tea.Cmd {
+// startWorkspace runs `owl <kind> start <id> [--prompt TEXT]`: the
+// workspace comes up, or gets the prompt, and the list stays — for
+// starting several one after another, and for f.
+func (m model) startWorkspace(id, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{"start", strconv.Itoa(prNumber)}
+		args := []string{"start", id}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{prNumber, m.runSelf(args...)}
+		return openedMsg{id, m.runSelf(args...)}
 	}
 }
 
-// closeReview runs `owl pr close <N>`; the TUI refreshes its overlay
-// when it succeeds. The agent's conversation survives on disk, so
-// Enter / f afterwards resume it.
-func (m model) closeReview(prNumber int) tea.Cmd {
+// closeWorkspace runs `owl <kind> close <id>`; the TUI refreshes its
+// overlay when it succeeds. The agent's conversation survives on
+// disk, so Enter / f afterwards resume it.
+func (m model) closeWorkspace(id string) tea.Cmd {
 	return func() tea.Msg {
-		return closedMsg{prNumber, m.runSelf("close", strconv.Itoa(prNumber))}
+		return closedMsg{id, m.runSelf("close", id)}
 	}
 }
 
-// launch starts an open, start or close child for a PR in the
+// launch starts an open, start or close child for a row in the
 // background. The list stays usable meanwhile; a second key on the
-// same PR is refused until the child reports. An open (arrive) with
+// same row is refused until the child reports. An open (arrive) with
 // on_open: quit ends the TUI at once — the popup closes, the child
 // finishes behind it.
-func (m model) launch(pr int, label string, cmd tea.Cmd, arrive bool) (tea.Model, tea.Cmd) {
-	if running, ok := m.inflight[pr]; ok {
+func (m model) launch(id, label string, cmd tea.Cmd, arrive bool) (tea.Model, tea.Cmd) {
+	if running, ok := m.inflight[id]; ok {
 		m.notice = fmt.Errorf("still %s", running)
 		return m, nil
 	}
-	m.inflight[pr] = label
+	m.inflight[id] = label
 	if arrive && m.cfg.OnOpen == "quit" {
 		m.farewell = label
 		return m, tea.Batch(cmd, tea.Quit)
@@ -553,14 +634,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// focus/unfocus (window-manager churn) doesn't storm gh.
 		if time.Since(m.lastFetched) > 2*time.Second {
 			m.fetchGen++
-			cmds = append(cmds, m.fetchPRs, m.fetchLocal, m.fetchMerged)
+			cmds = append(cmds, append(m.fetches(), m.fetchLocal)...)
 		}
 
 	case spinner.TickMsg:
 		// bubbles/spinner has no Stop method — you stop it by not
 		// forwarding its next tick. It spins during the initial fetch
 		// and while an open/close child runs.
-		if !m.prsReady || len(m.inflight) > 0 || m.refreshing {
+		if !m.ready || len(m.inflight) > 0 || m.refreshing {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
@@ -574,11 +655,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break // an older round; a newer one has landed or is coming
 		}
 		m.prs = msg.prs
-		m.prsReady = true
+		m.ready = true
 		m.refreshing = false
 		m.err = nil
 		m.lastFetched = time.Now()
 		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
+	case issuesMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.issues = msg.issues
+		m.ready = true
+		m.refreshing = false
+		m.err = nil
+		m.lastFetched = time.Now()
+		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
+	case branchPRsMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.branchPRs = byBranch(msg.prs)
 		m.refreshList()
 		m.persistCache()
 
@@ -610,27 +712,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.err = msg.err
-		m.prsReady = true
+		m.ready = true
 		m.refreshing = false
 
 	case noticeMsg:
 		m.notice = msg.err
 
 	case openedMsg:
-		delete(m.inflight, msg.pr)
+		delete(m.inflight, msg.id)
 		if msg.err != nil {
 			m.notice = msg.err
 			break
 		}
 		// The workspace is up (with on_open: quit the TUI is already
-		// gone). switch moves the user's client to the reviews.
+		// gone). switch moves the user's client to the windows.
 		if m.cfg.OnOpen == "switch" {
-			cmds = append(cmds, switchClient(newWindows(m.cfg, reviews)))
+			cmds = append(cmds, switchClient(newWindows(m.cfg, m.sc)))
 		}
 		cmds = append(cmds, m.fetchLocal)
 
 	case closedMsg:
-		delete(m.inflight, msg.pr)
+		delete(m.inflight, msg.id)
 		if msg.err != nil {
 			m.notice = msg.err
 			break
@@ -674,10 +776,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.search.Blur()
 			return m, nil
 		}
-		// Drop non-digit runes upstream — bubbles/textinput's Validate
-		// only sets a display error, it doesn't reject input. Non-rune
-		// keys (backspace, arrows, delete) pass through so editing works.
-		if msg.Text != "" {
+		// The PR list filters by number: drop non-digit runes upstream —
+		// bubbles/textinput's Validate only sets a display error, it
+		// doesn't reject input. Non-rune keys (backspace, arrows, delete)
+		// pass through so editing works. The issue list takes any text.
+		if msg.Text != "" && m.kind == "pr" {
 			for _, r := range msg.Text {
 				if r < '0' || r > '9' {
 					return m, nil
@@ -702,7 +805,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.fetchGen++
 		m.refreshing = true
 		m.err = nil
-		return m, tea.Batch(m.fetchPRs, m.fetchLocal, m.fetchMerged, m.spinner.Tick)
+		return m, tea.Batch(append(m.fetches(), m.fetchLocal, m.spinner.Tick)...)
 	case key.Matches(msg, m.keys.Up):
 		m.moveCursor(-1)
 		m.refreshList()
@@ -722,12 +825,12 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
 	case key.Matches(msg, m.keys.Enter):
-		if pr := m.selectedPR(); pr != nil {
-			return m.launch(pr.Number, fmt.Sprintf("opening #%d…", pr.Number), m.openReview(pr.Number, ""), true)
+		if row, ok := m.selectedRow(); ok {
+			return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.id(), ""), true)
 		}
 	case key.Matches(msg, m.keys.Start):
-		if pr := m.selectedPR(); pr != nil {
-			return m.launch(pr.Number, fmt.Sprintf("starting #%d…", pr.Number), m.startReview(pr.Number, ""), false)
+		if row, ok := m.selectedRow(); ok {
+			return m.launch(row.id(), "starting "+row.label()+"…", m.startWorkspace(row.id(), ""), false)
 		}
 	case key.Matches(msg, m.keys.Feedback):
 		if pr := m.selectedPR(); pr != nil {
@@ -739,27 +842,34 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// reviewed"; press Enter or s first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
 			if ls.Window != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
-				return m.launch(pr.Number, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.startReview(pr.Number, m.cfg.Agent.FeedbackPrompt), false)
+				id := strconv.Itoa(pr.Number)
+				return m.launch(id, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.startWorkspace(id, m.cfg.Agent.FeedbackPrompt), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Browser):
 		if pr := m.selectedPR(); pr != nil {
 			return m, m.openPRInBrowser(pr)
 		}
+		if is := m.selectedIssue(); is != nil {
+			return m, func() tea.Msg { return openURL(m.cfg.OpenCmd, is.URL) }
+		}
 	case key.Matches(msg, m.keys.Yank):
 		if pr := m.selectedPR(); pr != nil {
 			return m, yankPRURL(pr)
+		}
+		if is := m.selectedIssue(); is != nil {
+			return m, tea.SetClipboard(is.Key)
 		}
 	case key.Matches(msg, m.keys.Next):
 		m.jumpToNextAttention()
 		m.refreshList()
 	case key.Matches(msg, m.keys.Cleanup):
-		if pr := m.selectedPR(); pr != nil {
+		if row, ok := m.selectedRow(); ok {
 			// Only fires cleanup if there's a local worktree/session to
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
-			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Window != "" {
-				return m.launch(pr.Number, fmt.Sprintf("closing #%d…", pr.Number), m.closeReview(pr.Number), false)
+			if ls := m.localOf(row); ls.Worktree != "" || ls.Window != "" {
+				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.id()), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -802,7 +912,7 @@ func (m *model) moveCursor(delta int) {
 	}
 	for i := 0; i < delta; i++ {
 		next := m.cursor + step
-		for next >= 0 && next < len(rows) && rows[next].pr == nil {
+		for next >= 0 && next < len(rows) && rows[next].header() {
 			next += step
 		}
 		if next < 0 || next >= len(rows) {
@@ -820,9 +930,9 @@ func (m *model) clampCursor() {
 			m.cursor = last
 		}
 	}
-	// Land on a PR row, not a header.
+	// Land on a row, not a header.
 	rows := m.visibleRows()
-	for m.cursor >= 0 && m.cursor < len(rows) && rows[m.cursor].pr == nil {
+	for m.cursor >= 0 && m.cursor < len(rows) && rows[m.cursor].header() {
 		m.cursor++
 	}
 	if m.cursor >= len(rows) {
@@ -833,14 +943,46 @@ func (m *model) clampCursor() {
 	}
 }
 
-// selectedPR returns the PR under the cursor, or nil if the cursor
-// isn't on a PR row (e.g. list is empty).
-func (m model) selectedPR() *PR {
+// selectedRow returns the row under the cursor, when it is a PR or an
+// issue (not a header, not an empty list).
+func (m model) selectedRow() (visibleRow, bool) {
 	rows := m.visibleRows()
-	if m.cursor < 0 || m.cursor >= len(rows) {
-		return nil
+	if m.cursor < 0 || m.cursor >= len(rows) || rows[m.cursor].header() {
+		return visibleRow{}, false
 	}
-	return rows[m.cursor].pr
+	return rows[m.cursor], true
+}
+
+// selectedPR returns the PR under the cursor, or nil.
+func (m model) selectedPR() *PR {
+	row, _ := m.selectedRow()
+	return row.pr
+}
+
+// selectedIssue returns the issue under the cursor, or nil.
+func (m model) selectedIssue() *Issue {
+	row, _ := m.selectedRow()
+	return row.issue
+}
+
+// label is how the action row names the row: #42, BAR-4159.
+func (r visibleRow) label() string {
+	if r.pr != nil {
+		return "#" + strconv.Itoa(r.pr.Number)
+	}
+	return r.id()
+}
+
+// localOf is the row's overlay: the worktree, window and agent state
+// of its workspace.
+func (m model) localOf(r visibleRow) LocalState {
+	if r.pr != nil {
+		return findLocalForPR(m.localState, r.pr.Number)
+	}
+	if r.issue != nil {
+		return findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, r.issue.Key) })
+	}
+	return LocalState{}
 }
 
 // jumpToNextAttention advances the cursor to the next row that wants
@@ -853,13 +995,13 @@ func (m *model) jumpToNextAttention() {
 		return
 	}
 	wants := func(r visibleRow) bool {
-		if r.pr == nil {
+		if r.header() {
 			return false
 		}
-		if r.status == StatusTodo && !r.merged {
+		if r.pr != nil && r.status == StatusTodo && !r.merged {
 			return true
 		}
-		ls := findLocalForPR(m.localState, r.pr.Number)
+		ls := m.localOf(r)
 		return ls.ClaudeState == agentBlocked || ls.ClaudeState == agentDone
 	}
 	// Scan forward from cursor+1, then wrap.
@@ -876,7 +1018,7 @@ func (m *model) jumpToNextAttention() {
 func (m model) firstPRRowIndex() int {
 	rows := m.visibleRows()
 	for i := range rows {
-		if rows[i].pr != nil {
+		if !rows[i].header() {
 			return i
 		}
 	}
@@ -886,7 +1028,7 @@ func (m model) firstPRRowIndex() int {
 func (m model) lastPRRowIndex() int {
 	rows := m.visibleRows()
 	for i := len(rows) - 1; i >= 0; i-- {
-		if rows[i].pr != nil {
+		if !rows[i].header() {
 			return i
 		}
 	}
@@ -934,6 +1076,9 @@ func (m *model) resizeViewport() {
 // visibleRows builds the section-grouped row list with the search
 // filter applied. Sections with zero visible rows are omitted.
 func (m model) visibleRows() []visibleRow {
+	if m.kind == "issue" {
+		return m.visibleIssueRows()
+	}
 	filter := m.search.Value()
 
 	matches := func(pr PR) bool {
@@ -1028,8 +1173,11 @@ func (m *model) refreshList() {
 }
 
 func (m model) renderRow(row visibleRow, selected bool) string {
-	if row.pr == nil {
+	if row.header() {
 		return row.sectionStyle.Render(row.sectionTitle)
+	}
+	if row.issue != nil {
+		return m.renderIssueRow(row, selected)
 	}
 	cursor := "  "
 	if selected {
@@ -1037,7 +1185,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	}
 	local := findLocalForPR(m.localState, row.pr.Number)
 	starting := "" // the spinner takes the worktree slot while a child works on this PR
-	if _, ok := m.inflight[row.pr.Number]; ok {
+	if _, ok := m.inflight[row.id()]; ok {
 		starting = m.spinner.View()
 	}
 	draft := ""
@@ -1086,8 +1234,8 @@ func (m model) actionRowView() string {
 			labels = append(labels, m.inflight[pr])
 		}
 		return m.spinner.View() + " " + styleDim.Render(strings.Join(labels, "  "))
-	case !m.prsReady && m.err == nil:
-		return m.spinner.View() + " " + styleDim.Render("loading PRs…")
+	case !m.ready && m.err == nil:
+		return m.spinner.View() + " " + styleDim.Render("loading "+m.noun()+"…")
 	case m.refreshing:
 		return m.spinner.View() + " " + styleDim.Render("refreshing…")
 	case m.search.Focused():
@@ -1109,12 +1257,26 @@ func (m model) actionRowView() string {
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
 func (m model) hasData() bool {
+	if m.kind == "issue" {
+		return len(m.issues) > 0
+	}
 	return len(m.prs) > 0 || len(m.merged) > 0
+}
+
+// noun is what the list holds, plural: PRs or issues.
+func (m model) noun() string {
+	if m.kind == "issue" {
+		return "issues"
+	}
+	return "PRs"
 }
 
 // countsSummary is the idle-state action row content: a compact
 // count-per-group line so a glance tells you today's shape.
 func (m model) countsSummary() string {
+	if m.kind == "issue" {
+		return m.issueCountsSummary()
+	}
 	if m.me == "" || len(m.prs) == 0 && len(m.merged) == 0 {
 		return styleDim.Render(fmt.Sprintf("%d open", len(m.prs)))
 	}
@@ -1139,6 +1301,9 @@ func (m model) countsSummary() string {
 // is omitted before the first fetch completes (lastFetched is zero).
 func (m model) titleLine(repo string) string {
 	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
+	if m.kind == "issue" {
+		left = styleHeader.Render(fmt.Sprintf("owl · issues · %s", repo))
+	}
 	right := ""
 	if !m.lastFetched.IsZero() {
 		d := time.Since(m.lastFetched)
@@ -1171,19 +1336,7 @@ func (m model) titleLine(repo string) string {
 func (m model) helpModalView() string {
 	title := styleHeader.Render("owl · help")
 
-	legend := lipgloss.JoinVertical(lipgloss.Left,
-		styleHeader.Render("Legend"),
-		fmt.Sprintf("  %s   worktree present for pr-<N>[-…] branch", styleWorktree.Render("⎇")),
-		fmt.Sprintf("  %s   Claude working — actively processing a turn", styleClaudeWorking.Render("©")),
-		fmt.Sprintf("  %s   Claude blocked — waiting on you (permission, question, plan approval)", styleClaudeBlocked.Render("©")),
-		fmt.Sprintf("  %s  Claude done — unread (result to view; ack by focusing the window)", styleClaudeDone.Render("©")+styleClaudeDone.Render("*")),
-		fmt.Sprintf("  %s   Claude idle — finished and seen (session still available)", styleClaudeDone.Render("©")),
-		fmt.Sprintf("  %s   Claude session — no state set (fresh window)", styleClaudeNeutral.Render("©")),
-		fmt.Sprintf("  %s   I approved this PR (current verdict)", styleApproved.Render("✓")),
-		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
-		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
-		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
-	)
+	legend := m.legend()
 
 	keys := styleHeader.Render("Keys") + "\n" +
 		m.help.FullHelpView(m.keys.FullHelp())
@@ -1209,6 +1362,26 @@ func (m model) helpModalView() string {
 		return box
 	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// legend explains the glyphs of the list's rows.
+func (m model) legend() string {
+	if m.kind == "issue" {
+		return m.issueLegend()
+	}
+	return lipgloss.JoinVertical(lipgloss.Left,
+		styleHeader.Render("Legend"),
+		fmt.Sprintf("  %s   worktree present for pr-<N>[-…] branch", styleWorktree.Render("⎇")),
+		fmt.Sprintf("  %s   Claude working — actively processing a turn", styleClaudeWorking.Render("©")),
+		fmt.Sprintf("  %s   Claude blocked — waiting on you (permission, question, plan approval)", styleClaudeBlocked.Render("©")),
+		fmt.Sprintf("  %s  Claude done — unread (result to view; ack by focusing the window)", styleClaudeDone.Render("©")+styleClaudeDone.Render("*")),
+		fmt.Sprintf("  %s   Claude idle — finished and seen (session still available)", styleClaudeDone.Render("©")),
+		fmt.Sprintf("  %s   Claude session — no state set (fresh window)", styleClaudeNeutral.Render("©")),
+		fmt.Sprintf("  %s   I approved this PR (current verdict)", styleApproved.Render("✓")),
+		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
+		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
+		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
+	)
 }
 
 // View wraps the rendered frame with what used to be program options:
@@ -1242,7 +1415,7 @@ func (m model) render() string {
 		return b.String()
 	}
 
-	if !m.prsReady {
+	if !m.ready {
 		// Loading state is already shown in the action row (spinner + text).
 		// Leave the body blank so the eye stays where the movement is.
 		return b.String()
@@ -1250,9 +1423,12 @@ func (m model) render() string {
 
 	rows := m.visibleRows()
 	if len(rows) == 0 {
-		if m.search.Value() != "" {
-			b.WriteString(fmt.Sprintf("\nno PRs match /%s\n", m.search.Value()))
-		} else {
+		switch {
+		case m.search.Value() != "":
+			b.WriteString(fmt.Sprintf("\nno %s match /%s\n", m.noun(), m.search.Value()))
+		case m.kind == "issue":
+			b.WriteString("\nno open issues assigned to you.\n")
+		default:
 			b.WriteString("\nno PRs need your review.\n")
 		}
 		b.WriteString("\n" + m.help.View(m.keys))
@@ -1473,6 +1649,15 @@ func main() {
 	exitOn(enterDefaultRepo(cfg.DefaultRepo))
 	switch {
 	case len(args) > 0 && args[0] == "issue":
+		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
+			exitOn(newWindows(cfg, features).Ping())
+			tracker := newTracker(cfg, func(text string) {
+				fmt.Fprintln(os.Stderr, text)
+				newWindows(cfg, features).Notify(text)
+			})
+			runTUI(initialIssueModel(cfg, tracker))
+			return
+		}
 		exitOn(runIssue(cfg, args[1:], os.Stdout))
 		return
 	case len(args) > 0 && args[0] == "hoot":
@@ -1482,15 +1667,7 @@ func main() {
 		// Before the list: states read from a tainted multiplexer never
 		// change, and the failure would surface on Enter, an hour in.
 		exitOn(newWindows(cfg, reviews).Ping())
-		p := tea.NewProgram(initialModel(cfg))
-		var final tea.Model
-		if final, err = p.Run(); err == nil {
-			fm := final.(model)
-			fm.persistCache() // the cursor row, for the next start
-			if fm.farewell != "" {
-				fmt.Println(fm.farewell)
-			}
-		}
+		runTUI(initialModel(cfg))
 	case args[0] == "open":
 		err = runOpen(cfg, args[1:], os.Stdout, true)
 	case args[0] == "start":
@@ -1499,6 +1676,18 @@ func main() {
 		err = runClose(cfg, args[1:], os.Stdout)
 	}
 	exitOn(err)
+}
+
+// runTUI runs a list until it quits, keeps its cursor for the next
+// start, and prints what an open left for the terminal behind it.
+func runTUI(m model) {
+	final, err := tea.NewProgram(m).Run()
+	exitOn(err)
+	fm := final.(model)
+	fm.persistCache() // the cursor row, for the next start
+	if fm.farewell != "" {
+		fmt.Println(fm.farewell)
+	}
 }
 
 // muxOverride is the --mux flag, when given: the multiplexer to use

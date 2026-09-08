@@ -37,7 +37,7 @@ func TestCacheRoundTrip(t *testing.T) {
 func TestCursorResumes(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	m := testModel(t)
-	m.prs, m.prsReady, m.cursor = fixturePRs(), true, 3
+	m.prs, m.ready, m.cursor = fixturePRs(), true, 3
 	m.persistCache()
 	if got := loadCache("acme/example"); got == nil || got.Cursor != 3 {
 		t.Fatalf("cache cursor = %+v, want 3", got)
