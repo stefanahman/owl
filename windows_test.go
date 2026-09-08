@@ -195,7 +195,14 @@ func TestGlobalOptions(t *testing.T) {
 	if p, _ := configPath(); !strings.HasSuffix(p, "/x.yaml") || strings.HasPrefix(p, "~") {
 		t.Errorf("configPath with --config = %q", p)
 	}
+	// A child pr-owl (open, close) gets the same options in front.
+	if got := globalArgs(); !reflect.DeepEqual(got, []string{"--config", "~/x.yaml", "--mux", "cmux"}) {
+		t.Errorf("globalArgs = %v", got)
+	}
 	configOverride, muxOverride = "", ""
+	if got := globalArgs(); len(got) != 0 {
+		t.Errorf("globalArgs without options = %v", got)
+	}
 	if rest, err := globalOptions([]string{"open", "--mux", "42"}); err != nil || len(rest) != 3 {
 		t.Errorf("options after the command are the command's: %v, %v", rest, err)
 	}

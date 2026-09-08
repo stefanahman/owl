@@ -304,8 +304,10 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	sp.Style = styleDim
 
 	m := model{
-		cfg:      cfg,
-		runSelf:  func(args ...string) error { return runChild(newWindows(cfg).ChildEnv(), args...) },
+		cfg: cfg,
+		runSelf: func(args ...string) error {
+			return runChild(newWindows(cfg).ChildEnv(), append(globalArgs(), args...)...)
+		},
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
 		help:     help.New(),
@@ -1494,6 +1496,20 @@ func globalOptions(args []string) ([]string, error) {
 		}
 	}
 	return args, nil
+}
+
+// globalArgs is what a child pr-owl needs in front of its command to
+// see the same --config and --mux as this process: a child parses its
+// own arguments.
+func globalArgs() []string {
+	var args []string
+	if configOverride != "" {
+		args = append(args, "--config", configOverride)
+	}
+	if muxOverride != "" {
+		args = append(args, "--mux", muxOverride)
+	}
+	return args
 }
 
 // enterDefaultRepo changes into `default_repo` when the working
