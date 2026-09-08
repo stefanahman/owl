@@ -1,5 +1,5 @@
 ---
-name: pr-review
+name: review
 description: Review a pull request end to end - gather context, read the diff with its surrounding code, verify locally, draft the review as a file the user approves, then post it with gh as one atomic review. Invoke manually with a PR number; do not auto-trigger.
 argument-hint: "[pr-number]"
 arguments: [pr]
@@ -45,8 +45,8 @@ Blanket phrases like "just do the reviews" or "go ahead" apply to running the wo
 
 This skill is the review *process*; what is specific to a codebase comes from two optional files in the repository. Read them now if they exist — at every invocation, even when this conversation read them before: they change between runs.
 
-1. `${CLAUDE_PROJECT_DIR}/.claude/pr-review.md` — committed, shared by the team.
-2. `${CLAUDE_PROJECT_DIR}/.claude/pr-review.local.md` — personal, gitignored. Its frontmatter keys override the shared file's; its sections add to them.
+1. `${CLAUDE_PROJECT_DIR}/.claude/owl.md` — committed, shared by the team.
+2. `${CLAUDE_PROJECT_DIR}/.claude/owl.local.md` — personal, gitignored. Its frontmatter keys override the shared file's; its sections add to them.
 
 Both have the same shape: YAML frontmatter, then markdown sections named after the step they extend.
 
@@ -214,7 +214,7 @@ Zero surviving findings is a valid outcome. Approve with a body that names what 
 
 ## Step 3: Local verification in a worktree
 
-If the working directory is already a worktree for this PR — `pr-owl open` starts you in one, a directory named `pr-$pr` or `pr-$pr-…` — skip the setup. Otherwise create one first (`git worktree add <path>` then `gh pr checkout $pr` inside it).
+If the working directory is already a worktree for this PR — `owl pr open` starts you in one, a directory named `pr-$pr` or `pr-$pr-…` — skip the setup. Otherwise create one first (`git worktree add <path>` then `gh pr checkout $pr` inside it).
 
 Then, from inside the worktree, run the project's checks:
 
@@ -227,7 +227,7 @@ Run build → lint → tests sequentially (build first — lint and tests usuall
 Then:
 
 1. **Summary**: for each check (build, lint, tests) print pass/fail; on fail, the key error lines. Include lint warnings even if lint passes. If everything's green, one line saying so.
-2. **Cleanup**: if you created the worktree yourself, remove it with `git worktree remove <path>`. If the caller provided the worktree (`pr-owl open`), leave it — the launcher owns its lifecycle.
+2. **Cleanup**: if you created the worktree yourself, remove it with `git worktree remove <path>`. If the caller provided the worktree (`owl pr open`), leave it — the launcher owns its lifecycle.
 
 If any check fails, factor the failure into the review — it likely warrants a blocking comment or shifts the verdict.
 

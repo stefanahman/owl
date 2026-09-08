@@ -89,7 +89,7 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	if fake.Focused() != w.ID {
 		t.Errorf("arriving should have focused the workspace, focused = %q", fake.Focused())
 	}
-	if got, want := fake.Typed(w.Pane()), []string{"true '/pr-review:pr-review 42'<enter>"}; !reflect.DeepEqual(got, want) {
+	if got, want := fake.Typed(w.Pane()), []string{"true '/owl:review 42'<enter>"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("typed %v, want %v", got, want)
 	}
 	f.waitFile(hookOut, "herdr|work|"+name+"\n")
@@ -150,7 +150,7 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 		t.Fatalf("workspace = %+v, %v; want cwd %s", w, ok, wt)
 	}
 	surface := w.Panes[0].Surfaces[0].ID
-	if got, want := fake.Typed(surface), []string{"CMUX_SURFACE_ID=" + surface + " true '/pr-review:pr-review 42'", "<enter>"}; !reflect.DeepEqual(got, want) {
+	if got, want := fake.Typed(surface), []string{"CMUX_SURFACE_ID=" + surface + " true '/owl:review 42'", "<enter>"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("typed %v, want %v", got, want)
 	}
 	if fake.State().Selected != w.ID {

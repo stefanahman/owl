@@ -10,8 +10,8 @@
   },
   "plugins": [
     {
-      "name": "pr-review",
-      "source": "./pr-review",
+      "name": "owl",
+      "source": "./owl",
       "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review"
     }
   ]

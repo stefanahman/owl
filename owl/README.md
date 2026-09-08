@@ -1,6 +1,6 @@
-# pr-review — a Claude Code plugin
+# owl — a Claude Code plugin
 
-One skill, `/pr-review:pr-review <number>`, that reviews a pull request
+One skill, `/owl:review <number>`, that reviews a pull request
 the way a careful senior engineer would and never posts without you:
 
 1. **Context** — `gh pr view` metadata (draft? auto-merge armed? prior
@@ -15,7 +15,7 @@ the way a careful senior engineer would and never posts without you:
    The skill stops here so you can judge the approach: the shape is
    yours, not the agent's.
 4. **Local verification** — build, lint and tests in a worktree for the
-   PR (the one `pr-owl open` puts you in, or one the skill creates).
+   PR (the one `owl pr open` puts you in, or one the skill creates).
 5. **A draft file, verified cold** — every finding re-checked at its
    file and line (by a fresh subagent where the harness has them) and
    dropped unless confirmed, then the exact body and inline comments
@@ -31,8 +31,8 @@ monorepo.
 ## Install
 
 ```
-/plugin marketplace add stefanahman/pr-owl
-/plugin install pr-review@pr-owl
+/plugin marketplace add stefanahman/owl
+/plugin install owl@owl
 ```
 
 Requires git and an authenticated `gh`. The skill pre-approves what it
@@ -50,8 +50,8 @@ permission settings too; the `pnpm-turbo` module keeps to commands a
 
 Two optional files, same format, read in order:
 
-- `.claude/pr-review.md` — committed, shared by the team.
-- `.claude/pr-review.local.md` — yours; add `.claude/*.local.md` to
+- `.claude/owl.md` — committed, shared by the team.
+- `.claude/owl.local.md` — yours; add `.claude/*.local.md` to
   `.gitignore`. Frontmatter keys override the shared file's, sections
   add to them.
 
@@ -83,7 +83,7 @@ Prefer `suggestion` blocks over prose for one-line fixes.
 - `## Verification` — how to build, lint and test this repo (local verification, the skill's Step 3). With a stack module enabled, this adds to it.
 - `## Design brief` — where the shape lives in this repository: routes, contracts, schemas, migrations. Tells the brief where to look.
 - `## Extra lenses` — what to look for in this codebase, applied alongside the built-in lenses (careful reading, the skill's Step 2). This is also where the modules read their project specifics.
-- `## Writing style` — additions to the shipped [writing-style.md](skills/pr-review/writing-style.md).
+- `## Writing style` — additions to the shipped [writing-style.md](skills/review/writing-style.md).
 
 Without any file the core workflow runs on its own; local verification then detects
 the build system and confirms the commands with you before running
@@ -100,13 +100,13 @@ them.
 | `service-boundaries` | 2 | Services talk only through the messaging layer; contracts and shared packages are public API |
 
 Each module is one markdown file under
-[skills/pr-review/modules/](skills/pr-review/modules/); the first line
+[skills/review/modules/](skills/review/modules/); the first line
 says which step it plugs into. A project-specific rule that doesn't fit
 a module goes in your project file's sections — no fork needed.
 
 ## Hacking
 
 ```sh
-claude --plugin-dir ./pr-review        # from the pr-owl checkout
-claude plugin validate ./pr-review --strict
+claude --plugin-dir ./owl        # from the owl checkout
+claude plugin validate ./owl --strict
 ```

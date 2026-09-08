@@ -260,7 +260,7 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	if cwd, _ := tmux("display-message", "-p", "-t", mux.TmuxTarget("reviews", name), "#{pane_current_path}"); cwd != wt {
 		t.Errorf("window cwd %q, want %q", cwd, wt)
 	}
-	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	f.waitPane(name, "true '/owl:review 42'")
 
 	// The TUI overlay sees the window, without the keepalive one, and
 	// reads the state option tmux-claude-status writes.
@@ -327,7 +327,7 @@ func TestStartStaysPut(t *testing.T) {
 	if !f.exists(filepath.Join(f.repo, ".worktrees.local", name, "pr42.txt")) {
 		t.Error("start did not create the worktree")
 	}
-	f.waitPane(name, "true '/pr-review:pr-review 42'")
+	f.waitPane(name, "true '/owl:review 42'")
 	if got := f.activeWindow(); got != "scratch" {
 		t.Errorf("start selected the window (%q); it must stay where it was", got)
 	}
@@ -506,7 +506,7 @@ func TestOpenPromptHandling(t *testing.T) {
 	// A running agent gets the prompt as keystrokes.
 	f.cfg.Agent.Cmd = "cat >/dev/null #" // stays in the foreground; everything after # is ignored
 	f.open("7")
-	f.waitPane("pr-7", "cat >/dev/null # '/pr-review:pr-review 7'")
+	f.waitPane("pr-7", "cat >/dev/null # '/owl:review 7'")
 	out = f.open("7", "--prompt", "ping")
 	if !strings.Contains(out, "sent prompt") {
 		t.Errorf("output: %q", out)

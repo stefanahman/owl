@@ -54,5 +54,5 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g @anthropic-ai/claude-code@2.1.263 # the release the plugin was validated with
-      - run: claude plugin validate ./pr-review --strict
+      - run: claude plugin validate ./owl --strict
       - run: claude plugin validate . --strict

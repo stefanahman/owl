@@ -240,7 +240,7 @@ default_repo: ""                 # repo to use when owl is started outside a git
 
 agent:
   cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
-  prompt: "/pr-review:pr-review {pr}"    # first prompt of a fresh review; {pr} is the PR number
+  prompt: "/owl:review {pr}"    # first prompt of a fresh review; {pr} is the PR number
   feedback_prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
     - .claude/settings.local.json
@@ -298,7 +298,7 @@ func defaultConfig() Config {
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
 		Cmd:    "claude --permission-mode auto",
-		Prompt: "/pr-review:pr-review {pr}",
+		Prompt: "/owl:review {pr}",
 		// The `f` key's message. Two-pass self-critique + a RESOLVED
 		// taxonomy, calm tenor: encouraging language increases
 		// deliberation, urgency causes shortcuts.
