@@ -1,47 +1,40 @@
-// Local overlays: git worktrees and tmux windows that correspond to
+// Local overlays: git worktrees and review windows that correspond to
 // PRs by name convention (`pr-<N>` or `pr-<N>-<slug>`).
 //
 // Scope: `git worktree list` runs in the working directory, so it lists
-// every worktree of the repo pr-owl was launched from. tmux windows
-// come from the review session (`tmux.session`, one window per PR
-// review); window names use the same pr-<N>[-…] pattern as the
-// worktree basenames.
+// every worktree of the repo pr-owl was launched from. Windows come
+// from the multiplexer's review container (one window per PR review);
+// window names use the same pr-<N>[-…] pattern as the worktree
+// basenames.
 package main
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 )
 
-// claudeStateOption is the tmux window option tmux-claude-status
-// writes Claude's state to — the contract between the two tools.
-const claudeStateOption = "@claude-state"
-
-// LocalState is the per-PR overlay: does a worktree exist? A tmux
-// window (in the review session) with a Claude conversation? What
-// state did the last Claude hook write?
+// LocalState is the per-PR overlay: does a worktree exist? A review
+// window with a Claude conversation? What is the agent in it doing?
 type LocalState struct {
 	Worktree    string // absolute path to the worktree; "" if none
-	Session     string // the review window's name when one exists (a workspace is a window of tmux.session); "" if none
-	ClaudeState string // "working" | "blocked" | "done" | "idle" | "" (absent)
+	Window      string // the review window's name when one exists; "" if none
+	ClaudeState string // agentWorking | agentBlocked | agentDone | agentIdle | "" (unknown)
 }
 
 // localMsg carries a snapshot of local state keyed by PR handle.
 type localMsg map[string]LocalState
 
-// fetchLocal reads worktrees + tmux windows of the review session and
+// fetchLocal reads worktrees + the multiplexer's review windows and
 // merges them into a per-PR map. Failures in either source degrade
 // gracefully — you get whatever partial data was available.
 func (m model) fetchLocal() tea.Msg {
 	worktrees := readWorktrees()
-	windows := readReviewWindows(m.cfg.Tmux)
+	windows := newMux(m.cfg).States()
 
 	out := make(map[string]LocalState)
 	for handle, wtPath := range worktrees {
 		s := LocalState{Worktree: wtPath}
 		if state, ok := windows[handle]; ok {
-			s.Session = handle
+			s.Window = handle
 			s.ClaudeState = state
 		}
 		out[handle] = s
@@ -52,7 +45,7 @@ func (m model) fetchLocal() tea.Msg {
 		if _, ok := out[name]; ok {
 			continue
 		}
-		out[name] = LocalState{Session: name, ClaudeState: state}
+		out[name] = LocalState{Window: name, ClaudeState: state}
 	}
 	return localMsg(out)
 }
@@ -78,31 +71,6 @@ func readWorktrees() map[string]string {
 		if h := wt.handle(); h != "" {
 			result[h] = wt.Path
 		}
-	}
-	return result
-}
-
-// readReviewWindows lists the windows of the review session with the
-// value of the state option into a map. tmux-claude-status writes that
-// window option from Claude Code's hooks: working / blocked / done /
-// idle. Absent value → empty string (fresh window).
-//
-// Only windows of the review session — other tmux sessions aren't PR
-// reviews and don't belong in this overlay.
-func readReviewWindows(t TmuxConfig) map[string]string {
-	format := "#{window_name}\t#{" + claudeStateOption + "}"
-	out, err := tmux("list-windows", "-t", tmuxTarget(t.Session, ""), "-F", format)
-	if err != nil {
-		return nil // review session doesn't exist yet — treat as empty
-	}
-	result := make(map[string]string)
-	for _, line := range strings.Split(out, "\n") {
-		name, state, _ := strings.Cut(line, "\t")
-		// Skip the keepalive window — no state to report.
-		if name == "" || name == t.KeepaliveWindow {
-			continue
-		}
-		result[name] = state
 	}
 	return result
 }

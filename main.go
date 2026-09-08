@@ -307,7 +307,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 
 	m := model{
 		cfg:      cfg,
-		runSelf:  runSelf,
+		runSelf:  func(args ...string) error { return runChild(newMux(cfg).Kind(), args...) },
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
 		help:     help.New(),
@@ -369,7 +369,7 @@ func (m model) persistCache() {
 // it ends. The child gets its own session (Setsid): pr-owl usually
 // runs inside a tmux popup, and with on_open: quit the popup closes
 // the moment the child starts — it must finish on its own, and it
-// does (see runSelf for where its failure goes then).
+// does (see runChild for where its failure goes then).
 func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"open", strconv.Itoa(prNumber)}
@@ -420,14 +420,15 @@ func (m model) launch(pr int, label string, cmd tea.Cmd, arrive bool) (tea.Model
 	return m, tea.Batch(cmd, m.spinner.Tick)
 }
 
-// runSelf runs this binary with args in its own session and returns
-// nil, or its failure with the child's stderr in the message.
+// runChild runs this binary with args in its own session and returns
+// nil, or its failure with the child's stderr in the message. kind is
+// the multiplexer, so the child can notify the right way.
 //
 // The child outlives the TUI with on_open: quit, and a Go program
 // writing to a broken pipe on stdout or stderr is killed by SIGPIPE —
 // so its stdout is discarded rather than piped, and its failure also
-// goes to tmux's status line before it is printed (see exitOn).
-func runSelf(args ...string) error {
+// goes to the multiplexer before it is printed (see exitOn).
+func runChild(kind string, args ...string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate pr-owl binary: %w", err)
@@ -440,7 +441,7 @@ func runSelf(args ...string) error {
 	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = append(os.Environ(), "PR_OWL_NOTIFY=tmux")
+	cmd.Env = append(os.Environ(), "PR_OWL_MUX="+kind)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -477,11 +478,11 @@ func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
 	}
 }
 
-// switchClient moves the tmux client to the review session, whose
+// switchClient moves the user's client to the review container, whose
 // current window `open` has just selected.
-func switchClient(session string) tea.Cmd {
+func switchClient(mx mux) tea.Cmd {
 	return func() tea.Msg {
-		if _, err := tmux("switch-client", "-t", tmuxTarget(session, "")); err != nil {
+		if err := mx.SwitchClient(); err != nil {
 			return noticeMsg{err}
 		}
 		return nil
@@ -622,9 +623,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		// The workspace is up (with on_open: quit the TUI is already
-		// gone). switch moves the tmux client to the review session.
+		// gone). switch moves the user's client to the reviews.
 		if m.cfg.OnOpen == "switch" {
-			cmds = append(cmds, switchClient(m.cfg.Tmux.Session))
+			cmds = append(cmds, switchClient(newMux(m.cfg)))
 		}
 		cmds = append(cmds, m.fetchLocal)
 
@@ -737,7 +738,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// no-op — f is scoped to "check feedback on what you already
 			// reviewed"; press Enter or s first to open an initial review.
 			ls := findLocalForPR(m.localState, pr.Number)
-			if ls.Session != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
+			if ls.Window != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
 				return m.launch(pr.Number, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.startReview(pr.Number, m.cfg.Agent.FeedbackPrompt), false)
 			}
 		}
@@ -757,7 +758,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Only fires cleanup if there's a local worktree/session to
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
-			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Session != "" {
+			if ls := findLocalForPR(m.localState, pr.Number); ls.Worktree != "" || ls.Window != "" {
 				return m.launch(pr.Number, fmt.Sprintf("closing #%d…", pr.Number), m.closeReview(pr.Number), false)
 			}
 		}
@@ -859,7 +860,7 @@ func (m *model) jumpToNextAttention() {
 			return true
 		}
 		ls := findLocalForPR(m.localState, r.pr.Number)
-		return ls.ClaudeState == "blocked" || ls.ClaudeState == "done"
+		return ls.ClaudeState == agentBlocked || ls.ClaudeState == agentDone
 	}
 	// Scan forward from cursor+1, then wrap.
 	for offset := 1; offset <= len(rows); offset++ {
@@ -1300,16 +1301,16 @@ func badges(ls LocalState, starting string, iApproved, iEngaged, stale, hasCR bo
 
 	// Claude slot: © + unread marker (`*` for done, else space).
 	switch ls.ClaudeState {
-	case "working":
+	case agentWorking:
 		parts = append(parts, styleClaudeWorking.Render("©")+" ")
-	case "blocked":
+	case agentBlocked:
 		parts = append(parts, styleClaudeBlocked.Render("©")+" ")
-	case "done":
+	case agentDone:
 		parts = append(parts, styleClaudeDone.Render("©")+styleClaudeDone.Render("*"))
-	case "idle":
+	case agentIdle:
 		parts = append(parts, styleClaudeDone.Render("©")+" ")
 	default:
-		if ls.Session != "" {
+		if ls.Window != "" {
 			parts = append(parts, styleClaudeNeutral.Render("©")+" ")
 		} else {
 			parts = append(parts, "  ")
@@ -1478,11 +1479,11 @@ func exitOn(err error) {
 		return
 	}
 	// Started by the TUI, which may already have quit (on_open: quit):
-	// the failure goes to the status line of the tmux client the popup
-	// was in, for eight seconds — before stderr, which may be a broken
-	// pipe by now and would end the process.
-	if os.Getenv("PR_OWL_NOTIFY") == "tmux" && os.Getenv("TMUX") != "" {
-		_ = exec.Command("tmux", "display-message", "-d", "8000", "pr-owl: "+err.Error()).Run()
+	// the failure goes to the multiplexer the popup was in — before
+	// stderr, which may be a broken pipe by now and would end the
+	// process.
+	if mx := muxByKind(os.Getenv("PR_OWL_MUX")); mx != nil {
+		mx.Notify("pr-owl: " + err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
 	var ue usageError

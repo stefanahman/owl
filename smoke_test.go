@@ -75,7 +75,7 @@ func TestFetchSmoke(t *testing.T) {
 		if i >= 3 {
 			break
 		}
-		t.Logf("  %s → %s", name, fmt.Sprintf("wt=%v session=%v state=%v", ls.Worktree != "", ls.Session != "", ls.ClaudeState))
+		t.Logf("  %s → %s", name, fmt.Sprintf("wt=%v window=%v state=%v", ls.Worktree != "", ls.Window != "", ls.ClaudeState))
 		i++
 	}
 }

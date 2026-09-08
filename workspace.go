@@ -1,6 +1,6 @@
 // A review workspace is three things named identically, `pr-<N>` or
 // `pr-<N>-<slug>`: a git worktree under <repo>/<worktrees_dir>, the
-// branch checked out in it, and a tmux window in the review session.
+// branch checked out in it, and a window in the multiplexer (mux.go).
 // This file holds what `open`, `close` and the TUI overlay share.
 package main
 
@@ -51,21 +51,6 @@ func git(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	return runOut(cmd)
-}
-
-// tmux runs a tmux command and returns trimmed stdout.
-func tmux(args ...string) (string, error) {
-	return runOut(exec.Command("tmux", args...))
-}
-
-// tmuxTarget builds an exact-match `-t` argument. Without the `=`
-// prefix tmux falls back to prefix matching, so `pr-1` would resolve
-// to `pr-12-foo` when `pr-1` itself doesn't exist.
-func tmuxTarget(session, window string) string {
-	if window == "" {
-		return "=" + session
-	}
-	return "=" + session + ":=" + window
 }
 
 func runOut(cmd *exec.Cmd) (string, error) {
@@ -177,24 +162,4 @@ func listWorktrees(dir string) ([]worktree, error) {
 // shellQuote single-quotes s for a POSIX shell.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// reviewWindows lists the window names of the review session; nil
-// when the session doesn't exist.
-func reviewWindows(session string) []string {
-	out, err := tmux("list-windows", "-t", tmuxTarget(session, ""), "-F", "#{window_name}")
-	if err != nil || out == "" {
-		return nil
-	}
-	return strings.Split(out, "\n")
-}
-
-// findReviewWindow returns the window name for PR n, or "".
-func findReviewWindow(session string, n int) string {
-	for _, w := range reviewWindows(session) {
-		if matchesPR(w, n) {
-			return w
-		}
-	}
-	return ""
 }

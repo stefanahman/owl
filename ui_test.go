@@ -599,15 +599,15 @@ func TestTrimCountsRunes(t *testing.T) {
 func TestFindLocalForPR(t *testing.T) {
 	state := map[string]LocalState{
 		"pr-3543":               {Worktree: "/wt/pr-3543"},
-		"pr-3542-fix-something": {Worktree: "/wt/pr-3542-fix-something", Session: "pr-3542-fix-something", ClaudeState: "done"},
+		"pr-3542-fix-something": {Worktree: "/wt/pr-3542-fix-something", Window: "pr-3542-fix-something", ClaudeState: "done"},
 		"other-3498-unrelated":  {Worktree: "/wt/other-3498-unrelated"},
 	}
 
 	if ls := findLocalForPR(state, 3543); ls.Worktree == "" {
 		t.Errorf("expected exact pr-3543 match, got zero LocalState")
 	}
-	if ls := findLocalForPR(state, 3542); ls.Session != "pr-3542-fix-something" {
-		t.Errorf("expected prefix match on pr-3542-*, got session=%q", ls.Session)
+	if ls := findLocalForPR(state, 3542); ls.Window != "pr-3542-fix-something" {
+		t.Errorf("expected prefix match on pr-3542-*, got window=%q", ls.Window)
 	}
 	if ls := findLocalForPR(state, 3498); ls.Worktree != "" {
 		t.Errorf("expected no match for pr-3498 (only bar-3498-* branch present), got wt=%q", ls.Worktree)
@@ -709,7 +709,7 @@ func TestStartStaysInTheList(t *testing.T) {
 	}
 
 	// f is the same kind of key: it stays in the list too.
-	m.localState = map[string]LocalState{"pr-3543-feat": {Session: "pr-3543-feat"}}
+	m.localState = map[string]LocalState{"pr-3543-feat": {Window: "pr-3543-feat"}}
 	fed, cmd := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	if fm := fed.(model); cmd == nil || fm.inflight[3543] != "sending feedback to #3543…" || fm.farewell != "" {
 		t.Errorf("f: cmd=%v inflight=%v farewell=%q", cmd, fm.inflight, fm.farewell)
@@ -762,7 +762,7 @@ func TestFrames(t *testing.T) {
 		"sections": {
 			drive: func(tm *teatest.TestModel) {
 				tm.Send(prsMsg{prs: fixturePRs()})
-				tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Session: "pr-3543-feat", ClaudeState: "blocked"}})
+				tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Window: "pr-3543-feat", ClaudeState: "blocked"}})
 				tm.Send(mergedMsg{prs: fixtureMerged()})
 			},
 			want: []string{"Todo", "Waiting for author", "Approved", "Merged (last 1d)",

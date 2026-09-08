@@ -144,7 +144,7 @@ func (f *fixture) open(args ...string) string {
 }
 
 func (f *fixture) windows() []string {
-	return reviewWindows(f.cfg.Tmux.Session)
+	return tmuxMux{f.cfg.Tmux}.Windows()
 }
 
 func (f *fixture) activeWindow() string {
@@ -208,7 +208,7 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 
 	name := "pr-42-fix-crash-on-startup"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
-	if !strings.Contains(out, "started =reviews:="+name) {
+	if !strings.Contains(out, "started reviews:"+name) {
 		t.Errorf("output: %q", out)
 	}
 	if !f.exists(filepath.Join(wt, "pr42.txt")) {
@@ -245,13 +245,13 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 
 	// The TUI overlay sees the window, without the keepalive one, and
 	// reads the state option tmux-claude-status writes.
-	if got, want := readReviewWindows(f.cfg.Tmux), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
-		t.Errorf("readReviewWindows = %v, want %v", got, want)
+	if got, want := (tmuxMux{f.cfg.Tmux}).States(), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
+		t.Errorf("States = %v, want %v", got, want)
 	}
 	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", name), "@claude-state", "blocked"); err != nil {
 		t.Fatal(err)
 	}
-	if ls := findLocalForPR(model{cfg: f.cfg}.fetchLocal().(localMsg), 42); ls.Worktree != wt || ls.Session != name || ls.ClaudeState != "blocked" {
+	if ls := findLocalForPR(model{cfg: f.cfg}.fetchLocal().(localMsg), 42); ls.Worktree != wt || ls.Window != name || ls.ClaudeState != "blocked" {
 		t.Errorf("fetchLocal overlay = %+v", ls)
 	}
 
@@ -302,7 +302,7 @@ func TestStartStaysPut(t *testing.T) {
 	}
 
 	name := "pr-42-fix-crash-on-startup"
-	if !strings.Contains(out.String(), "started =reviews:="+name) {
+	if !strings.Contains(out.String(), "started reviews:"+name) {
 		t.Errorf("output: %q", out.String())
 	}
 	if !f.exists(filepath.Join(f.repo, ".worktrees.local", name, "pr42.txt")) {
@@ -320,7 +320,7 @@ func TestStartStaysPut(t *testing.T) {
 	if err := runOpen(f.cfg, []string{"42"}, &out, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "ready =reviews:="+name) {
+	if !strings.Contains(out.String(), "ready reviews:"+name) {
 		t.Errorf("second start: %q", out.String())
 	}
 	// f goes through start too: the prompt reaches the window, nothing
@@ -433,7 +433,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 
 	out := f.open("42")
 
-	if !strings.Contains(out, "selected =reviews:="+name) {
+	if !strings.Contains(out, "selected reviews:"+name) {
 		t.Errorf("output: %q", out)
 	}
 	if got := f.windows(); len(got) != 2 {
@@ -456,7 +456,7 @@ func TestOpenFromInsideAWorktreeUsesTheMainRepo(t *testing.T) {
 
 	out := f.open("7") // gh knows nothing about 7 → bare name
 
-	if !strings.Contains(out, "started =reviews:=pr-7\n") {
+	if !strings.Contains(out, "started reviews:pr-7\n") {
 		t.Errorf("output: %q", out)
 	}
 	if !f.exists(filepath.Join(f.repo, ".worktrees.local", "pr-7", "pr7.txt")) {
@@ -535,7 +535,7 @@ func TestOpenResumesAfterClose(t *testing.T) {
 
 	out := f.open("42")
 
-	if !strings.Contains(out, "started =reviews:="+name) || !strings.Contains(out, "resuming the conversation") {
+	if !strings.Contains(out, "started reviews:"+name) || !strings.Contains(out, "resuming the conversation") {
 		t.Errorf("output: %q", out)
 	}
 	f.waitPane(name, "true -c\n") // no prompt: the agent shows the transcript and waits
@@ -562,7 +562,7 @@ func TestClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"removed worktree " + wt, "deleted branch " + name, "killed window =reviews:=" + name, "pr-42 closed"} {
+	for _, want := range []string{"removed worktree " + wt, "deleted branch " + name, "closed window reviews:" + name, "pr-42 closed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}

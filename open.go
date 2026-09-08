@@ -1,7 +1,7 @@
 // `pr-owl open <N> [--prompt TEXT]`: make sure PR N has a worktree and
-// a tmux window running the agent, select that window, and run the
-// after_open hook. Idempotent — re-running selects the existing window
-// and, with --prompt, hands the prompt to the running agent.
+// a window in the multiplexer running the agent, select that window,
+// and run the after_open hook. Idempotent — re-running selects the
+// existing window and, with --prompt, hands the prompt to the running agent.
 // `pr-owl start <N>` is the same without going there: no window
 // selection, no hook — for starting several reviews from the list.
 package main
@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,67 +40,61 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err := linkLocal(cfg.Agent.LinkLocal, repo, wt); err != nil {
 		return err
 	}
-	if err := ensureSession(cfg.Tmux, repo); err != nil {
+	mx := newMux(cfg)
+	if err := mx.Prepare(repo); err != nil {
 		return err
 	}
 
 	resume := hasConversationFor(wt)
-	target := tmuxTarget(cfg.Tmux.Session, name)
+	where := mx.Describe(name)
 	switch {
-	case !slices.Contains(reviewWindows(cfg.Tmux.Session), name):
-		if _, err := tmux("new-window", "-d", "-t", tmuxTarget(cfg.Tmux.Session, ""), "-c", wt, "-n", name); err != nil {
-			return err
-		}
-		// Freeze the name — otherwise tmux renames the window after the
-		// agent process, and the window stops matching the worktree.
-		if _, err := tmux("set-option", "-w", "-t", target, "automatic-rename", "off"); err != nil {
-			return err
-		}
-		if err := typeLine(target, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
+	case !slices.Contains(mx.Windows(), name):
+		if err := mx.Open(name, wt, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
 			return err
 		}
 		if resume {
-			fmt.Fprintf(out, "started %s, resuming the conversation\n", target)
+			fmt.Fprintf(out, "started %s, resuming the conversation\n", where)
 		} else {
-			fmt.Fprintf(out, "started %s\n", target)
+			fmt.Fprintf(out, "started %s\n", where)
 		}
-	case prompt != "" && claudeBlocked(target):
-		return fmt.Errorf("pr-%d: Claude is waiting for you in %s (a permission or a question) — answer it first", n, target)
-	case prompt != "" && paneAtShellPrompt(target):
+	case prompt != "" && mx.States()[name] == agentBlocked:
+		// Keystrokes would answer the agent's dialog.
+		return fmt.Errorf("pr-%d: Claude is waiting for you in %s (a permission or a question) — answer it first", n, where)
+	case prompt != "" && mx.AtShell(name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := typeLine(target, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
+		if err := mx.Run(name, agentCommand(cfg.Agent, n, resume, prompt)); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "restarted agent in %s\n", target)
+		fmt.Fprintf(out, "restarted agent in %s\n", where)
 	case prompt != "":
-		if err := typeLine(target, prompt); err != nil {
+		if err := mx.Prompt(name, prompt); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "sent prompt to %s\n", target)
+		fmt.Fprintf(out, "sent prompt to %s\n", where)
 	case arrive:
-		fmt.Fprintf(out, "selected %s\n", target)
+		fmt.Fprintf(out, "selected %s\n", where)
 	default:
-		fmt.Fprintf(out, "ready %s\n", target)
+		fmt.Fprintf(out, "ready %s\n", where)
 	}
 	if arrive {
-		if _, err := tmux("select-window", "-t", target); err != nil {
+		if err := mx.Select(name); err != nil {
 			return err
 		}
 	}
-	if os.Getenv("TMUX") == "" && (cfg.Hooks.AfterOpen == "" || !arrive) {
-		fmt.Fprintf(out, "attach with: tmux attach -t %s\n", cfg.Tmux.Session)
+	if hint := mx.AttachHint(); hint != "" && (cfg.Hooks.AfterOpen == "" || !arrive) {
+		fmt.Fprintf(out, "attach with: %s\n", hint)
 	}
 	if !arrive {
 		return nil // start: the workspace is up; the caller stays where it is
 	}
-	return runAfterOpen(cfg.Hooks.AfterOpen, out, map[string]string{
+	env := map[string]string{
 		"PR_OWL_PR":       strconv.Itoa(n),
-		"PR_OWL_SESSION":  cfg.Tmux.Session,
-		"PR_OWL_WINDOW":   name,
 		"PR_OWL_WORKTREE": wt,
 		"PR_OWL_REPO":     repo,
-	})
+	}
+	maps.Copy(env, mx.Env(name))
+	return runAfterOpen(cfg.Hooks.AfterOpen, out, env)
 }
 
 // parseOpenArgs accepts `<N> [--prompt TEXT]` in either order.
@@ -276,23 +271,6 @@ func linkLocal(globs []string, repo, wt string) error {
 	return nil
 }
 
-// ensureSession creates the review session with its keepalive window
-// when it doesn't exist.
-func ensureSession(t TmuxConfig, dir string) error {
-	if _, err := tmux("has-session", "-t", tmuxTarget(t.Session, "")); err == nil {
-		return nil
-	}
-	if _, err := tmux("new-session", "-d", "-s", t.Session, "-n", t.KeepaliveWindow, "-c", dir); err != nil {
-		// Two children starting at once (s on two PRs) both saw no
-		// session; the loser of the race finds the winner's.
-		if _, again := tmux("has-session", "-t", tmuxTarget(t.Session, "")); again == nil {
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
 // agentCommand composes the shell line that starts the agent: the
 // configured command, `-c` to resume a prior conversation, then the
 // prompt — the explicit one, or agent.prompt for a fresh conversation.
@@ -315,36 +293,6 @@ func agentCommand(a AgentConfig, n int, resume bool, prompt string) string {
 // window as keystrokes, and a newline would submit the first line.
 func oneLine(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }), " ")
-}
-
-// claudeBlocked reports whether tmux-claude-status says the window's
-// Claude is waiting on the user — keystrokes would answer its dialog.
-func claudeBlocked(target string) bool {
-	state, err := tmux("show-options", "-w", "-t", target, "-qv", claudeStateOption)
-	return err == nil && state == "blocked"
-}
-
-// paneAtShellPrompt reports whether the window's foreground process is
-// a shell — i.e. the agent isn't running there.
-func paneAtShellPrompt(target string) bool {
-	out, err := tmux("display-message", "-p", "-t", target, "#{pane_current_command}")
-	if err != nil {
-		return false
-	}
-	switch strings.TrimPrefix(filepath.Base(out), "-") {
-	case "sh", "bash", "zsh", "fish", "dash", "ksh", "nu":
-		return true
-	}
-	return false
-}
-
-// typeLine types text into the window as literal keystrokes, then Enter.
-func typeLine(target, text string) error {
-	if _, err := tmux("send-keys", "-t", target, "-l", text); err != nil {
-		return err
-	}
-	_, err := tmux("send-keys", "-t", target, "Enter")
-	return err
 }
 
 // runAfterOpen runs the hooks.after_open command through sh with the

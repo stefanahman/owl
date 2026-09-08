@@ -1,10 +1,10 @@
 // `pr-owl close [--force] [<N>]`: remove PR N's worktree and branches,
-// then kill its tmux window. The review session, its keepalive window
-// and the agent's conversation on disk all survive — `open` resumes
-// it. Uncommitted changes to tracked files stop it unless --force.
-// With no number, N is inferred from the current worktree, branch, or
-// tmux window, so it can be run from inside the review itself. Like
-// open, it acts on the repository of the working directory.
+// then close its window in the multiplexer. The container of review
+// windows and the agent's conversation on disk both survive — `open`
+// resumes it. Uncommitted changes to tracked files stop it unless
+// --force. With no number, N is inferred from the current worktree,
+// branch, or window, so it can be run from inside the review itself.
+// Like open, it acts on the repository of the working directory.
 package main
 
 import (
@@ -41,19 +41,19 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	if len(rest) > 1 {
 		return usageError("close: expected at most one PR number")
 	}
+	mx := newMux(cfg)
 	var n int
 	var err error
 	if len(rest) == 1 {
 		n, err = parsePRNumber(rest[0])
 	} else {
-		n, err = inferPR(cfg.WorktreesDir)
+		n, err = inferPR(mx, cfg.WorktreesDir)
 	}
 	if err != nil {
 		return err
 	}
 
-	session := cfg.Tmux.Session
-	window := findReviewWindow(session, n)
+	window := findWindow(mx, n)
 	repo, err := mainRepo(".")
 	if err != nil {
 		return fmt.Errorf("close: not inside a git repository (default_repo makes pr-owl work from anywhere)")
@@ -105,12 +105,11 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 		}
 	}
 	if window != "" {
-		target := tmuxTarget(session, window)
-		if _, err := tmux("kill-window", "-t", target); err != nil {
+		if err := mx.Close(window); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			failed = append(failed, "window "+target)
+			failed = append(failed, "window "+mx.Describe(window))
 		} else {
-			fmt.Fprintf(out, "killed window %s\n", target)
+			fmt.Fprintf(out, "closed window %s\n", mx.Describe(window))
 		}
 	}
 	if len(failed) > 0 {
@@ -122,8 +121,8 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 
 // inferPR finds the PR number of the workspace the caller is in: the
 // worktree path (survives switching branches inside it), then the
-// branch, then the tmux window.
-func inferPR(worktreesDir string) (int, error) {
+// branch, then the window of the multiplexer.
+func inferPR(mx mux, worktreesDir string) (int, error) {
 	if top, err := git(".", "rev-parse", "--show-toplevel"); err == nil {
 		if repo, err := mainRepo("."); err == nil && filepath.Dir(top) == filepath.Join(repo, worktreesDir) {
 			if n := prNumberOf(filepath.Base(top)); n > 0 {
@@ -136,11 +135,9 @@ func inferPR(worktreesDir string) (int, error) {
 			return n, nil
 		}
 	}
-	if os.Getenv("TMUX") != "" {
-		if w, err := tmux("display-message", "-p", "#{window_name}"); err == nil {
-			if n := prNumberOf(w); n > 0 {
-				return n, nil
-			}
+	if w, ok := mx.Current(); ok {
+		if n := prNumberOf(w); n > 0 {
+			return n, nil
 		}
 	}
 	return 0, usageError("close: PR number required (or run it from inside a pr-<N> worktree or window)")
