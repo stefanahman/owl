@@ -105,15 +105,16 @@ herdr when pr-owl runs inside it (`HERDR_ENV=1`) and tmux otherwise;
 | | tmux | herdr |
 |---|---|---|
 | a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree |
-| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh |
-| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself |
-| Enter arrives | `select-window`, then your hook | `workspace focus`, which every attached client follows |
+| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same in both: finished, not yet looked at |
+| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux |
+| Enter arrives | `select-window`, then your hook | `workspace focus`; the attached client follows (one client verified; herdr lets each client view its own workspace) |
 | a failure after the popup closed | tmux's status line | a herdr notification |
 | `hooks.after_open` sees | `PR_OWL_SESSION` = the session, `PR_OWL_WINDOW` = the window | `PR_OWL_SESSION` = the herdr session, `PR_OWL_WINDOW` = the label |
 
 `PR_OWL_MUX` names the one in use, for hooks that only make sense with
 one of them. Under herdr, run `pr-owl` in a pane of the session your
-reviews should join; from outside, `herdr.socket` says which server.
+reviews should join; from outside, `herdr.socket` says which server,
+and `PR_OWL_SESSION` is the session's name as read from that path.
 
 ## Keys
 
