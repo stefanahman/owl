@@ -1,6 +1,6 @@
 {
   "name": "pr-review",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review",
   "author": {
     "name": "Stefan Åhman",
