@@ -88,6 +88,24 @@ func TestSecretOtherForms(t *testing.T) {
 	if v, err := (secret{name: "x", ref: "literal-token"}).value(); err != nil || v != "literal-token" {
 		t.Errorf("literal: %q, %v", v, err)
 	}
+	// file://: the file's content, only when others cannot read it.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "tok"), []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := (secret{name: "x", ref: "file://~/tok"}).value(); err != nil || v != "from-file" {
+		t.Errorf("file://: %q, %v", v, err)
+	}
+	if err := os.Chmod(filepath.Join(home, "tok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (secret{name: "x", ref: "file://" + filepath.Join(home, "tok")}).value(); err == nil || !strings.Contains(err.Error(), "readable by others") {
+		t.Errorf("file:// with a loose mode: %v", err)
+	}
+	if _, err := (secret{name: "x", ref: "file:///nonexistent/tok"}).value(); err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Errorf("file:// missing: %v", err)
+	}
 	if _, err := (secret{name: "x"}).value(); err != errNoSecret {
 		t.Errorf("empty: %v", err)
 	}

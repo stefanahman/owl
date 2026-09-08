@@ -289,7 +289,7 @@ keys:                            # one key name or a list; names as bubbletea sp
   quit: [q, ctrl+c]
 
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
-  token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; $VAR reads the environment
+  token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in
   team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues
 

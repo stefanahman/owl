@@ -2,8 +2,9 @@
 // is read from 1Password once and kept in a file only the user can
 // read — the way gh keeps its token on a machine without a keyring —
 // so the approval happens once per machine, not once per start. A
-// $VAR reads the environment; anything else is taken as the value
-// itself, for tests and for machines without 1Password.
+// file:// path is read from that file, a $VAR from the environment;
+// anything else is taken as the value itself, for tests and for
+// machines without 1Password.
 package main
 
 import (
@@ -55,6 +56,12 @@ func (s secret) value() (string, error) {
 			return v, nil
 		}
 		return "", fmt.Errorf("%s is not set", s.ref)
+	case strings.HasPrefix(s.ref, "file://"):
+		v, err := readCached(expandHome(strings.TrimPrefix(s.ref, "file://")))
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%s: no such file, or empty", s.ref)
+		}
+		return v, err
 	case !strings.HasPrefix(s.ref, "op://"):
 		return s.ref, nil
 	}
@@ -100,7 +107,7 @@ func (s secret) forget() error {
 	return nil
 }
 
-// readCached returns the cached value, refusing a file others can read.
+// readCached returns a file's value, refusing a file others can read.
 func readCached(path string) (string, error) {
 	st, err := os.Stat(path)
 	if err != nil {
