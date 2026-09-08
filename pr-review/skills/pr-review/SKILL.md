@@ -159,7 +159,7 @@ the three or four questions the decision hinges on, phrased to be put to the aut
 
 Then stop and ask: discuss the approach first, or go on to the findings? Concerns about the shape — the approach, the boundaries, the model — become findings only from what the user decides here; the lenses below cover correctness, contracts, tests, security, performance and maintainability, not the shape.
 
-With `brief: artifact` in the project file and the Artifact tool available, also publish the brief as a page, with a mermaid diagram of the flow where the flow changed; the file stays the source.
+With `brief: artifact` in the project file and the Artifact tool available, also publish the brief as a page; the file stays the source. Where the flow changed, draw it as inline SVG (load the `artifact-diagramming` skill): it renders in the file opened in a browser and on the artifact host alike, and its colours follow the page's theme through `currentColor`. Not mermaid — only the host renders it, and a `%%{init}` directive overrides the host's per-theme palette and leaves labels unreadable in the other theme.
 
 ### Review with these lenses in mind
 
