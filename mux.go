@@ -20,8 +20,11 @@ const (
 )
 
 type mux interface {
-	// Kind names the multiplexer: the value of PR_OWL_MUX in a child.
+	// Kind names the multiplexer: the value of PR_OWL_MUX.
 	Kind() string
+	// ChildEnv is what a child process needs in its environment to
+	// reach the same multiplexer: PR_OWL_MUX, and for herdr the socket.
+	ChildEnv() []string
 	// Prepare makes the container of review windows exist.
 	Prepare(repoDir string) error
 	// Windows lists the review windows by name, pr-<N>[-<slug>]; nil

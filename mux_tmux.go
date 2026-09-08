@@ -37,6 +37,8 @@ func (t tmuxMux) target(window string) string { return tmuxTarget(t.cfg.Session,
 
 func (tmuxMux) Kind() string { return "tmux" }
 
+func (tmuxMux) ChildEnv() []string { return []string{"PR_OWL_MUX=tmux"} }
+
 // Prepare creates the review session with its keepalive window when
 // it doesn't exist.
 func (t tmuxMux) Prepare(dir string) error {

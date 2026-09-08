@@ -1,7 +1,6 @@
 // pr-owl — TUI overview of PRs where you're a reviewer, with local
-// state (worktree, tmux window in the pr-reviews session, Claude
-// activity) and review involvement (approved / engaged / any-CR)
-// overlaid.
+// state (worktree, review window in the multiplexer, Claude activity)
+// and review involvement (approved / engaged / any-CR) overlaid.
 //
 // Widgets used, all from charm.land/bubbles/v2:
 //
@@ -53,10 +52,10 @@ type mergedMsg struct {
 }
 type userMsg string // authenticated user login
 
-// localTickMsg asks for the local overlay again. Claude's state is a
-// tmux window option written by hooks as Claude works; following it
-// every two seconds — a status bar's cadence — lets a © change colour
-// as Claude starts, gets blocked or finishes, without a key press.
+// localTickMsg asks for the local overlay again. Claude's state is
+// whatever the multiplexer reports as Claude works; following it every
+// two seconds — a status bar's cadence — lets a © change colour as
+// Claude starts, gets blocked or finishes, without a key press.
 type localTickMsg struct{}
 
 const localRefreshEvery = 2 * time.Second
@@ -185,10 +184,9 @@ func (k keyMap) FullHelp() [][]key.Binding {
 // Styles
 // ------------------------------------------------------------
 
-// Claude-state styles follow the tmux-claude-status vocabulary
-// (working / blocked / done / idle) read from the tmux window option.
-// Their colours come from the `theme` config (applyTheme); everything
-// else is fixed.
+// Claude-state styles follow the agent-state vocabulary (working /
+// blocked / done / idle) the multiplexer reports. Their colours come
+// from the `theme` config (applyTheme); everything else is fixed.
 var (
 	styleClaudeWorking lipgloss.Style // ©  Claude actively processing
 	styleClaudeBlocked lipgloss.Style // ©  Claude waiting on you (permission, question, plan)
@@ -307,7 +305,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 
 	m := model{
 		cfg:      cfg,
-		runSelf:  func(args ...string) error { return runChild(newMux(cfg).Kind(), args...) },
+		runSelf:  func(args ...string) error { return runChild(newMux(cfg).ChildEnv(), args...) },
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
 		help:     help.New(),
@@ -421,14 +419,14 @@ func (m model) launch(pr int, label string, cmd tea.Cmd, arrive bool) (tea.Model
 }
 
 // runChild runs this binary with args in its own session and returns
-// nil, or its failure with the child's stderr in the message. kind is
-// the multiplexer, so the child can notify the right way.
+// nil, or its failure with the child's stderr in the message. env is
+// the multiplexer's ChildEnv, so the child can notify the right way.
 //
 // The child outlives the TUI with on_open: quit, and a Go program
 // writing to a broken pipe on stdout or stderr is killed by SIGPIPE —
 // so its stdout is discarded rather than piped, and its failure also
 // goes to the multiplexer before it is printed (see exitOn).
-func runChild(kind string, args ...string) error {
+func runChild(env []string, args ...string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate pr-owl binary: %w", err)
@@ -441,7 +439,7 @@ func runChild(kind string, args ...string) error {
 	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Env = append(os.Environ(), "PR_OWL_MUX="+kind)
+	cmd.Env = append(os.Environ(), env...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

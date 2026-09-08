@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -80,6 +81,25 @@ func (h herdrMux) call(method string, params any) (json.RawMessage, error) {
 
 func (herdrMux) Kind() string { return "herdr" }
 
+func (h herdrMux) ChildEnv() []string {
+	return []string{"PR_OWL_MUX=herdr", "HERDR_SOCKET_PATH=" + h.socket}
+}
+
+var herdrSessionSocket = regexp.MustCompile(`/sessions/([^/]+)/herdr\.sock$`)
+
+// session is the herdr session's name: from the environment herdr
+// gives its panes (HERDR_SESSION, seen but not documented), else from
+// the socket's path, else the default session.
+func (h herdrMux) session() string {
+	if s := os.Getenv("HERDR_SESSION"); s != "" {
+		return s
+	}
+	if m := herdrSessionSocket.FindStringSubmatch(h.socket); m != nil {
+		return m[1]
+	}
+	return "default"
+}
+
 // Prepare has nothing to create — reviews are workspaces, and herdr
 // has no container above them — but it makes sure herdr is there.
 func (h herdrMux) Prepare(string) error {
@@ -136,8 +156,10 @@ func (h herdrMux) workspaceID(name string) (string, error) {
 	return "", fmt.Errorf("herdr: no workspace %q", name)
 }
 
-// rootPane is the pane the agent runs in: the workspace's first.
-func (h herdrMux) rootPane(name string) (string, error) {
+// agentPane is the pane the agent runs in: the one herdr detects an
+// agent in, else the workspace's first pane, the root it was created
+// with — herdr lists panes in creation order, without promising to.
+func (h herdrMux) agentPane(name string) (string, error) {
 	id, err := h.workspaceID(name)
 	if err != nil {
 		return "", err
@@ -148,11 +170,17 @@ func (h herdrMux) rootPane(name string) (string, error) {
 	}
 	var r struct {
 		Panes []struct {
-			ID string `json:"pane_id"`
+			ID    string `json:"pane_id"`
+			Agent string `json:"agent"`
 		} `json:"panes"`
 	}
 	if err := json.Unmarshal(raw, &r); err != nil || len(r.Panes) == 0 {
 		return "", fmt.Errorf("herdr: workspace %q has no pane", name)
+	}
+	for _, p := range r.Panes {
+		if p.Agent != "" {
+			return p.ID, nil
+		}
 	}
 	return r.Panes[0].ID, nil
 }
@@ -210,7 +238,7 @@ func (h herdrMux) States() map[string]string {
 // state flickers through idle mid-turn, so an exited agent is read
 // from the process, never from the state.
 func (h herdrMux) AtShell(name string) bool {
-	pane, err := h.rootPane(name)
+	pane, err := h.agentPane(name)
 	if err != nil {
 		return false
 	}
@@ -233,17 +261,23 @@ func (h herdrMux) AtShell(name string) bool {
 
 // Prompt hands the text to herdr's agent.prompt, which refuses on its
 // own while the agent is blocked, so keystrokes never answer a dialog.
+// An agent herdr has not detected — one it doesn't know, or the first
+// seconds after a start — gets the text typed, as tmux would type it.
 func (h herdrMux) Prompt(name, text string) error {
-	pane, err := h.rootPane(name)
+	pane, err := h.agentPane(name)
 	if err != nil {
 		return err
 	}
 	_, err = h.call("agent.prompt", map[string]any{"target": pane, "text": text})
+	var herr *herdrError
+	if errors.As(err, &herr) && herr.code == "agent_not_found" {
+		return h.sendLine(pane, text)
+	}
 	return err
 }
 
 func (h herdrMux) Run(name, line string) error {
-	pane, err := h.rootPane(name)
+	pane, err := h.agentPane(name)
 	if err != nil {
 		return err
 	}
@@ -293,14 +327,12 @@ func (h herdrMux) Current() (string, bool) {
 
 func (herdrMux) Describe(name string) string { return name }
 
-var herdrSessionSocket = regexp.MustCompile(`/sessions/([^/]+)/herdr\.sock$`)
-
 func (h herdrMux) AttachHint() string {
 	if os.Getenv("HERDR_ENV") == "1" {
 		return ""
 	}
-	if m := herdrSessionSocket.FindStringSubmatch(h.socket); m != nil {
-		return "herdr --session " + m[1]
+	if s := h.session(); s != "default" {
+		return "herdr --session " + s
 	}
 	return "herdr"
 }
@@ -309,6 +341,6 @@ func (h herdrMux) Notify(text string) {
 	_, _ = h.call("notification.show", map[string]any{"title": "pr-owl", "body": text})
 }
 
-func (herdrMux) Env(name string) map[string]string {
-	return map[string]string{"PR_OWL_SESSION": os.Getenv("HERDR_SESSION"), "PR_OWL_WINDOW": name}
+func (h herdrMux) Env(name string) map[string]string {
+	return map[string]string{"PR_OWL_SESSION": h.session(), "PR_OWL_WINDOW": name}
 }

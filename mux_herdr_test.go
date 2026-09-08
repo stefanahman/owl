@@ -28,15 +28,19 @@ type fakeHerdr struct {
 	focused    string            // workspace id
 	statuses   map[string]string // workspace label → agent_status
 	foreground map[string]string // pane id → foreground process name
+	agents     map[string]string // pane id → detected agent; agent.prompt needs one
 	blocked    map[string]bool   // pane id → agent.prompt refuses
 	typed      map[string][]string
 	notes      []string
 }
 
 type fakeWorkspace struct {
-	id, label, cwd, pane string
-	focus                bool
+	id, label, cwd string
+	panes          []string // in creation order, the root first
+	focus          bool
 }
+
+func (w *fakeWorkspace) pane() string { return w.panes[0] }
 
 func newFakeHerdr(t testing.TB) *fakeHerdr {
 	t.Helper()
@@ -50,6 +54,7 @@ func newFakeHerdr(t testing.TB) *fakeHerdr {
 		socket:     filepath.Join(dir, "herdr.sock"),
 		statuses:   map[string]string{},
 		foreground: map[string]string{},
+		agents:     map[string]string{},
 		blocked:    map[string]bool{},
 		typed:      map[string][]string{},
 	}
@@ -110,11 +115,28 @@ func (f *fakeHerdr) find(id string) *fakeWorkspace {
 
 func (f *fakeHerdr) paneOf(paneID string) *fakeWorkspace {
 	for _, w := range f.workspaces {
-		if w.pane == paneID {
-			return w
+		for _, p := range w.panes {
+			if p == paneID {
+				return w
+			}
 		}
 	}
 	return nil
+}
+
+// splitPane adds a pane to a workspace, the way a user's split would.
+func (f *fakeHerdr) splitPane(label string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, w := range f.workspaces {
+		if w.label == label {
+			id := fmt.Sprintf("%s:p%d", w.id, len(w.panes)+1)
+			w.panes = append(w.panes, id)
+			return id
+		}
+	}
+	f.t.Fatalf("no workspace %q", label)
+	return ""
 }
 
 func (f *fakeHerdr) info(w *fakeWorkspace) map[string]any {
@@ -157,12 +179,12 @@ func (f *fakeHerdr) dispatch(method string, raw json.RawMessage) (any, *herdrErr
 	case "workspace.create":
 		f.seq++
 		w := &fakeWorkspace{id: fmt.Sprintf("w%d", f.seq), label: p.Label, cwd: p.Cwd, focus: p.Focus}
-		w.pane = w.id + ":p1"
+		w.panes = []string{w.id + ":p1"}
 		f.workspaces = append(f.workspaces, w)
 		if p.Focus || f.focused == "" {
 			f.focused = w.id
 		}
-		return map[string]any{"type": "workspace_created", "workspace": f.info(w), "root_pane": map[string]any{"pane_id": w.pane, "workspace_id": w.id, "agent_status": "unknown"}}, nil
+		return map[string]any{"type": "workspace_created", "workspace": f.info(w), "root_pane": map[string]any{"pane_id": w.pane(), "workspace_id": w.id, "agent_status": "unknown"}}, nil
 	case "workspace.focus":
 		w := f.find(p.WorkspaceID)
 		if w == nil {
@@ -182,7 +204,13 @@ func (f *fakeHerdr) dispatch(method string, raw json.RawMessage) (any, *herdrErr
 		panes := []map[string]any{}
 		for _, w := range f.workspaces {
 			if p.WorkspaceID == "" || w.id == p.WorkspaceID {
-				panes = append(panes, map[string]any{"pane_id": w.pane, "workspace_id": w.id, "agent_status": f.info(w)["agent_status"]})
+				for _, id := range w.panes {
+					var agent any
+					if a := f.agents[id]; a != "" {
+						agent = a
+					}
+					panes = append(panes, map[string]any{"pane_id": id, "workspace_id": w.id, "agent": agent, "agent_status": f.info(w)["agent_status"]})
+				}
 			}
 		}
 		return map[string]any{"type": "pane_list", "panes": panes}, nil
@@ -206,7 +234,7 @@ func (f *fakeHerdr) dispatch(method string, raw json.RawMessage) (any, *herdrErr
 		f.typed[p.PaneID] = append(f.typed[p.PaneID], line)
 		return map[string]any{"type": "ok"}, nil
 	case "agent.prompt":
-		if f.paneOf(p.Target) == nil {
+		if f.paneOf(p.Target) == nil || f.agents[p.Target] == "" {
 			return nil, &herdrError{"agent_not_found", "agent target " + p.Target + " not found"}
 		}
 		if f.blocked[p.Target] {
@@ -268,7 +296,7 @@ func TestHerdrOpenCreatesAWorkspaceAndTypesTheStartLine(t *testing.T) {
 	if w == nil || w.cwd != "/wt/pr-7-fix" || w.focus {
 		t.Fatalf("workspace = %+v, want cwd /wt/pr-7-fix and no focus stolen", w)
 	}
-	if got, want := fake.linesTyped(w.pane), []string{"claude --permission-mode auto '/pr-review:pr-review 7'<enter>"}; !reflect.DeepEqual(got, want) {
+	if got, want := fake.linesTyped(w.pane()), []string{"claude --permission-mode auto '/pr-review:pr-review 7'<enter>"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("typed %v, want %v", got, want)
 	}
 	if got, want := h.Windows(), []string{"pr-7-fix"}; !reflect.DeepEqual(got, want) {
@@ -294,7 +322,7 @@ func TestHerdrStatesAndAtShell(t *testing.T) {
 	if !h.AtShell("pr-1") {
 		t.Error("a pane with zsh in the foreground should be at a shell")
 	}
-	fake.set(fake.foreground, fake.workspace("pr-1").pane, "claude")
+	fake.set(fake.foreground, fake.workspace("pr-1").pane(), "claude")
 	if h.AtShell("pr-1") {
 		t.Error("a pane running claude is not at a shell")
 	}
@@ -308,14 +336,19 @@ func TestHerdrPromptIsRefusedWhileBlocked(t *testing.T) {
 	if err := h.Open("pr-3", "/wt/pr-3", "true"); err != nil {
 		t.Fatal(err)
 	}
-	pane := fake.workspace("pr-3").pane
+	pane := fake.workspace("pr-3").pane()
+	// No agent detected yet: the prompt is typed, as tmux would type it.
+	if err := h.Prompt("pr-3", "early"); err != nil {
+		t.Fatal(err)
+	}
+	fake.set(fake.agents, pane, "claude")
 	if err := h.Prompt("pr-3", "look again"); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.Run("pr-3", "claude -c"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := fake.linesTyped(pane), []string{"true<enter>", "prompt:look again", "claude -c<enter>"}; !reflect.DeepEqual(got, want) {
+	if got, want := fake.linesTyped(pane), []string{"true<enter>", "early<enter>", "prompt:look again", "claude -c<enter>"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("typed %v, want %v", got, want)
 	}
 	fake.mu.Lock()
@@ -367,6 +400,52 @@ func TestHerdrSelectCloseCurrentNotify(t *testing.T) {
 	t.Setenv("HERDR_SESSION", "work")
 	if got, want := h.Env("pr-2"), map[string]string{"PR_OWL_SESSION": "work", "PR_OWL_WINDOW": "pr-2"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Env = %v, want %v", got, want)
+	}
+	if got, want := h.ChildEnv(), []string{"PR_OWL_MUX=herdr", "HERDR_SOCKET_PATH=" + fake.socket}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ChildEnv = %v, want %v", got, want)
+	}
+}
+
+func TestHerdrPromptGoesToThePaneWithTheAgent(t *testing.T) {
+	h, fake := herdrForTest(t)
+	if err := h.Open("pr-4", "/wt/pr-4", "true"); err != nil {
+		t.Fatal(err)
+	}
+	root := fake.workspace("pr-4").pane()
+	side := fake.splitPane("pr-4")
+	fake.set(fake.agents, side, "claude") // the user moved the agent to a split
+	if err := h.Prompt("pr-4", "there"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.linesTyped(side); !reflect.DeepEqual(got, []string{"prompt:there"}) {
+		t.Errorf("the split with the agent should get the prompt, typed there: %v", got)
+	}
+	if got := fake.linesTyped(root); !reflect.DeepEqual(got, []string{"true<enter>"}) {
+		t.Errorf("the root should only have the start line: %v", got)
+	}
+}
+
+func TestHerdrSessionNameAndSocketFromConfig(t *testing.T) {
+	t.Setenv("HERDR_SESSION", "")
+	t.Setenv("HERDR_ENV", "")
+	cfg, err := parseConfig([]byte("mux: herdr\nherdr:\n  socket: ~/.config/herdr/sessions/work/herdr.sock\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	h, ok := newMux(cfg).(herdrMux)
+	if !ok || h.socket != filepath.Join(home, ".config/herdr/sessions/work/herdr.sock") {
+		t.Fatalf("~ in herdr.socket should expand, got %#v", newMux(cfg))
+	}
+	if got := h.Env("pr-1")["PR_OWL_SESSION"]; got != "work" {
+		t.Errorf("the session should come from the socket path, got %q", got)
+	}
+	if got := h.AttachHint(); got != "herdr --session work" {
+		t.Errorf("AttachHint = %q", got)
+	}
+	t.Setenv("HERDR_SESSION", "other")
+	if got := h.Env("pr-1")["PR_OWL_SESSION"]; got != "other" {
+		t.Errorf("the environment should win over the path, got %q", got)
 	}
 }
 
@@ -449,7 +528,7 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	if fake.focused != w.id {
 		t.Errorf("arriving should have focused the workspace, focused = %q", fake.focused)
 	}
-	if got, want := fake.linesTyped(w.pane), []string{"true '/pr-review:pr-review 42'<enter>"}; !reflect.DeepEqual(got, want) {
+	if got, want := fake.linesTyped(w.pane()), []string{"true '/pr-review:pr-review 42'<enter>"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("typed %v, want %v", got, want)
 	}
 	f.waitFile(hookOut, "herdr|work|"+name+"\n")
@@ -458,11 +537,18 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	if out := f.open("42", "--prompt", "again"); !strings.Contains(out, "restarted agent in "+name) {
 		t.Errorf("output: %q", out)
 	}
-	fake.set(fake.foreground, w.pane, "claude")
+	fake.set(fake.foreground, w.pane(), "claude")
+	if out := f.open("42", "--prompt", "early"); !strings.Contains(out, "sent prompt to "+name) {
+		t.Errorf("output: %q", out)
+	}
+	if got := fake.linesTyped(w.pane()); got[len(got)-1] != "early<enter>" {
+		t.Errorf("last typed %q, want the prompt typed while herdr has not detected the agent", got[len(got)-1])
+	}
+	fake.set(fake.agents, w.pane(), "claude")
 	if out := f.open("42", "--prompt", "look"); !strings.Contains(out, "sent prompt to "+name) {
 		t.Errorf("output: %q", out)
 	}
-	if got := fake.linesTyped(w.pane); got[len(got)-1] != "prompt:look" {
+	if got := fake.linesTyped(w.pane()); got[len(got)-1] != "prompt:look" {
 		t.Errorf("last typed %q, want the prompt through agent.prompt", got[len(got)-1])
 	}
 	fake.set(fake.statuses, name, "blocked")

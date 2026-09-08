@@ -331,6 +331,7 @@ func parseConfig(data []byte) (Config, error) {
 	}
 	cfg.DefaultRepo = expandHome(cfg.DefaultRepo)
 	cfg.Hooks.AfterOpen = expandHome(cfg.Hooks.AfterOpen)
+	cfg.Herdr.Socket = expandHome(cfg.Herdr.Socket)
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}
