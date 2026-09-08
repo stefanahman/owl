@@ -59,7 +59,7 @@ Two optional files, same format, read in order:
 ---
 modules: [linear, pnpm-turbo, mongodb, service-boundaries]
 ticket_pattern: 'PROJ-\d+'
-brief: artifact
+brief: page
 ---
 
 ## Verification
@@ -79,7 +79,7 @@ Prefer `suggestion` blocks over prose for one-line fixes.
 
 - `modules` — shipped add-ons to enable (below).
 - `ticket_pattern` — how issue ids look in titles, bodies and branches; read by the tracker modules.
-- `brief` — `file` (default), `page` or `artifact`: `page` also writes the design brief as an HTML page next to the file, with the flow diagram, to open in a browser; `artifact` publishes that page too, when the Artifact tool is available.
+- `brief` — `file` (default), `page` or `artifact`: `page` also writes the design brief as an HTML page next to the file, with the flow diagram, to open in a browser; `artifact` publishes that page too, when the Artifact tool is available — under Claude Code's auto mode the classifier blocks that publish for a private repository unless your `autoMode.environment` names Claude artifacts as a trusted destination.
 - `## Verification` — how to build, lint and test this repo (Step 3). With a stack module enabled, this adds to it.
 - `## Design brief` — where the shape lives in this repository: routes, contracts, schemas, migrations. Tells the brief where to look.
 - `## Extra lenses` — what to look for in this codebase, applied alongside the built-in lenses (Step 2). This is also where the modules read their project specifics.
