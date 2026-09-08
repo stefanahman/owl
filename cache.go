@@ -8,8 +8,7 @@
 //
 // Freshness is user-visible via the "updated Xm ago" indicator in
 // the title bar (driven by cache.FetchedAt on load, then m.lastFetched
-// once the live fetch lands). No explicit "refreshing" spinner —
-// user reads the age.
+// once the live fetch lands); `r` spins while a refresh runs.
 package main
 
 import (

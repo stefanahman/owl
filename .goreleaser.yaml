@@ -40,7 +40,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/stefanahman/pr-owl
-    description: "TUI of the PRs waiting for your review; one key opens each as a git worktree + tmux window with Claude Code reviewing inside"
+    description: "TUI of the PRs waiting for your review; one key opens each as a git worktree and a window in tmux, herdr or cmux with Claude Code reviewing inside"
     license: MIT
     binaries: [pr-owl]
     dependencies:

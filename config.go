@@ -1,4 +1,5 @@
-// Configuration: $XDG_CONFIG_HOME/pr-owl/config.yaml (or $PR_OWL_CONFIG).
+// Configuration: $XDG_CONFIG_HOME/pr-owl/config.yaml, or the file named
+// by --config or $PR_OWL_CONFIG.
 // Every key has a default; a missing file is not an error. Keys the
 // file doesn't mention keep their defaults, unknown keys are rejected
 // so a typo can't silently fall back to the default.
@@ -250,7 +251,7 @@ open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for pr-owl in a tmux window; under herdr the focus has already moved)
 
 hooks:
-  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set; ~ is expanded.
+  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set, and PR_OWL_SESSION under tmux and herdr; ~ is expanded.
                                  # A mapping gives one per multiplexer, e.g. {tmux: spaces focus pr-reviews}: none under herdr and cmux, where the window is already in front
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb

@@ -1,10 +1,11 @@
 # pr-owl
 
 A terminal UI of the PRs waiting for your review — and one key to turn
-any of them into a review workspace: a git worktree, a window in your
-terminal multiplexer (tmux or herdr), and Claude Code reviewing inside
-it. Run it in a shell, bind it to a tmux popup, or run it in a herdr
-pane, so it's one keystroke away from any session.
+any of them into a review workspace: a git worktree (a second checkout
+of the repo, on the PR's branch), a window in your terminal multiplexer
+(tmux, herdr or cmux), and Claude Code reviewing inside it. Run it in a
+shell, bind it to a tmux popup, or run it in a herdr or cmux workspace,
+so it's one keystroke away from any session.
 
 ```
 pr-owl · acme/app                                           updated just now
@@ -45,8 +46,9 @@ Merged (last 1d)
   the workspace: worktree, branch and window go; the conversation on
   disk stays, so the next Enter resumes it.
 
-GitHub.com only — everything goes through `gh`; GitHub Enterprise
-hosts are not supported.
+Everything goes through `gh`, which must be authenticated for the
+host of the repo's remote. GitHub.com is what it is used with; a
+GitHub Enterprise host should work the same way but is untested.
 
 ## Install
 
@@ -59,11 +61,34 @@ Prebuilt binaries for macOS and Linux (amd64, arm64) are on the
 [releases page](https://github.com/stefanahman/pr-owl/releases); from a
 checkout, `make install BIN=~/.local/bin`. Needs git, an authenticated
 `gh`, a multiplexer — tmux (any version for `open` and `close`, ≥ 3.2
-for the popup) or [herdr](https://github.com/herdrdev/herdr) ≥ 0.9 —
-and [Claude Code](https://docs.claude.com/en/docs/claude-code), the
-agent `open` starts and resumes. Windows is not supported. Linux:
-`xdg-open` for `o`; `y` copies through OSC 52, which most terminals
-support.
+for the popup), [herdr](https://github.com/herdrdev/herdr) ≥ 0.9 or
+[cmux](https://github.com/manaflow-ai/cmux) ≥ 0.64 (macOS) — and
+[Claude Code](https://docs.claude.com/en/docs/claude-code), the agent
+`open` starts and resumes, on the PATH of the shell your multiplexer
+runs (the start line is typed into that shell). Windows is not
+supported. Linux: `xdg-open` for `o`; `y` copies through OSC 52 (the
+terminal escape for the clipboard), which most terminals support.
+
+## First review
+
+1. `gh auth login`, and `claude` once, so both are set up.
+2. Inside a `claude` session: `/plugin marketplace add stefanahman/pr-owl`,
+   then `/plugin install pr-review@pr-owl`. The default first prompt of
+   a review is that plugin's `/pr-review:pr-review` skill; without the
+   plugin, set `agent.prompt` to the prompt a review should start with.
+3. `pr-owl config init` writes the config with every key explained.
+   Nothing in it is required; `default_repo` lets you start pr-owl
+   from anywhere.
+4. `cd` into a clone whose remote is on GitHub, in a terminal that runs
+   inside tmux, herdr or cmux (or any terminal, with `on_open: stay`).
+5. `pr-owl`, then Enter on a row. That fetches the PR into a worktree
+   under `.worktrees.local/`, opens a window for it in your
+   multiplexer — under tmux the `pr-reviews` session is created on
+   first use — types the Claude Code start line into it, and takes you
+   there. Outside the multiplexer it prints `attach with: …` instead.
+6. Back in the list, the `©` badge follows the agent (legend under
+   `?`): `f` sends the feedback prompt once the author has pushed, `c`
+   removes worktree, branch and window when you are done.
 
 `pr-owl` opens the TUI for the repo of the current directory; set
 `default_repo` in the config to launch it from anywhere. To have it a
@@ -82,18 +107,20 @@ Three companions, each optional:
 
 - [tmux-claude-status](https://github.com/stefanahman/tmux-claude-status)
   writes the `©` state pr-owl shows under tmux (and puts the same chips
-  in your status bar). Optional: without it the badge only says "a
-  window exists". herdr reports the state itself.
+  in your status bar). Without it the badge only says "a window
+  exists". herdr reports the state itself; cmux through its own
+  Claude Code hooks.
 - [pr-review](pr-review/README.md), the Claude Code plugin whose review
-  skill is the default `agent.prompt` of a fresh workspace:
-  `/plugin marketplace add stefanahman/pr-owl`, then
-  `/plugin install pr-review@pr-owl`. Without it, set `agent.prompt` to
-  the first prompt a review should start with.
-- [spaces](https://github.com/stefanahman/spaces) keeps the
-  review session in one terminal window on its own desktop space and
-  opens the popup from a hotkey anywhere (macOS, yabai, Ghostty);
-  `hooks.after_open: spaces focus pr-reviews` brings that window
-  to the front after every open.
+  skill is the default `agent.prompt` of a fresh workspace (installed
+  in step 2 above). It is what makes the default prompt do something;
+  any other first prompt works without it.
+- [spaces](https://github.com/stefanahman/spaces) keeps the review
+  session in one terminal window on its own desktop space and opens
+  the popup from a hotkey anywhere (macOS, with
+  [yabai](https://github.com/koekeishiya/yabai) and
+  [Ghostty](https://ghostty.org)); `hooks.after_open: {tmux: spaces
+  focus pr-reviews}` brings that window to the front after every open
+  under tmux, where it is not already.
 
 ## Multiplexers
 
@@ -108,7 +135,7 @@ forces one.
 | a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree | a workspace named `pr-<N>-<slug>`, cwd the worktree |
 | the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same everywhere: finished, not yet looked at | cmux's Claude Code hooks, through the wrapper it puts on the shell's PATH: `running`, `needsInput`, `idle`. `done` is idle with cmux's notification about the turn unread; Enter in pr-owl marks it read |
 | `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux | refused from the hook state; an agent the wrapper never saw shows no state and gets the text typed |
-| Enter arrives | `select-window`, then your hook | `workspace focus`; the attached client follows (one client verified; herdr lets each client view its own workspace) | `workspace select`, and `focus-window` when pr-owl runs outside cmux |
+| Enter arrives | `select-window`, then your hook | `workspace focus`; every attached client follows | `workspace select`, and `focus-window` when pr-owl runs outside cmux |
 | a failure after the popup closed | tmux's status line | a herdr notification | a cmux notification, on pr-owl's own workspace |
 | `hooks.after_open` sees | `PR_OWL_SESSION` = the session, `PR_OWL_WINDOW` = the window | `PR_OWL_SESSION` = the herdr session, `PR_OWL_WINDOW` = the label | `PR_OWL_WINDOW` = the name; cmux has no session |
 
@@ -172,11 +199,13 @@ Every key is rebindable, and `links` add your own (below).
 ## Commands
 
 ```
+pr-owl [--config FILE] [--mux tmux|herdr|cmux] [command]   the options apply to every command, and to what the TUI runs
 pr-owl                          the TUI
 pr-owl open <N> [--prompt TEXT] open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 pr-owl start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
 pr-owl close [--force] [<N>]    remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
 pr-owl config init | path
+pr-owl --version
 ```
 
 `open` is idempotent: it creates what is missing and selects the
@@ -291,7 +320,7 @@ repo, so keep one repo per review session.
 ## Hacking
 
 ```sh
-make test               # go test ./... — the open/close tests need tmux
+make test               # go test . and the e2e suite — the open/close tests need tmux
 make lint               # gofmt, go vet
 make update-snapshots   # after a deliberate UI change: the screen snapshots
 PR_OWL_SMOKE=1 go test -run TestFetchSmoke .   # against your real gh, from a repo checkout
