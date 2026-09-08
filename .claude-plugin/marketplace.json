@@ -1,11 +1,11 @@
 {
-  "name": "pr-owl",
+  "name": "owl",
   "owner": {
     "name": "Stefan Åhman",
     "url": "https://github.com/stefanahman"
   },
   "metadata": {
-    "description": "Claude Code plugins that ship with pr-owl",
+    "description": "Claude Code plugins that ship with owl",
     "version": "0.1.0"
   },
   "plugins": [

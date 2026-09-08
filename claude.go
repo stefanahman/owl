@@ -1,5 +1,5 @@
 // Where Claude Code keeps per-project conversation state, and how it
-// names the directory for a given working directory. pr-owl reads this
+// names the directory for a given working directory. owl reads this
 // to decide between starting a fresh review and resuming one.
 package main
 

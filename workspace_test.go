@@ -86,7 +86,7 @@ func newFixture(t *testing.T) *fixture {
 	// not $TMUX is set. The socket gets a short directory of its own —
 	// Unix socket paths are limited to ~100 bytes and t.TempDir includes
 	// the test name.
-	sockDir, err := os.MkdirTemp("", "pr-owl")
+	sockDir, err := os.MkdirTemp("", "owl")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func (f *fixture) open(args ...string) string {
 }
 
 // windows lists the review session's tmux windows, the keepalive one
-// included: what the session holds, not what pr-owl counts as reviews.
+// included: what the session holds, not what owl counts as reviews.
 func (f *fixture) windows() []string {
 	out := f.tmuxL("list-windows", "-t", mux.TmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_name}")
 	if out == "" {
@@ -221,7 +221,7 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_PR|$PR_OWL_SESSION|$PR_OWL_WINDOW|$PR_OWL_WORKTREE|$PR_OWL_REPO" > ` + hookOut}
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$OWL_PR|$OWL_SESSION|$OWL_WINDOW|$OWL_WORKTREE|$OWL_REPO" > ` + hookOut}
 
 	out := f.open("42")
 
@@ -365,13 +365,13 @@ func TestLockPR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lock, err := os.Open(filepath.Join(f.repo, ".git", "pr-owl", "pr-42.lock"))
+	lock, err := os.Open(filepath.Join(f.repo, ".git", "owl", "pr-42.lock"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer lock.Close()
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) {
-		t.Fatalf("a second pr-owl on the same PR while the first works: %v, want EWOULDBLOCK", err)
+		t.Fatalf("a second owl on the same PR while the first works: %v, want EWOULDBLOCK", err)
 	}
 	unlock()
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {

@@ -21,7 +21,7 @@ const (
 type windows struct{ d mux.Driver }
 
 // newWindows is the multiplexer for this configuration: the one named,
-// or with `mux: auto` herdr or cmux when pr-owl runs inside one of them
+// or with `mux: auto` herdr or cmux when owl runs inside one of them
 // and tmux otherwise.
 func newWindows(cfg Config) windows {
 	tmux := mux.Tmux{SessionName: cfg.Tmux.Session, Keepalive: cfg.Tmux.KeepaliveWindow}
@@ -38,19 +38,19 @@ func newWindows(cfg Config) windows {
 }
 
 // windowsByKind is the multiplexer a child was told about through
-// PR_OWL_MUX, enough to notify with; ok is false for none.
+// OWL_MUX, enough to notify with; ok is false for none.
 func windowsByKind(kind string) (windows, bool) {
 	d := mux.ByKind(kind)
 	return windows{d}, d != nil
 }
 
-// Kind names the multiplexer: the value of PR_OWL_MUX.
+// Kind names the multiplexer: the value of OWL_MUX.
 func (w windows) Kind() string { return w.d.Kind() }
 
 // ChildEnv is what a child process needs in its environment to reach
 // the same multiplexer.
 func (w windows) ChildEnv() []string {
-	return append([]string{"PR_OWL_MUX=" + w.d.Kind()}, w.d.ChildEnv()...)
+	return append([]string{"OWL_MUX=" + w.d.Kind()}, w.d.ChildEnv()...)
 }
 
 // Prepare makes the container of review windows exist.
@@ -193,7 +193,7 @@ func (w windows) Close(name string) error {
 	return w.d.Close(ws)
 }
 
-// Current is the review window pr-owl was started in, if any.
+// Current is the review window owl was started in, if any.
 func (w windows) Current() (string, bool) {
 	ws, ok := w.d.Current()
 	if !ok || prNumberOf(ws.Name) == 0 {
@@ -212,13 +212,13 @@ func (w windows) Describe(name string) string {
 func (w windows) AttachHint() string { return w.d.AttachHint() }
 
 // Notify shows a transient message to the user, the multiplexer's way.
-func (w windows) Notify(text string) { w.d.Notify("pr-owl", text) }
+func (w windows) Notify(text string) { w.d.Notify("owl", text) }
 
 // Env is what the after_open hook learns about the window.
 func (w windows) Env(name string) map[string]string {
-	env := map[string]string{"PR_OWL_WINDOW": name}
+	env := map[string]string{"OWL_WINDOW": name}
 	if s := w.d.Session(); s != "" {
-		env["PR_OWL_SESSION"] = s
+		env["OWL_SESSION"] = s
 	}
 	return env
 }

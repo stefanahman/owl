@@ -2,7 +2,7 @@
 // PRs by name convention (`pr-<N>` or `pr-<N>-<slug>`).
 //
 // Scope: `git worktree list` runs in the working directory, so it lists
-// every worktree of the repo pr-owl was launched from. Windows come
+// every worktree of the repo owl was launched from. Windows come
 // from the multiplexer's review container (one window per PR review);
 // window names use the same pr-<N>[-…] pattern as the worktree
 // basenames.
@@ -54,7 +54,7 @@ func (m model) fetchLocal() tea.Msg {
 // by handle (directory name `pr-<N>[-<slug>]`, or the branch as a
 // fallback — see worktree.handle).
 //
-// Path-based keying is primary because `pr-owl open` names its
+// Path-based keying is primary because `owl open` names its
 // worktrees `<repo>/<worktrees_dir>/pr-<N>-<slug>` and they often end
 // up in detached HEAD (no `branch refs/heads/…` line to parse). Once
 // checked out detached, branch-only matching drops them entirely — a

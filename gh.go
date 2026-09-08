@@ -1,5 +1,5 @@
 // Wrapper for the `gh` CLI, scoped to the repo of the working directory
-// pr-owl was launched from.
+// owl was launched from.
 package main
 
 import (
@@ -257,7 +257,7 @@ func currentUser() string {
 // hiding exactly the PRs you want to keep watching for follow-up
 // commits. `reviewed-by` covers that gap.
 //
-// `-author:@me` excludes your own PRs — pr-owl is for tracking PRs you
+// `-author:@me` excludes your own PRs — owl is for tracking PRs you
 // need to review, and you can't review your own. Without this,
 // self-comments on your own PRs put them in `reviewed-by:@me`.
 const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
@@ -267,7 +267,7 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 //
 // Uses the GitHub GraphQL API (via `gh api graphql`) rather than
 // `gh pr list --json` because the latter returns each review's
-// `commit.oid` as an empty string — and pr-owl needs those oids to
+// `commit.oid` as an empty string — and owl needs those oids to
 // detect stale reviews (my review is on a different commit than the
 // current head, so re-review is needed). GraphQL populates them.
 //

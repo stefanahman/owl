@@ -1,4 +1,4 @@
-// Package e2e runs the built pr-owl binary in a virtual terminal and
+// Package e2e runs the built owl binary in a virtual terminal and
 // snapshots what it draws. It is a separate package because vttest's
 // snapshot helper and teatest's golden helper both register a global
 // -update flag and cannot share a test binary.
@@ -45,7 +45,7 @@ func TestScreen(t *testing.T) {
 	snapshotWhenQuiet(t, term, "list")
 
 	term.SendKey(uv.KeyPressEvent{Code: '?', Text: "?"})
-	waitFor(t, term, "pr-owl · help")
+	waitFor(t, term, "owl · help")
 	snapshotWhenQuiet(t, term, "help")
 
 	term.SendKey(uv.KeyPressEvent{Code: 'q', Text: "q"})
@@ -77,7 +77,7 @@ func TestOpenFromTheTUI(t *testing.T) {
 	// The child finishes on its own.
 	wt := filepath.Join(repo, ".worktrees.local", "pr-3543-add-billing-migration")
 	windows := func() string {
-		tmux := exec.Command("tmux", "list-windows", "-t", "=pr-reviews", "-F", "#{window_name}")
+		tmux := exec.Command("tmux", "list-windows", "-t", "=reviews", "-F", "#{window_name}")
 		tmux.Env = env
 		out, _ := tmux.Output()
 		return string(out)
@@ -102,17 +102,17 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 // The terminal's size; the snapshots in testdata/ were taken at it.
 const cols, rows = 120, 30
 
-// bin is the pr-owl binary under test, built once for the package.
+// bin is the owl binary under test, built once for the package.
 var bin string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "pr-owl-e2e-bin")
+	dir, err := os.MkdirTemp("", "owl-e2e-bin")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	bin = filepath.Join(dir, "pr-owl")
-	if out, err := exec.Command("go", "build", "-o", bin, "github.com/stefanahman/pr-owl").CombinedOutput(); err != nil {
+	bin = filepath.Join(dir, "owl")
+	if out, err := exec.Command("go", "build", "-o", bin, "github.com/stefanahman/owl").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, out)
 		os.RemoveAll(dir)
 		os.Exit(1)
@@ -122,7 +122,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// start runs pr-owl in the virtual terminal and makes sure it is gone
+// start runs owl in the virtual terminal and makes sure it is gone
 // when the test ends, however the test ends.
 func start(t *testing.T, term *vttest.Terminal, dir string, env []string) *exec.Cmd {
 	t.Helper()
@@ -136,7 +136,7 @@ func start(t *testing.T, term *vttest.Terminal, dir string, env []string) *exec.
 	return cmd
 }
 
-// waitExit waits for pr-owl to exit; a deadline turns a hang into a
+// waitExit waits for owl to exit; a deadline turns a hang into a
 // failure with the screen attached instead of a stuck run.
 func waitExit(t *testing.T, term *vttest.Terminal, cmd *exec.Cmd) {
 	t.Helper()
@@ -145,10 +145,10 @@ func waitExit(t *testing.T, term *vttest.Terminal, cmd *exec.Cmd) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("pr-owl exited with %v:\n%s", err, screenText(term))
+			t.Fatalf("owl exited with %v:\n%s", err, screenText(term))
 		}
 	case <-time.After(20 * time.Second):
-		t.Fatalf("pr-owl did not exit within 20s:\n%s", screenText(term))
+		t.Fatalf("owl did not exit within 20s:\n%s", screenText(term))
 	}
 }
 
@@ -264,7 +264,7 @@ func hermeticEnv(t *testing.T, root string) []string {
 		// JSON round-trip, and only indexed colours survive it losslessly.
 		"TERM=xterm-256color",
 		"LANG=en_US.UTF-8",
-		"PR_OWL_CONFIG="+cfg,
+		"OWL_CONFIG="+cfg,
 		"XDG_CACHE_HOME="+filepath.Join(root, "cache"),
 		"CLAUDE_CONFIG_DIR="+filepath.Join(root, "claude"),
 		"TMUX_TMPDIR="+privateTmux(t, root),
@@ -283,7 +283,7 @@ func hermeticEnv(t *testing.T, root string) []string {
 // test: /bin/sh windows, no exit when empty, its own short socket dir.
 func privateTmux(t *testing.T, root string) string {
 	t.Helper()
-	sockDir, err := os.MkdirTemp("", "pr-owl-e2e")
+	sockDir, err := os.MkdirTemp("", "owl-e2e")
 	if err != nil {
 		t.Fatal(err)
 	}

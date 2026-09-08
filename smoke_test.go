@@ -7,18 +7,18 @@ import (
 )
 
 // TestFetchSmoke exercises fetchPRs and fetchLocal against the real
-// environment, chdir'd to whatever PR_OWL_TEST_CWD is set to (or the
+// environment, chdir'd to whatever OWL_TEST_CWD is set to (or the
 // module dir if unset). Not a unit test — a sanity check that the
 // message pipeline works end-to-end without a TTY. Needs an
 // authenticated gh and network, so it only runs when asked for:
 //
-//	PR_OWL_SMOKE=1 go test -run TestFetchSmoke -v
-//	PR_OWL_SMOKE=1 PR_OWL_TEST_CWD=~/src/some-repo go test -run TestFetchSmoke -v
+//	OWL_SMOKE=1 go test -run TestFetchSmoke -v
+//	OWL_SMOKE=1 OWL_TEST_CWD=~/src/some-repo go test -run TestFetchSmoke -v
 func TestFetchSmoke(t *testing.T) {
-	if os.Getenv("PR_OWL_SMOKE") == "" {
-		t.Skip("set PR_OWL_SMOKE=1 to run against the live gh/git/tmux environment")
+	if os.Getenv("OWL_SMOKE") == "" {
+		t.Skip("set OWL_SMOKE=1 to run against the live gh/git/tmux environment")
 	}
-	if cwd := os.Getenv("PR_OWL_TEST_CWD"); cwd != "" {
+	if cwd := os.Getenv("OWL_TEST_CWD"); cwd != "" {
 		if err := os.Chdir(os.ExpandEnv(cwd)); err != nil {
 			t.Fatalf("chdir %s: %v", cwd, err)
 		}

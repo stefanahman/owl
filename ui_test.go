@@ -29,7 +29,7 @@ func newTestModel(t *testing.T) *teatest.TestModel {
 // testModel is a model that never touches the machine: built by
 // newModel (no git, no cache read), no Init fetches, the cache written
 // to a throwaway directory, and a runSelf that blocks until the test
-// ends instead of executing the test binary as `pr-owl open`.
+// ends instead of executing the test binary as `owl open`.
 func testModel(t *testing.T) model {
 	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
@@ -460,7 +460,7 @@ func TestHeaderShowsRepo(t *testing.T) {
 	if !bytes.Contains(out, []byte("acme/example")) {
 		t.Errorf("header missing repo name\n---\n%s", out)
 	}
-	if !bytes.Contains(out, []byte("pr-owl")) {
+	if !bytes.Contains(out, []byte("owl")) {
 		t.Errorf("header missing app name\n---\n%s", out)
 	}
 }

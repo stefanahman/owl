@@ -1,4 +1,4 @@
-module github.com/stefanahman/pr-owl
+module github.com/stefanahman/owl
 
 go 1.25.2
 

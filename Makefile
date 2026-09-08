@@ -5,12 +5,14 @@ BIN ?= $(HOME)/.local/bin
 # The version a local build reports; releases set it from the tag.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
+# Into bin/: the plugin directory at the root is named owl too.
 build:
-	go build -ldflags "-X main.version=$(VERSION)" -o pr-owl .
+	mkdir -p bin
+	go build -ldflags "-X main.version=$(VERSION)" -o bin/owl .
 
 install:
 	mkdir -p $(BIN)
-	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN)/pr-owl .
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN)/owl .
 
 # e2e builds the binary at run time, so Go's test cache can't see its
 # sources change — a cached "ok" would hide a real regression.

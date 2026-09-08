@@ -1,8 +1,8 @@
-// `pr-owl open <N> [--prompt TEXT]`: make sure PR N has a worktree and
+// `owl open <N> [--prompt TEXT]`: make sure PR N has a worktree and
 // a window in the multiplexer running the agent, select that window,
 // and run the after_open hook. Idempotent — re-running selects the
 // existing window and, with --prompt, hands the prompt to the running agent.
-// `pr-owl start <N>` is the same without going there: no window
+// `owl start <N>` is the same without going there: no window
 // selection, no hook — for starting several reviews from the list.
 package main
 
@@ -90,10 +90,10 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		return nil // start: the workspace is up; the caller stays where it is
 	}
 	env := map[string]string{
-		"PR_OWL_PR":       strconv.Itoa(n),
-		"PR_OWL_WORKTREE": wt,
-		"PR_OWL_REPO":     repo,
-		"PR_OWL_MUX":      mx.Kind(),
+		"OWL_PR":       strconv.Itoa(n),
+		"OWL_WORKTREE": wt,
+		"OWL_REPO":     repo,
+		"OWL_MUX":      mx.Kind(),
 	}
 	maps.Copy(env, mx.Env(name))
 	return runAfterOpen(hook, out, env)
@@ -153,7 +153,7 @@ func ensureWorktree(cfg Config, repo, slug string, n int, out io.Writer) (name, 
 	}
 	path = filepath.Join(repo, cfg.WorktreesDir, name)
 	fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)
-	// `+`: the branch is pr-owl's own, and one left behind by a
+	// `+`: the branch is owl's own, and one left behind by a
 	// hand-removed worktree may not fast-forward to today's head.
 	if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, name)); err != nil {
 		return "", "", err
@@ -298,7 +298,7 @@ func oneLine(s string) string {
 }
 
 // runAfterOpen runs the hooks.after_open command through sh with the
-// PR_OWL_* variables in its environment, on every open.
+// OWL_* variables in its environment, on every open.
 func runAfterOpen(hook string, out io.Writer, env map[string]string) error {
 	if hook == "" {
 		return nil

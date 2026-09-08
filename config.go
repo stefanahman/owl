@@ -1,5 +1,5 @@
-// Configuration: $XDG_CONFIG_HOME/pr-owl/config.yaml, or the file named
-// by --config or $PR_OWL_CONFIG.
+// Configuration: $XDG_CONFIG_HOME/owl/config.yaml, or the file named
+// by --config or $OWL_CONFIG.
 // Every key has a default; a missing file is not an error. Keys the
 // file doesn't mention keep their defaults, unknown keys are rejected
 // so a typo can't silently fall back to the default.
@@ -220,15 +220,15 @@ func (k *keyNames) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-// configTemplate is what `pr-owl config init` writes. It is the
+// configTemplate is what `owl config init` writes. It is the
 // documentation for every key, and TestTemplateMatchesDefaults keeps it
 // equal to defaultConfig().
-const configTemplate = `# pr-owl configuration. Every key is optional; these are the defaults.
+const configTemplate = `# owl configuration. Every key is optional; these are the defaults.
 
-mux: auto                        # the multiplexer reviews run in: tmux, herdr, cmux, or auto (herdr or cmux when pr-owl runs inside one, else tmux)
+mux: auto                        # the multiplexer reviews run in: tmux, herdr, cmux, or auto (herdr or cmux when owl runs inside one, else tmux)
 
 tmux:
-  session: pr-reviews            # session that holds one window per review
+  session: reviews               # session that holds one window per review
   keepalive_window: scratch      # window that keeps the session alive with no reviews open
 
 herdr:
@@ -236,10 +236,10 @@ herdr:
 
 remote: origin                   # git remote of the GitHub repo: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root (added to .git/info/exclude)
-default_repo: ""                 # repo to use when pr-owl is started outside a git repo; ~ is expanded
+default_repo: ""                 # repo to use when owl is started outside a git repo; ~ is expanded
 
 agent:
-  cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); pr-owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
+  cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
   prompt: "/pr-review:pr-review {pr}"    # first prompt of a fresh review; {pr} is the PR number
   feedback_prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
@@ -248,10 +248,10 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for pr-owl in a tmux window; under herdr the focus has already moved)
+on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for owl in a tmux window; under herdr the focus has already moved)
 
 hooks:
-  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set, and PR_OWL_SESSION under tmux and herdr; ~ is expanded.
+  after_open: ""                 # command run after ` + "`owl open`" + ` with OWL_PR, OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
                                  # A mapping gives one per multiplexer, e.g. {tmux: spaces focus pr-reviews}: none under herdr and cmux, where the window is already in front
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb
@@ -293,7 +293,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 func defaultConfig() Config {
 	var c Config
 	c.Mux = "auto"
-	c.Tmux = TmuxConfig{Session: "pr-reviews", KeepaliveWindow: "scratch"}
+	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
@@ -322,13 +322,13 @@ func defaultConfig() Config {
 // configOverride is the --config flag, when given.
 var configOverride string
 
-// configPath is --config, else $PR_OWL_CONFIG, else
-// $XDG_CONFIG_HOME/pr-owl/config.yaml, else ~/.config/pr-owl/config.yaml.
+// configPath is --config, else $OWL_CONFIG, else
+// $XDG_CONFIG_HOME/owl/config.yaml, else ~/.config/owl/config.yaml.
 func configPath() (string, error) {
 	if configOverride != "" {
 		return expandHome(configOverride), nil
 	}
-	if p := os.Getenv("PR_OWL_CONFIG"); p != "" {
+	if p := os.Getenv("OWL_CONFIG"); p != "" {
 		return p, nil
 	}
 	base := os.Getenv("XDG_CONFIG_HOME")
@@ -339,7 +339,7 @@ func configPath() (string, error) {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "pr-owl", "config.yaml"), nil
+	return filepath.Join(base, "owl", "config.yaml"), nil
 }
 
 // loadConfig returns the defaults overlaid with the config file, if any.
@@ -468,7 +468,7 @@ func expandHome(p string) string {
 	return p
 }
 
-// runConfig implements `pr-owl config init | path`, writing results
+// runConfig implements `owl config init | path`, writing results
 // to w.
 func runConfig(args []string, w io.Writer) error {
 	if len(args) == 0 {

@@ -54,7 +54,7 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	if _, ok := windowsByKind(""); ok {
 		t.Error("windowsByKind should know nothing else")
 	}
-	if got := (windows{mux.Tmux{SessionName: "s"}}).ChildEnv(); !reflect.DeepEqual(got, []string{"PR_OWL_MUX=tmux"}) {
+	if got := (windows{mux.Tmux{SessionName: "s"}}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
 		t.Errorf("ChildEnv = %v", got)
 	}
 }
@@ -71,7 +71,7 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	t.Setenv("HERDR_WORKSPACE_ID", "")
 	t.Setenv("HERDR_SESSION", "work")
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut}
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$OWL_MUX|$OWL_SESSION|$OWL_WINDOW" > ` + hookOut}
 
 	name := "pr-42-fix-crash-on-startup"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
@@ -134,7 +134,7 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 	fake := muxtest.InstallFakeCmux(t)
 	f.cfg.Mux = "cmux"
 	hookOut := filepath.Join(f.root, "hook.out")
-	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut}
+	f.cfg.Hooks.AfterOpen = hookByMux{"": `echo "$OWL_MUX|$OWL_SESSION|$OWL_WINDOW" > ` + hookOut}
 
 	name := "pr-42-fix-crash-on-startup"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
@@ -195,7 +195,7 @@ func TestGlobalOptions(t *testing.T) {
 	if p, _ := configPath(); !strings.HasSuffix(p, "/x.yaml") || strings.HasPrefix(p, "~") {
 		t.Errorf("configPath with --config = %q", p)
 	}
-	// A child pr-owl (open, close) gets the same options in front.
+	// A child owl (open, close) gets the same options in front.
 	if got := globalArgs(); !reflect.DeepEqual(got, []string{"--config", "~/x.yaml", "--mux", "cmux"}) {
 		t.Errorf("globalArgs = %v", got)
 	}

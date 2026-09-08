@@ -166,7 +166,7 @@ func TestParseConfigExpandsHome(t *testing.T) {
 func TestConfigPath(t *testing.T) {
 	t.Setenv("HOME", "/home/owl")
 	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("PR_OWL_CONFIG", "")
+	t.Setenv("OWL_CONFIG", "")
 	assertPath := func(want string) {
 		t.Helper()
 		got, err := configPath()
@@ -177,15 +177,15 @@ func TestConfigPath(t *testing.T) {
 			t.Errorf("configPath() = %q, want %q", got, want)
 		}
 	}
-	assertPath("/home/owl/.config/pr-owl/config.yaml")
+	assertPath("/home/owl/.config/owl/config.yaml")
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
-	assertPath("/xdg/pr-owl/config.yaml")
-	t.Setenv("PR_OWL_CONFIG", "/explicit.yaml")
+	assertPath("/xdg/owl/config.yaml")
+	t.Setenv("OWL_CONFIG", "/explicit.yaml")
 	assertPath("/explicit.yaml")
 }
 
 func TestLoadConfigMissingFileIsDefaults(t *testing.T) {
-	t.Setenv("PR_OWL_CONFIG", filepath.Join(t.TempDir(), "nope.yaml"))
+	t.Setenv("OWL_CONFIG", filepath.Join(t.TempDir(), "nope.yaml"))
 	cfg, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +200,7 @@ func TestLoadConfigNamesFileInErrors(t *testing.T) {
 	if err := os.WriteFile(path, []byte("bogus: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PR_OWL_CONFIG", path)
+	t.Setenv("OWL_CONFIG", path)
 	_, err := loadConfig()
 	if err == nil || !strings.Contains(err.Error(), path) {
 		t.Errorf("error %v should name %s", err, path)
@@ -209,7 +209,7 @@ func TestLoadConfigNamesFileInErrors(t *testing.T) {
 
 func TestConfigInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "config.yaml")
-	t.Setenv("PR_OWL_CONFIG", path)
+	t.Setenv("OWL_CONFIG", path)
 	var out strings.Builder
 	if err := runConfig([]string{"init"}, &out); err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-// pr-owl — TUI overview of PRs where you're a reviewer, with local
+// owl — TUI overview of PRs where you're a reviewer, with local
 // state (worktree, review window in the multiplexer, Claude activity)
 // and review involvement (approved / engaged / any-CR) overlaid.
 //
@@ -78,7 +78,7 @@ func (e errMsg) Error() string { return e.err.Error() }
 // next key press. It never replaces the list.
 type noticeMsg struct{ err error }
 
-// openedMsg / closedMsg report the end of a `pr-owl open` / `close`
+// openedMsg / closedMsg report the end of a `owl open` / `close`
 // child for a PR: nil, or its failure with the child's stderr.
 type openedMsg struct {
 	pr  int
@@ -365,8 +365,8 @@ func (m model) persistCache() {
 	})
 }
 
-// openReview runs `pr-owl open <N> [--prompt TEXT]` and reports when
-// it ends. The child gets its own session (Setsid): pr-owl usually
+// openReview runs `owl open <N> [--prompt TEXT]` and reports when
+// it ends. The child gets its own session (Setsid): owl usually
 // runs inside a tmux popup, and with on_open: quit the popup closes
 // the moment the child starts — it must finish on its own, and it
 // does (see runChild for where its failure goes then).
@@ -380,7 +380,7 @@ func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
-// startReview runs `pr-owl start <N> [--prompt TEXT]`: the workspace
+// startReview runs `owl start <N> [--prompt TEXT]`: the workspace
 // comes up, or gets the prompt, and the list stays — for starting
 // several reviews one after another, and for f.
 func (m model) startReview(prNumber int, prompt string) tea.Cmd {
@@ -393,7 +393,7 @@ func (m model) startReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
-// closeReview runs `pr-owl close <N>`; the TUI refreshes its overlay
+// closeReview runs `owl close <N>`; the TUI refreshes its overlay
 // when it succeeds. The agent's conversation survives on disk, so
 // Enter / f afterwards resume it.
 func (m model) closeReview(prNumber int) tea.Cmd {
@@ -431,13 +431,13 @@ func (m model) launch(pr int, label string, cmd tea.Cmd, arrive bool) (tea.Model
 func runChild(env []string, args ...string) error {
 	self, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("locate pr-owl binary: %w", err)
+		return fmt.Errorf("locate owl binary: %w", err)
 	}
-	// A test binary would run its whole suite as `pr-owl open`, and that
+	// A test binary would run its whole suite as `owl open`, and that
 	// suite would do it again. Tests inject runSelf; this catches the
 	// one that forgets.
 	if strings.HasSuffix(self, ".test") {
-		return fmt.Errorf("%s is a test binary, not pr-owl", self)
+		return fmt.Errorf("%s is a test binary, not owl", self)
 	}
 	cmd := exec.Command(self, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -449,7 +449,7 @@ func runChild(env []string, args ...string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("pr-owl %s: %s", strings.Join(args, " "), msg)
+		return fmt.Errorf("owl %s: %s", strings.Join(args, " "), msg)
 	}
 	return nil
 }
@@ -1134,11 +1134,11 @@ func (m model) countsSummary() string {
 	))
 }
 
-// titleLine renders the header row: `pr-owl · <repo>` left-aligned,
+// titleLine renders the header row: `owl · <repo>` left-aligned,
 // `updated Xm ago` right-aligned, padded to fill m.width. Timestamp
 // is omitted before the first fetch completes (lastFetched is zero).
 func (m model) titleLine(repo string) string {
-	left := styleHeader.Render(fmt.Sprintf("pr-owl · %s", repo))
+	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
 	right := ""
 	if !m.lastFetched.IsZero() {
 		d := time.Since(m.lastFetched)
@@ -1169,7 +1169,7 @@ func (m model) titleLine(repo string) string {
 // helpModalView renders a centered, bordered box with the full key
 // legend AND the color/glyph conventions. Dismissed by any key.
 func (m model) helpModalView() string {
-	title := styleHeader.Render("pr-owl · help")
+	title := styleHeader.Render("owl · help")
 
 	legend := lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
@@ -1403,13 +1403,13 @@ func versionString() string {
 	return "dev"
 }
 
-const usage = `usage: pr-owl [--config FILE] [--mux tmux|herdr|cmux] [command]
-       pr-owl                          PR overview TUI (run inside a git repo)
-       pr-owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
-       pr-owl start <N> [--prompt TEXT]  the same without going there: no window selection, no after_open
-       pr-owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
-       pr-owl config init | path
-       pr-owl --version`
+const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [command]
+       owl                          PR overview TUI (run inside a git repo)
+       owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
+       owl start <N> [--prompt TEXT]  the same without going there: no window selection, no after_open
+       owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
+       owl config init | path
+       owl --version`
 
 // usageError is a bad invocation: the message is printed with the
 // usage text and the process exits 64 (EX_USAGE).
@@ -1426,7 +1426,7 @@ func main() {
 			exitOn(runConfig(args[1:], os.Stdout))
 			return
 		case "--version", "version":
-			fmt.Println("pr-owl", versionString())
+			fmt.Println("owl", versionString())
 			return
 		case "--help", "-h", "help":
 			fmt.Println(usage)
@@ -1498,7 +1498,7 @@ func globalOptions(args []string) ([]string, error) {
 	return args, nil
 }
 
-// globalArgs is what a child pr-owl needs in front of its command to
+// globalArgs is what a child owl needs in front of its command to
 // see the same --config and --mux as this process: a child parses its
 // own arguments.
 func globalArgs() []string {
@@ -1513,7 +1513,7 @@ func globalArgs() []string {
 }
 
 // enterDefaultRepo changes into `default_repo` when the working
-// directory isn't inside a git repo, so pr-owl can be launched from
+// directory isn't inside a git repo, so owl can be launched from
 // anywhere (a hotkey, a popup) and still act on the configured repo.
 func enterDefaultRepo(defaultRepo string) error {
 	if defaultRepo == "" || exec.Command("git", "rev-parse", "--git-dir").Run() == nil {
@@ -1535,10 +1535,10 @@ func exitOn(err error) {
 	// the failure goes to the multiplexer the popup was in — before
 	// stderr, which may be a broken pipe by now and would end the
 	// process.
-	if mx, ok := windowsByKind(os.Getenv("PR_OWL_MUX")); ok {
+	if mx, ok := windowsByKind(os.Getenv("OWL_MUX")); ok {
 		mx.Notify(err.Error())
 	}
-	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
+	fmt.Fprintf(os.Stderr, "owl: %v\n", err)
 	var ue usageError
 	var nothing nothingToCloseError
 	switch {

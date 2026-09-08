@@ -1,4 +1,4 @@
-// `pr-owl close [--force] [<N>]`: remove PR N's worktree and branches,
+// `owl close [--force] [<N>]`: remove PR N's worktree and branches,
 // then close its window in the multiplexer. The container of review
 // windows and the agent's conversation on disk both survive — `open`
 // resumes it. Uncommitted changes to tracked files stop it unless
@@ -56,7 +56,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	window := findWindow(mx, n)
 	repo, err := mainRepo(".")
 	if err != nil {
-		return fmt.Errorf("close: not inside a git repository (default_repo makes pr-owl work from anywhere)")
+		return fmt.Errorf("close: not inside a git repository (default_repo makes owl work from anywhere)")
 	}
 	unlock, err := lockPR(repo, n)
 	if err != nil {

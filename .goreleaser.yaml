@@ -2,7 +2,7 @@
 # runs on a v* tag (.github/workflows/release.yml).
 version: 2
 
-project_name: pr-owl
+project_name: owl
 
 before:
   hooks:
@@ -10,7 +10,7 @@ before:
 
 builds:
   - main: .
-    binary: pr-owl
+    binary: owl
     env: [CGO_ENABLED=0]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
@@ -30,19 +30,19 @@ changelog:
   filters:
     exclude: ["^test:", "^ci:", "^build:", "^style:"]
 
-# Homebrew cask in stefanahman/homebrew-tap: `brew install --cask stefanahman/tap/pr-owl`.
+# Homebrew cask in stefanahman/homebrew-tap: `brew install --cask stefanahman/tap/owl`.
 # Casks (not formulas) are what goreleaser recommends for prebuilt binaries;
 # the binaries are unsigned, so the hook strips the quarantine attribute.
 homebrew_casks:
-  - name: pr-owl
+  - name: owl
     repository:
       owner: stefanahman
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    homepage: https://github.com/stefanahman/pr-owl
+    homepage: https://github.com/stefanahman/owl
     description: "TUI of the PRs waiting for your review; one key opens each as a git worktree and a window in tmux, herdr or cmux with Claude Code reviewing inside"
     license: MIT
-    binaries: [pr-owl]
+    binaries: [owl]
     dependencies:
       - formula: gh
       - formula: tmux
@@ -50,5 +50,5 @@ homebrew_casks:
       post:
         install: |
           if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pr-owl"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/owl"]
           end

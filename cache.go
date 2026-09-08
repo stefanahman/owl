@@ -2,8 +2,8 @@
 // startup so the popup shows something within milliseconds instead of
 // waiting on gh (~1-2s). Overwritten atomically whenever prsMsg lands.
 //
-// Cache location: $XDG_CACHE_HOME/pr-owl/<owner>-<name>.json (falls
-// back to ~/.cache/pr-owl/…). One file per repo — different repos
+// Cache location: $XDG_CACHE_HOME/owl/<owner>-<name>.json (falls
+// back to ~/.cache/owl/…). One file per repo — different repos
 // don't stomp on each other.
 //
 // Freshness is user-visible via the "updated Xm ago" indicator in
@@ -45,7 +45,7 @@ func cachePath(repo string) string {
 		base = filepath.Join(home, ".cache")
 	}
 	safe := strings.ReplaceAll(repo, "/", "-")
-	return filepath.Join(base, "pr-owl", safe+".json")
+	return filepath.Join(base, "owl", safe+".json")
 }
 
 // loadCache reads and parses the cache file for the given repo. Any
@@ -83,7 +83,7 @@ func saveCache(repo string, c cacheFile) {
 	if err != nil {
 		return
 	}
-	// A unique temp file: two pr-owl instances writing at once must not
+	// A unique temp file: two owl instances writing at once must not
 	// rename each other's half-written file into place.
 	f, err := os.CreateTemp(filepath.Dir(p), ".cache-*")
 	if err != nil {

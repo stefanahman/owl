@@ -94,7 +94,7 @@ func gitCommonDir(dir string) (string, error) {
 }
 
 // lockPR serialises open, start and close on one PR across processes:
-// a key pressed twice before the TUI registered the first, two pr-owl
+// a key pressed twice before the TUI registered the first, two owl
 // instances, a shell command during a TUI open — each would create the
 // worktree; with the lock the second waits, then finds it. The lock
 // file lives in the repository's git dir, the scope of its worktrees.
@@ -103,7 +103,7 @@ func lockPR(repo string, n int) (unlock func(), err error) {
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(common, "pr-owl")
+	dir := filepath.Join(common, "owl")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
