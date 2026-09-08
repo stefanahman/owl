@@ -702,6 +702,12 @@ func TestStartStaysInTheList(t *testing.T) {
 		t.Error("the spinner outlived the child")
 	}
 
+	// The overlay follows Claude's state on its own: a tick refetches
+	// it and schedules the next.
+	if _, cmd := m.Update(localTickMsg{}); cmd == nil {
+		t.Error("a local tick should refetch and reschedule")
+	}
+
 	// f is the same kind of key: it stays in the list too.
 	m.localState = map[string]LocalState{"pr-3543-feat": {Session: "pr-3543-feat"}}
 	fed, cmd := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})

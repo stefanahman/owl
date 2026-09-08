@@ -53,6 +53,18 @@ type mergedMsg struct {
 }
 type userMsg string // authenticated user login
 
+// localTickMsg asks for the local overlay again. Claude's state is a
+// tmux window option written by hooks as Claude works; following it
+// every two seconds — a status bar's cadence — lets a © change colour
+// as Claude starts, gets blocked or finishes, without a key press.
+type localTickMsg struct{}
+
+const localRefreshEvery = 2 * time.Second
+
+func localTick() tea.Cmd {
+	return tea.Tick(localRefreshEvery, func(time.Time) tea.Msg { return localTickMsg{} })
+}
+
 // errMsg is a failed fetch: the list is stale (or, with nothing to
 // show yet, absent) until a fetch succeeds.
 type errMsg struct {
@@ -329,6 +341,7 @@ func (m model) Init() tea.Cmd {
 	}
 	return tea.Batch(
 		m.fetchPRs, m.fetchLocal, m.fetchMerged, fetchUser,
+		localTick(),
 		m.spinner.Tick,
 		textinput.Blink,
 		tea.RequestBackgroundColor,
@@ -581,6 +594,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.localState = map[string]LocalState(msg)
 		m.refreshList()
 		// LocalState is derived from tmux/git — cheap to refetch, not cached.
+
+	case localTickMsg:
+		cmds = append(cmds, m.fetchLocal, localTick())
 
 	case userMsg:
 		m.me = string(msg)

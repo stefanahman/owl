@@ -28,7 +28,8 @@ Merged (last 1d)
   merged without your review doesn't vanish unseen.
 - `⎇` a worktree exists for it, `©` a Claude session is running in its
   tmux window — coloured by what Claude is doing (working / blocked on
-  you / done, with `*` until you look) — `✓` you approved, `·` you
+  you / done, with `*` until you look), followed every two seconds —
+  `✓` you approved, `·` you
   engaged (both amber when the author pushed after that review), `⚠`
   someone requested changes.
 - The list comes back as you left it: the last fetch from a per-repo
