@@ -36,6 +36,14 @@ type Config struct {
 	Theme        ThemeConfig  `yaml:"theme"`
 	Keys         KeysConfig   `yaml:"keys"`
 	Links        []LinkConfig `yaml:"links"`
+	Linear       LinearConfig `yaml:"linear"`
+}
+
+// LinearConfig is the issue tracker: the key, as a reference, and the
+// team new issues go to.
+type LinearConfig struct {
+	Token string `yaml:"token"`
+	Team  string `yaml:"team"`
 }
 
 type TmuxConfig struct {
@@ -278,6 +286,10 @@ keys:                            # one key name or a list; names as bubbletea sp
   refresh: r
   help: "?"
   quit: [q, ctrl+c]
+
+linear:                          # the issue tracker behind ` + "`owl issue`" + `
+  token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; $VAR reads the environment
+  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues
 
 # links: extra keys, each opening a URL built from the selected PR (via open_cmd).
 # Placeholders: {pr} number, {repo} owner/name, {branch} head branch, {url} the PR's page,
