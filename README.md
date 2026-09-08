@@ -255,6 +255,7 @@ access), which the config holds as a *reference*, never as a value:
 ```yaml
 linear:
   token: op://Work/Linear API key/credential
+  account: work.1password.com   # when more than one account is signed in
   team: BAR
 ```
 
@@ -264,8 +265,10 @@ needed — owl says why before the prompt appears — and kept in
 token on a machine without a keyring: one approval per machine, none
 per start. A key Linear refuses is forgotten and read again, once.
 Delete the file to force that by hand. owl refuses a cache file that
-others can read. `$VAR` reads the environment instead; anything else
-is taken as the key itself.
+others can read. The other forms: `file://~/.config/owl/linear.token`
+reads a file of yours (mode 600, or it is refused), `$VAR` reads the
+environment, and anything else is taken as the key itself — fine for a
+throwaway key, and the one form that puts a secret in the config.
 
 ## Configuration
 
@@ -315,7 +318,8 @@ keys:                            # rebind any action: a key name or a list
   quit: [q, ctrl+c]
 
 linear:                          # the issue tracker behind `owl issue`
-  token: ""                      # op://<vault>/<item>/<field>, $VAR, or the key; see Issues
+  token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key; see Issues
+  account: ""                    # the 1Password account the item is in, when several are signed in
   team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues
 
 links:                           # your own keys, each opening a URL built from the PR
