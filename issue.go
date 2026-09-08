@@ -16,7 +16,7 @@ import (
 func runIssue(cfg Config, args []string, out io.Writer) error {
 	tracker := newTracker(cfg, func(text string) {
 		fmt.Fprintln(os.Stderr, text)
-		newWindows(cfg, reviews).Notify(text)
+		newWindows(cfg, features).Notify(text)
 	})
 	if len(args) == 0 {
 		return listIssues(tracker, out)
@@ -24,6 +24,12 @@ func runIssue(cfg Config, args []string, out io.Writer) error {
 	switch args[0] {
 	case "new":
 		return hoot(tracker, args[1:], out)
+	case "open":
+		return runIssueOpen(cfg, tracker, args[1:], out, true)
+	case "start":
+		return runIssueOpen(cfg, tracker, args[1:], out, false)
+	case "close":
+		return runIssueClose(cfg, args[1:], out)
 	}
 	return usageError("issue: unknown command " + args[0])
 }

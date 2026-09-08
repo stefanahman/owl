@@ -1,7 +1,9 @@
-// A review workspace is three things named identically, `pr-<N>` or
-// `pr-<N>-<slug>`: a git worktree under <repo>/<worktrees_dir>, the
-// branch checked out in it, and a window in the multiplexer (mux.go).
-// This file holds what `open`, `close` and the TUI overlay share.
+// A workspace is three things named identically: a git worktree under
+// <repo>/<worktrees_dir>, the branch checked out in it, and a window
+// in the multiplexer (mux.go). A review's is `pr-<N>` or
+// `pr-<N>-<slug>`; a feature's is the branch Linear names for the
+// issue, `<team>-<n>-<slug>`. This file holds what `open`, `close` and
+// the TUI overlay share.
 package main
 
 import (
@@ -34,6 +36,43 @@ func prNumberOf(name string) int {
 	}
 	n, _ := strconv.Atoi(m[1])
 	return n
+}
+
+// issueHandleRe matches a feature's workspace name: the branch Linear
+// names for an issue, `<team>-<n>` followed by a slug, in either case.
+var issueHandleRe = regexp.MustCompile(`^([A-Za-z]+-[0-9]+)(-.*)?$`)
+
+// issueKeyOf extracts the issue key from a feature's workspace name
+// (bar-4159-company-fuzzy-match → BAR-4159), or "" — a review's
+// pr-<N> name is never an issue's.
+func issueKeyOf(name string) string {
+	if prHandleRe.MatchString(name) {
+		return ""
+	}
+	m := issueHandleRe.FindStringSubmatch(name)
+	if m == nil {
+		return ""
+	}
+	return strings.ToUpper(m[1])
+}
+
+// matchesIssue reports whether name is the workspace name for the
+// issue with key (BAR-4159).
+func matchesIssue(name, key string) bool {
+	return issueKeyOf(name) == strings.ToUpper(key)
+}
+
+// issueKeyRe is the shape of an issue key: a team's letters, a dash,
+// a number.
+var issueKeyRe = regexp.MustCompile(`^[A-Za-z]+-[0-9]+$`)
+
+// parseIssueKey validates a positional issue argument and normalises
+// its case.
+func parseIssueKey(s string) (string, error) {
+	if !issueKeyRe.MatchString(s) {
+		return "", usageError(fmt.Sprintf("issue key must look like BAR-123, got %q", s))
+	}
+	return strings.ToUpper(s), nil
 }
 
 // parsePRNumber validates a positional PR argument.
@@ -129,16 +168,21 @@ type worktree struct {
 }
 
 // handle returns the workspace name a worktree is known by: its
-// directory name when that follows the convention, else its branch
-// when that does, else "" (not a review workspace).
+// directory name when that follows a convention, else its branch when
+// that does, else "" (not one of owl's workspaces).
 func (w worktree) handle() string {
-	if base := filepath.Base(w.Path); prHandleRe.MatchString(base) {
+	if base := filepath.Base(w.Path); isWorkspaceName(base) {
 		return base
 	}
-	if prHandleRe.MatchString(w.Branch) {
+	if isWorkspaceName(w.Branch) {
 		return w.Branch
 	}
 	return ""
+}
+
+// isWorkspaceName reports whether a name is a review's or a feature's.
+func isWorkspaceName(name string) bool {
+	return prHandleRe.MatchString(name) || issueKeyOf(name) != ""
 }
 
 // listWorktrees parses `git worktree list --porcelain` for the repo

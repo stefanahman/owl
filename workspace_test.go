@@ -173,8 +173,12 @@ func tmux(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func (f *fixture) activeWindow() string {
-	out, err := tmux("list-windows", "-t", mux.TmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_active} #{window_name}")
+func (f *fixture) activeWindow() string { return f.activeWindowIn(f.cfg.Tmux.Session) }
+
+// activeWindowIn is the session's current window. (display-message -t
+// <session> prints nothing without a client, so ask list-windows.)
+func (f *fixture) activeWindowIn(session string) string {
+	out, err := tmux("list-windows", "-t", mux.TmuxTarget(session, ""), "-F", "#{window_active} #{window_name}")
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -191,7 +195,13 @@ func (f *fixture) activeWindow() string {
 // in it) the typed command spans two screen lines.
 func (f *fixture) waitPane(window, want string) string {
 	f.t.Helper()
-	target := mux.TmuxTarget(f.cfg.Tmux.Session, window)
+	return f.waitPaneIn(f.cfg.Tmux.Session, window, want)
+}
+
+// waitPaneIn is waitPane for a window of any session.
+func (f *fixture) waitPaneIn(session, window, want string) string {
+	f.t.Helper()
+	target := mux.TmuxTarget(session, window)
 	var screen string
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		screen, _ = tmux("capture-pane", "-p", "-J", "-t", target)

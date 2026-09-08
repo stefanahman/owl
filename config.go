@@ -37,6 +37,14 @@ type Config struct {
 	Keys         KeysConfig   `yaml:"keys"`
 	Links        []LinkConfig `yaml:"links"`
 	Linear       LinearConfig `yaml:"linear"`
+	Issue        IssueConfig  `yaml:"issue"`
+}
+
+// IssueConfig is the feature side: where feature windows live under
+// tmux, and the agent's first prompt on an issue.
+type IssueConfig struct {
+	Session string `yaml:"session"`
+	Prompt  string `yaml:"prompt"`
 }
 
 // LinearConfig is the issue tracker: the key, as a reference, and the
@@ -256,6 +264,10 @@ agent:
     - .claude/*.local.md
     - .claude/skills/*.local
 
+issue:
+  session: features              # tmux: one window per feature lives here; herdr and cmux need no container
+  prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (BAR-123)
+
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for owl in a tmux window; under herdr the focus has already moved)
 
@@ -309,6 +321,7 @@ func defaultConfig() Config {
 	c.Mux = "auto"
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
+	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
 		Cmd:    "claude --permission-mode auto",
@@ -424,6 +437,9 @@ func (cfg *Config) validate() error {
 	case "auto", "tmux", "herdr", "cmux":
 	default:
 		return fmt.Errorf("mux must be auto, tmux, herdr or cmux, got %q", cfg.Mux)
+	}
+	if cfg.Issue.Session == "" {
+		return errors.New("issue.session must name the tmux session for features")
 	}
 	for k := range cfg.Hooks.AfterOpen {
 		switch k {

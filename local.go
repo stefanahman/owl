@@ -23,12 +23,16 @@ type LocalState struct {
 // localMsg carries a snapshot of local state keyed by PR handle.
 type localMsg map[string]LocalState
 
-// fetchLocal reads worktrees + the multiplexer's review windows and
-// merges them into a per-PR map. Failures in either source degrade
-// gracefully — you get whatever partial data was available.
-func (m model) fetchLocal() tea.Msg {
+// fetchLocal reads worktrees + the multiplexer's windows of the
+// list's scope and merges them into a per-workspace map. Failures in
+// either source degrade gracefully — you get whatever partial data was
+// available.
+func (m model) fetchLocal() tea.Msg { return m.fetchLocalIn(reviews) }
+
+// fetchLocalIn is fetchLocal for one scope.
+func (m model) fetchLocalIn(sc scope) tea.Msg {
 	worktrees := readWorktrees()
-	windows := newWindows(m.cfg, reviews).States()
+	windows := newWindows(m.cfg, sc).States()
 
 	out := make(map[string]LocalState)
 	for handle, wtPath := range worktrees {

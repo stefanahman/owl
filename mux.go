@@ -32,6 +32,15 @@ var reviews = scope{
 	owns:    func(w string) bool { return prNumberOf(w) > 0 },
 }
 
+// features is the scope of issues being worked on: windows named
+// after the branch Linear names, <team>-<n>-<slug>, in the tmux
+// session issue.session.
+var features = scope{
+	name:    "features",
+	session: func(cfg Config) string { return cfg.Issue.Session },
+	owns:    func(w string) bool { return issueKeyOf(w) != "" },
+}
+
 // windows is one scope's windows in a multiplexer, and nothing else
 // the user keeps there.
 type windows struct {

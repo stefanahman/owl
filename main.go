@@ -1410,6 +1410,9 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
        owl issue                        the issues assigned to you, from Linear
+       owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
+       owl issue start <KEY> [--prompt TEXT] the same without going there
+       owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
        owl issue new <title…>           file an issue in linear.team, assigned to you
        owl hoot <title…>                the same, from the owl
        owl config init | path
@@ -1446,7 +1449,15 @@ func main() {
 					exitOn(usageError("pr: unknown command " + args[0]))
 				}
 			}
-		case "issue", "hoot":
+		case "issue":
+			if len(args) > 1 {
+				switch args[1] {
+				case "open", "start", "close", "new":
+				default:
+					exitOn(usageError("issue: unknown command " + args[1]))
+				}
+			}
+		case "hoot":
 		case "open", "start", "close":
 			exitOn(usageError(args[0] + " is a pr command: owl pr " + args[0]))
 		default:

@@ -366,6 +366,14 @@ func (m model) fetchMerged() tea.Msg {
 	return mergedMsg{gen, prs}
 }
 
+// ghIn is a gh command run in dir, for the calls that depend on the
+// working directory's remotes.
+func ghIn(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("gh", args...)
+	cmd.Dir = dir
+	return cmd
+}
+
 // ghPRList runs `gh pr list` against an explicit repo — gh's own
 // current-repo guess fails when a clone has several remotes.
 func ghPRList(repo, state, search string) ([]PR, error) {

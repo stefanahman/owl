@@ -48,14 +48,16 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted"),
 		}}}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
-		key, _ := req.Variables["id"].(string)
-		if key != "BAR-4159" {
-			data = nil
+		switch key, _ := req.Variables["id"].(string); key {
+		case "BAR-4159":
+			data = map[string]any{"issue": issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}
+		case "BAR-4160":
+			data = map[string]any{"issue": issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}
+		default:
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, `{"errors":[{"message":"Entity not found: Issue - Could not find referenced Issue.","extensions":{"code":"INVALID_INPUT"}}]}`)
 			return
 		}
-		data = map[string]any{"issue": issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}
 	case strings.Contains(req.Query, "teams(filter"):
 		key, _ := req.Variables["key"].(string)
 		nodes := []any{}
