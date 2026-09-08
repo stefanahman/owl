@@ -99,22 +99,41 @@ Three companions, each optional:
 
 Reviews live in a terminal multiplexer: one window per PR, the agent
 typed into it, its state read back for the `©` badge. `mux: auto` picks
-herdr when pr-owl runs inside it (`HERDR_ENV=1`) and tmux otherwise;
-`tmux` or `herdr` forces one.
+herdr when pr-owl runs inside it (`HERDR_ENV=1`), cmux inside cmux
+(`CMUX_WORKSPACE_ID`) and tmux otherwise; `tmux`, `herdr` or `cmux`
+forces one.
 
-| | tmux | herdr |
-|---|---|---|
-| a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree |
-| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same in both: finished, not yet looked at |
-| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux |
-| Enter arrives | `select-window`, then your hook | `workspace focus`; the attached client follows (one client verified; herdr lets each client view its own workspace) |
-| a failure after the popup closed | tmux's status line | a herdr notification |
-| `hooks.after_open` sees | `PR_OWL_SESSION` = the session, `PR_OWL_WINDOW` = the window | `PR_OWL_SESSION` = the herdr session, `PR_OWL_WINDOW` = the label |
+| | tmux | herdr | cmux |
+|---|---|---|---|
+| a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree | a workspace named `pr-<N>-<slug>`, cwd the worktree |
+| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same everywhere: finished, not yet looked at | cmux's Claude Code hooks, through the wrapper it puts on the shell's PATH: `running`, `needsInput`, `idle`. `done` is idle with cmux's notification about the turn unread; Enter in pr-owl marks it read |
+| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux | refused from the hook state; an agent the wrapper never saw shows no state and gets the text typed |
+| Enter arrives | `select-window`, then your hook | `workspace focus`; the attached client follows (one client verified; herdr lets each client view its own workspace) | `workspace select`, and `focus-window` when pr-owl runs outside cmux |
+| a failure after the popup closed | tmux's status line | a herdr notification | a cmux notification, on pr-owl's own workspace |
+| `hooks.after_open` sees | `PR_OWL_SESSION` = the session, `PR_OWL_WINDOW` = the window | `PR_OWL_SESSION` = the herdr session, `PR_OWL_WINDOW` = the label | `PR_OWL_WINDOW` = the name; cmux has no session |
 
 `PR_OWL_MUX` names the one in use, for hooks that only make sense with
 one of them. Under herdr, run `pr-owl` in a pane of the session your
 reviews should join; from outside, `herdr.socket` says which server,
 and `PR_OWL_SESSION` is the session's name as read from that path.
+
+Under cmux, run `pr-owl` in a cmux terminal: cmux's socket admits only
+processes started inside it, unless cmux itself was started with
+`CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
+integration (`automation.claudeCodeIntegration` in
+`~/.config/cmux/cmux.json`). cmux 0.64.22 gives its terminals
+`CMUX_WORKSPACE_ID` but not the `CMUX_SURFACE_ID` its wrapper checks
+before injecting the hooks, so when pr-owl's own terminal lacks the
+variable it types the start line as `CMUX_SURFACE_ID=<id> claude …`;
+a cmux that sets it gets the line as it is.
+
+**Not every agent tool is a backend.** The interface asks for a window
+to type into, a state to read back, a way to focus that window and a
+way to notify. [Paseo](https://paseo.sh) has terminals but exposes
+none of the last three for them, and its agents are headless sessions
+with no terminal to type into. It would fit as a different kind of
+backend, one handed the agent and the prompt rather than a shell line;
+that change waits for a backend that needs it.
 
 ## Keys
 
@@ -173,7 +192,7 @@ respected). `pr-owl config init` writes the annotated template; every
 key is optional.
 
 ```yaml
-mux: auto                        # tmux, herdr, or auto: herdr when pr-owl runs inside it, else tmux
+mux: auto                        # tmux, herdr, cmux, or auto: herdr or cmux when pr-owl runs inside one, else tmux
 
 tmux:
   session: pr-reviews            # one window per review lives here
