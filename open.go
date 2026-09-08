@@ -1,8 +1,8 @@
-// `owl open <N> [--prompt TEXT]`: make sure PR N has a worktree and
+// `owl pr open <N> [--prompt TEXT]`: make sure PR N has a worktree and
 // a window in the multiplexer running the agent, select that window,
 // and run the after_open hook. Idempotent — re-running selects the
 // existing window and, with --prompt, hands the prompt to the running agent.
-// `owl start <N>` is the same without going there: no window
+// `owl pr start <N>` is the same without going there: no window
 // selection, no hook — for starting several reviews from the list.
 package main
 
@@ -106,22 +106,22 @@ func parseOpenArgs(args []string) (n int, prompt string, err error) {
 		switch a := args[i]; {
 		case a == "--prompt":
 			if i+1 == len(args) {
-				return 0, "", usageError("open: --prompt needs a value")
+				return 0, "", usageError("pr open: --prompt needs a value")
 			}
 			prompt = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--prompt="):
 			prompt = strings.TrimPrefix(a, "--prompt=")
 		case strings.HasPrefix(a, "-"):
-			return 0, "", usageError("open: unknown flag " + a)
+			return 0, "", usageError("pr open: unknown flag " + a)
 		case num == "":
 			num = a
 		default:
-			return 0, "", usageError("open: unexpected argument " + a)
+			return 0, "", usageError("pr open: unexpected argument " + a)
 		}
 	}
 	if num == "" {
-		return 0, "", usageError("open: PR number required")
+		return 0, "", usageError("pr open: PR number required")
 	}
 	n, err = parsePRNumber(num)
 	return n, prompt, err

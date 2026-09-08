@@ -54,7 +54,7 @@ func (m model) fetchLocal() tea.Msg {
 // by handle (directory name `pr-<N>[-<slug>]`, or the branch as a
 // fallback — see worktree.handle).
 //
-// Path-based keying is primary because `owl open` names its
+// Path-based keying is primary because `owl pr open` names its
 // worktrees `<repo>/<worktrees_dir>/pr-<N>-<slug>` and they often end
 // up in detached HEAD (no `branch refs/heads/…` line to parse). Once
 // checked out detached, branch-only matching drops them entirely — a

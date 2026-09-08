@@ -1,4 +1,4 @@
-// `owl close [--force] [<N>]`: remove PR N's worktree and branches,
+// `owl pr close [--force] [<N>]`: remove PR N's worktree and branches,
 // then close its window in the multiplexer. The container of review
 // windows and the agent's conversation on disk both survive — `open`
 // resumes it. Uncommitted changes to tracked files stop it unless
@@ -39,7 +39,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 		}
 	}
 	if len(rest) > 1 {
-		return usageError("close: expected at most one PR number")
+		return usageError("pr close: expected at most one PR number")
 	}
 	mx := newWindows(cfg)
 	var n int
@@ -56,7 +56,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	window := findWindow(mx, n)
 	repo, err := mainRepo(".")
 	if err != nil {
-		return fmt.Errorf("close: not inside a git repository (default_repo makes owl work from anywhere)")
+		return fmt.Errorf("pr close: not inside a git repository (default_repo makes owl work from anywhere)")
 	}
 	unlock, err := lockPR(repo, n)
 	if err != nil {
@@ -140,7 +140,7 @@ func inferPR(mx windows, worktreesDir string) (int, error) {
 			return n, nil
 		}
 	}
-	return 0, usageError("close: PR number required (or run it from inside a pr-<N> worktree or window)")
+	return 0, usageError("pr close: PR number required (or run it from inside a pr-<N> worktree or window)")
 }
 
 // findReviewWorktree returns the registered worktree for PR n under

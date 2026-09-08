@@ -251,7 +251,7 @@ open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for owl in a tmux window; under herdr the focus has already moved)
 
 hooks:
-  after_open: ""                 # command run after ` + "`owl open`" + ` with OWL_PR, OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
+  after_open: ""                 # command run after ` + "`owl pr open`" + ` with OWL_PR, OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
                                  # A mapping gives one per multiplexer, e.g. {tmux: spaces focus pr-reviews}: none under herdr and cmux, where the window is already in front
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb

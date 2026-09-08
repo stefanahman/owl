@@ -29,7 +29,7 @@ func newTestModel(t *testing.T) *teatest.TestModel {
 // testModel is a model that never touches the machine: built by
 // newModel (no git, no cache read), no Init fetches, the cache written
 // to a throwaway directory, and a runSelf that blocks until the test
-// ends instead of executing the test binary as `owl open`.
+// ends instead of executing the test binary as `owl pr open`.
 func testModel(t *testing.T) model {
 	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())

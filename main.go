@@ -78,7 +78,7 @@ func (e errMsg) Error() string { return e.err.Error() }
 // next key press. It never replaces the list.
 type noticeMsg struct{ err error }
 
-// openedMsg / closedMsg report the end of a `owl open` / `close`
+// openedMsg / closedMsg report the end of a `owl pr open` / `close`
 // child for a PR: nil, or its failure with the child's stderr.
 type openedMsg struct {
 	pr  int
@@ -306,7 +306,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	m := model{
 		cfg: cfg,
 		runSelf: func(args ...string) error {
-			return runChild(newWindows(cfg).ChildEnv(), append(globalArgs(), args...)...)
+			return runChild(newWindows(cfg).ChildEnv(), append(append(globalArgs(), "pr"), args...)...)
 		},
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
@@ -365,7 +365,7 @@ func (m model) persistCache() {
 	})
 }
 
-// openReview runs `owl open <N> [--prompt TEXT]` and reports when
+// openReview runs `owl pr open <N> [--prompt TEXT]` and reports when
 // it ends. The child gets its own session (Setsid): owl usually
 // runs inside a tmux popup, and with on_open: quit the popup closes
 // the moment the child starts — it must finish on its own, and it
@@ -380,7 +380,7 @@ func (m model) openReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
-// startReview runs `owl start <N> [--prompt TEXT]`: the workspace
+// startReview runs `owl pr start <N> [--prompt TEXT]`: the workspace
 // comes up, or gets the prompt, and the list stays — for starting
 // several reviews one after another, and for f.
 func (m model) startReview(prNumber int, prompt string) tea.Cmd {
@@ -393,7 +393,7 @@ func (m model) startReview(prNumber int, prompt string) tea.Cmd {
 	}
 }
 
-// closeReview runs `owl close <N>`; the TUI refreshes its overlay
+// closeReview runs `owl pr close <N>`; the TUI refreshes its overlay
 // when it succeeds. The agent's conversation survives on disk, so
 // Enter / f afterwards resume it.
 func (m model) closeReview(prNumber int) tea.Cmd {
@@ -433,7 +433,7 @@ func runChild(env []string, args ...string) error {
 	if err != nil {
 		return fmt.Errorf("locate owl binary: %w", err)
 	}
-	// A test binary would run its whole suite as `owl open`, and that
+	// A test binary would run its whole suite as `owl pr open`, and that
 	// suite would do it again. Tests inject runSelf; this catches the
 	// one that forgets.
 	if strings.HasSuffix(self, ".test") {
@@ -1403,11 +1403,12 @@ func versionString() string {
 	return "dev"
 }
 
-const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [command]
-       owl                          PR overview TUI (run inside a git repo)
-       owl open <N> [--prompt TEXT]   open (or focus) the review of PR N
-       owl start <N> [--prompt TEXT]  the same without going there: no window selection, no after_open
-       owl close [--force] [<N>]      remove PR N's worktree, branch and window; --force discards uncommitted changes
+const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]
+       owl                              the PR list (run inside a git repo, or with default_repo set)
+       owl pr                           the PR list
+       owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
+       owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
+       owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
        owl config init | path
        owl --version`
 
@@ -1420,6 +1421,8 @@ func (e usageError) Error() string { return string(e) }
 func main() {
 	args, err := globalOptions(os.Args[1:])
 	exitOn(err)
+	// The noun is the scope: `pr` for now, `issue` to come. A verb
+	// without one is refused with the form it takes.
 	if len(args) > 0 {
 		switch args[0] {
 		case "config":
@@ -1431,7 +1434,17 @@ func main() {
 		case "--help", "-h", "help":
 			fmt.Println(usage)
 			return
+		case "pr":
+			args = args[1:]
+			if len(args) > 0 {
+				switch args[0] {
+				case "open", "start", "close":
+				default:
+					exitOn(usageError("pr: unknown command " + args[0]))
+				}
+			}
 		case "open", "start", "close":
+			exitOn(usageError(args[0] + " is a pr command: owl pr " + args[0]))
 		default:
 			exitOn(usageError("unknown command " + args[0]))
 		}
