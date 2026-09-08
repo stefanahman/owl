@@ -1,0 +1,186 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/stefanahman/mux"
+	"github.com/stefanahman/mux/muxtest"
+)
+
+// TestMain lets the test binary stand in for the cmux CLI (see
+// muxtest.FakeCmuxMain).
+func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == "cmux" {
+		os.Exit(muxtest.FakeCmuxMain(os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Herdr.Socket = "/x/herdr.sock"
+	t.Setenv("HERDR_ENV", "")
+	t.Setenv("CMUX_WORKSPACE_ID", "")
+	if k := newWindows(cfg).Kind(); k != "tmux" {
+		t.Errorf("auto outside everything should be tmux, got %s", k)
+	}
+	t.Setenv("HERDR_ENV", "1")
+	if k := newWindows(cfg).Kind(); k != "herdr" {
+		t.Errorf("auto inside herdr should be herdr, got %s", k)
+	}
+	t.Setenv("HERDR_ENV", "")
+	t.Setenv("CMUX_WORKSPACE_ID", "W1")
+	if k := newWindows(cfg).Kind(); k != "cmux" {
+		t.Errorf("auto inside cmux should be cmux, got %s", k)
+	}
+	cfg.Mux = "tmux"
+	if k := newWindows(cfg).Kind(); k != "tmux" {
+		t.Errorf("mux: tmux should win over the environment, got %s", k)
+	}
+	t.Setenv("CMUX_WORKSPACE_ID", "")
+	cfg.Mux = "herdr"
+	if h, ok := newWindows(cfg).d.(mux.Herdr); !ok || h.Socket != "/x/herdr.sock" {
+		t.Errorf("mux: herdr should use the configured socket, got %#v", newWindows(cfg).d)
+	}
+	for _, k := range []string{"tmux", "herdr", "cmux"} {
+		if w, ok := windowsByKind(k); !ok || w.Kind() != k {
+			t.Errorf("windowsByKind(%s) = %v, %v", k, w, ok)
+		}
+	}
+	if _, ok := windowsByKind(""); ok {
+		t.Error("windowsByKind should know nothing else")
+	}
+	if got := (windows{mux.Tmux{SessionName: "s"}}).ChildEnv(); !reflect.DeepEqual(got, []string{"PR_OWL_MUX=tmux"}) {
+		t.Errorf("ChildEnv = %v", got)
+	}
+}
+
+// The whole open/prompt/close flow on herdr: real git worktrees, the
+// fake server in the multiplexer's seat, no tmux involved.
+func TestOpenAndCloseOnHerdr(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	fake := muxtest.NewFakeHerdr(t)
+	f.cfg.Mux = "herdr"
+	f.cfg.Herdr.Socket = fake.Socket()
+	t.Setenv("HERDR_ENV", "")
+	t.Setenv("HERDR_WORKSPACE_ID", "")
+	t.Setenv("HERDR_SESSION", "work")
+	hookOut := filepath.Join(f.root, "hook.out")
+	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut
+
+	name := "pr-42-fix-crash-on-startup"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	out := f.open("42")
+	if !strings.Contains(out, "started "+name+"\n") || strings.Contains(out, "attach with") {
+		t.Errorf("output: %q", out)
+	}
+	if !f.exists(filepath.Join(wt, "pr42.txt")) {
+		t.Fatalf("worktree %s missing the PR's file", wt)
+	}
+	w := fake.Workspace(name)
+	if w == nil || w.Cwd != wt || w.Focus {
+		t.Fatalf("workspace = %+v, want cwd %s, created without focus", w, wt)
+	}
+	if fake.Focused() != w.ID {
+		t.Errorf("arriving should have focused the workspace, focused = %q", fake.Focused())
+	}
+	if got, want := fake.Typed(w.Pane()), []string{"true '/pr-review:pr-review 42'<enter>"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("typed %v, want %v", got, want)
+	}
+	f.waitFile(hookOut, "herdr|work|"+name+"\n")
+
+	// The agent has exited (zsh in the foreground): a prompt restarts it.
+	if out := f.open("42", "--prompt", "again"); !strings.Contains(out, "restarted agent in "+name) {
+		t.Errorf("output: %q", out)
+	}
+	fake.SetForeground(w.Pane(), "claude")
+	if out := f.open("42", "--prompt", "early"); !strings.Contains(out, "sent prompt to "+name) {
+		t.Errorf("output: %q", out)
+	}
+	if got := fake.Typed(w.Pane()); got[len(got)-1] != "early<enter>" {
+		t.Errorf("last typed %q, want the prompt typed while herdr has not detected the agent", got[len(got)-1])
+	}
+	fake.SetAgent(w.Pane(), "claude")
+	if out := f.open("42", "--prompt", "look"); !strings.Contains(out, "sent prompt to "+name) {
+		t.Errorf("output: %q", out)
+	}
+	if got := fake.Typed(w.Pane()); got[len(got)-1] != "prompt:look" {
+		t.Errorf("last typed %q, want the prompt through agent.prompt", got[len(got)-1])
+	}
+	fake.SetStatus(name, "blocked")
+	var buf strings.Builder
+	if err := runOpen(f.cfg, []string{"42", "--prompt", "x"}, &buf, true); err == nil || !strings.Contains(err.Error(), "waiting for you in "+name) {
+		t.Errorf("prompt while blocked: err = %v", err)
+	}
+
+	buf.Reset()
+	if err := runClose(f.cfg, []string{"--force", "42"}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "closed window "+name) || fake.Workspace(name) != nil || f.exists(wt) {
+		t.Errorf("close: %q; workspace gone: %v; worktree gone: %v", buf.String(), fake.Workspace(name) == nil, !f.exists(wt))
+	}
+}
+
+// The same flow on cmux: the fake CLI in the multiplexer's seat.
+func TestOpenAndCloseOnCmux(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	fake := muxtest.InstallFakeCmux(t)
+	f.cfg.Mux = "cmux"
+	hookOut := filepath.Join(f.root, "hook.out")
+	f.cfg.Hooks.AfterOpen = `echo "$PR_OWL_MUX|$PR_OWL_SESSION|$PR_OWL_WINDOW" > ` + hookOut
+
+	name := "pr-42-fix-crash-on-startup"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	out := f.open("42")
+	if !strings.Contains(out, "started "+name+"\n") || strings.Contains(out, "attach with") {
+		t.Errorf("output: %q", out)
+	}
+	if !f.exists(filepath.Join(wt, "pr42.txt")) {
+		t.Fatalf("worktree %s missing the PR's file", wt)
+	}
+	w, ok := fake.Workspace(name)
+	if !ok || w.Cwd != wt {
+		t.Fatalf("workspace = %+v, %v; want cwd %s", w, ok, wt)
+	}
+	surface := w.Panes[0].Surfaces[0].ID
+	if got, want := fake.Typed(surface), []string{"CMUX_SURFACE_ID=" + surface + " true '/pr-review:pr-review 42'", "<enter>"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("typed %v, want %v", got, want)
+	}
+	if fake.State().Selected != w.ID {
+		t.Errorf("arriving should have selected the workspace, selected = %q", fake.State().Selected)
+	}
+	f.waitFile(hookOut, "cmux||"+name+"\n")
+
+	// The agent has exited (the shell alone): a prompt restarts it.
+	fake.SetTop(name, nil, []string{"zsh"})
+	if out := f.open("42", "--prompt", "again"); !strings.Contains(out, "restarted agent in "+name) {
+		t.Errorf("output: %q", out)
+	}
+	fake.SetTop(name, []string{"claude"}, []string{"2.1.263", "zsh"})
+	if out := f.open("42", "--prompt", "look"); !strings.Contains(out, "sent prompt to "+name) {
+		t.Errorf("output: %q", out)
+	}
+	if got := fake.Typed(surface); got[len(got)-2] != "look" {
+		t.Errorf("typed %v, want the prompt typed last", got)
+	}
+	fake.AddSession(w.ID, "needsInput", true, "2026-09-08T16:00:00Z")
+	var buf strings.Builder
+	if err := runOpen(f.cfg, []string{"42", "--prompt", "x"}, &buf, true); err == nil || !strings.Contains(err.Error(), "waiting for you in "+name) {
+		t.Errorf("prompt while blocked: err = %v", err)
+	}
+
+	buf.Reset()
+	if err := runClose(f.cfg, []string{"--force", "42"}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if _, still := fake.Workspace(name); !strings.Contains(buf.String(), "closed window "+name) || still || f.exists(wt) {
+		t.Errorf("close: %q; workspace gone: %v; worktree gone: %v", buf.String(), !still, !f.exists(wt))
+	}
+}

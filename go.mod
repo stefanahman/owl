@@ -6,12 +6,13 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20260906004030-3986e9119cf9
 	github.com/charmbracelet/x/vttest v0.0.0-20260906004030-3986e9119cf9
 	go.yaml.in/yaml/v3 v3.0.5
 )
+
+require github.com/charmbracelet/colorprofile v0.4.3 // indirect
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -35,6 +36,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/stefanahman/mux v0.1.0
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/image v0.44.0 // indirect

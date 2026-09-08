@@ -41,7 +41,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	if len(rest) > 1 {
 		return usageError("close: expected at most one PR number")
 	}
-	mx := newMux(cfg)
+	mx := newWindows(cfg)
 	var n int
 	var err error
 	if len(rest) == 1 {
@@ -122,7 +122,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 // inferPR finds the PR number of the workspace the caller is in: the
 // worktree path (survives switching branches inside it), then the
 // branch, then the window of the multiplexer.
-func inferPR(mx mux, worktreesDir string) (int, error) {
+func inferPR(mx windows, worktreesDir string) (int, error) {
 	if top, err := git(".", "rev-parse", "--show-toplevel"); err == nil {
 		if repo, err := mainRepo("."); err == nil && filepath.Dir(top) == filepath.Join(repo, worktreesDir) {
 			if n := prNumberOf(filepath.Base(top)); n > 0 {

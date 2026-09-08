@@ -305,7 +305,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 
 	m := model{
 		cfg:      cfg,
-		runSelf:  func(args ...string) error { return runChild(newMux(cfg).ChildEnv(), args...) },
+		runSelf:  func(args ...string) error { return runChild(newWindows(cfg).ChildEnv(), args...) },
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
 		help:     help.New(),
@@ -478,7 +478,7 @@ func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
 
 // switchClient moves the user's client to the review container, whose
 // current window `open` has just selected.
-func switchClient(mx mux) tea.Cmd {
+func switchClient(mx windows) tea.Cmd {
 	return func() tea.Msg {
 		if err := mx.SwitchClient(); err != nil {
 			return noticeMsg{err}
@@ -623,7 +623,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The workspace is up (with on_open: quit the TUI is already
 		// gone). switch moves the user's client to the reviews.
 		if m.cfg.OnOpen == "switch" {
-			cmds = append(cmds, switchClient(newMux(m.cfg)))
+			cmds = append(cmds, switchClient(newWindows(m.cfg)))
 		}
 		cmds = append(cmds, m.fetchLocal)
 
@@ -1480,7 +1480,7 @@ func exitOn(err error) {
 	// the failure goes to the multiplexer the popup was in — before
 	// stderr, which may be a broken pipe by now and would end the
 	// process.
-	if mx := muxByKind(os.Getenv("PR_OWL_MUX")); mx != nil {
+	if mx, ok := windowsByKind(os.Getenv("PR_OWL_MUX")); ok {
 		mx.Notify(err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)

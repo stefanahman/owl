@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/stefanahman/mux"
 	"io"
 	"os"
 	"os/exec"
@@ -143,12 +144,24 @@ func (f *fixture) open(args ...string) string {
 	return out.String()
 }
 
+// windows lists the review session's tmux windows, the keepalive one
+// included: what the session holds, not what pr-owl counts as reviews.
 func (f *fixture) windows() []string {
-	return tmuxMux{f.cfg.Tmux}.Windows()
+	out := f.tmuxL("list-windows", "-t", mux.TmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_name}")
+	if out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+// tmux runs a tmux command against the test's server.
+func tmux(args ...string) (string, error) {
+	out, err := exec.Command("tmux", args...).Output()
+	return strings.TrimSpace(string(out)), err
 }
 
 func (f *fixture) activeWindow() string {
-	out, err := tmux("list-windows", "-t", tmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_active} #{window_name}")
+	out, err := tmux("list-windows", "-t", mux.TmuxTarget(f.cfg.Tmux.Session, ""), "-F", "#{window_active} #{window_name}")
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -165,7 +178,7 @@ func (f *fixture) activeWindow() string {
 // in it) the typed command spans two screen lines.
 func (f *fixture) waitPane(window, want string) string {
 	f.t.Helper()
-	target := tmuxTarget(f.cfg.Tmux.Session, window)
+	target := mux.TmuxTarget(f.cfg.Tmux.Session, window)
 	var screen string
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		screen, _ = tmux("capture-pane", "-p", "-J", "-t", target)
@@ -235,20 +248,20 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	if got := f.activeWindow(); got != name {
 		t.Errorf("active window %q, want %q", got, name)
 	}
-	if v, _ := tmux("show-options", "-w", "-v", "-t", tmuxTarget("reviews", name), "automatic-rename"); v != "off" {
+	if v, _ := tmux("show-options", "-w", "-v", "-t", mux.TmuxTarget("reviews", name), "automatic-rename"); v != "off" {
 		t.Errorf("automatic-rename = %q, want off", v)
 	}
-	if cwd, _ := tmux("display-message", "-p", "-t", tmuxTarget("reviews", name), "#{pane_current_path}"); cwd != wt {
+	if cwd, _ := tmux("display-message", "-p", "-t", mux.TmuxTarget("reviews", name), "#{pane_current_path}"); cwd != wt {
 		t.Errorf("window cwd %q, want %q", cwd, wt)
 	}
 	f.waitPane(name, "true '/pr-review:pr-review 42'")
 
 	// The TUI overlay sees the window, without the keepalive one, and
 	// reads the state option tmux-claude-status writes.
-	if got, want := (tmuxMux{f.cfg.Tmux}).States(), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
+	if got, want := (windows{mux.Tmux{SessionName: f.cfg.Tmux.Session, Keepalive: f.cfg.Tmux.KeepaliveWindow}}).States(), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
 		t.Errorf("States = %v, want %v", got, want)
 	}
-	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", name), "@claude-state", "blocked"); err != nil {
+	if _, err := tmux("set-option", "-w", "-t", mux.TmuxTarget("reviews", name), "@claude-state", "blocked"); err != nil {
 		t.Fatal(err)
 	}
 	if ls := findLocalForPR(model{cfg: f.cfg}.fetchLocal().(localMsg), 42); ls.Worktree != wt || ls.Window != name || ls.ClaudeState != "blocked" {
@@ -429,7 +442,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 	f.open("42")
 	name := "pr-42-fix-crash-on-startup"
 	f.waitFile(runs, "run\n")
-	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
+	_, _ = tmux("select-window", "-t", mux.TmuxTarget("reviews", "scratch"))
 
 	out := f.open("42")
 
@@ -501,18 +514,18 @@ func TestOpenPromptHandling(t *testing.T) {
 	f.waitPane("pr-7", "first second")
 
 	// Claude waiting on the user: the keystrokes would answer its dialog.
-	if _, err := tmux("set-option", "-w", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption, "blocked"); err != nil {
+	if _, err := tmux("set-option", "-w", "-t", mux.TmuxTarget("reviews", "pr-7"), mux.ClaudeStateOption, "blocked"); err != nil {
 		t.Fatal(err)
 	}
 	if err := runOpen(f.cfg, []string{"7", "--prompt", "again"}, io.Discard, true); err == nil || !strings.Contains(err.Error(), "waiting for you") {
 		t.Errorf("prompt into a blocked window: %v, want a refusal", err)
 	}
-	if _, err := tmux("set-option", "-wu", "-t", tmuxTarget("reviews", "pr-7"), claudeStateOption); err != nil {
+	if _, err := tmux("set-option", "-wu", "-t", mux.TmuxTarget("reviews", "pr-7"), mux.ClaudeStateOption); err != nil {
 		t.Fatal(err)
 	}
 
 	// Without a prompt, an existing window is only selected.
-	_, _ = tmux("select-window", "-t", tmuxTarget("reviews", "scratch"))
+	_, _ = tmux("select-window", "-t", mux.TmuxTarget("reviews", "scratch"))
 	if out := f.open("7"); !strings.Contains(out, "selected") || f.activeWindow() != "pr-7" {
 		t.Errorf("output %q, active %q", out, f.activeWindow())
 	}
@@ -605,7 +618,7 @@ func TestClosePartialWorkspaces(t *testing.T) {
 	// found from the caller's cwd.
 	f.open("7")
 	f.waitPane("pr-7", "true")
-	if _, err := tmux("kill-window", "-t", tmuxTarget("reviews", "pr-7")); err != nil {
+	if _, err := tmux("kill-window", "-t", mux.TmuxTarget("reviews", "pr-7")); err != nil {
 		t.Fatal(err)
 	}
 	if err := runClose(f.cfg, []string{"7"}, io.Discard); err != nil {
