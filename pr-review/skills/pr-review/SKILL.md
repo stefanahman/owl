@@ -126,14 +126,17 @@ The brief is a map drawn from the code — coordinates or nothing:
 
 1. Every row names the file and symbol it comes from. A row that can't is not written.
 2. What the repository doesn't show — consumers outside it, traffic, intent — is written as *not determined*, never inferred.
-3. The PR description is input for the first section only; nothing else is taken from it.
+3. The PR description and the ticket are input for the first two sections only — what the change is for, and where description and code part; nothing else is taken from them.
 4. Observations, not verdicts: "`ReportService.facets` reads the collection directly; the other four callers go through the messaging layer" is allowed, "this is the wrong approach" is not.
 5. One screen. Tables over prose. No sentence that restates the diff.
 
-Six sections, in this order:
+Seven sections, in this order:
 
 ```markdown
 # Design brief — #<pr> <title>
+
+## What it is for, and where it sits
+for a reader who has not seen the ticket: the capability in the product's own terms — the problem it solves, for whom — from the ticket, the description and the repository's docs (file); the flow it sits in: what triggers it, what comes before and after, what it reads and writes (file:symbol of the entry point and the stores); what it replaces, extends or is the first of. Three sentences and, if the flow has steps, one numbered line. Intent the repository cannot show: *not determined*
 
 ## Description versus code
 matches / diverges — per divergence: what the description says, what the code does, file:line
