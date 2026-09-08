@@ -16,7 +16,7 @@ import (
 func runIssue(cfg Config, args []string, out io.Writer) error {
 	tracker := newTracker(cfg, func(text string) {
 		fmt.Fprintln(os.Stderr, text)
-		newWindows(cfg).Notify(text)
+		newWindows(cfg, reviews).Notify(text)
 	})
 	if len(args) == 0 {
 		return listIssues(tracker, out)

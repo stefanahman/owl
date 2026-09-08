@@ -271,7 +271,7 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 
 	// The TUI overlay sees the window, without the keepalive one, and
 	// reads the state option tmux-claude-status writes.
-	if got, want := (windows{mux.Tmux{SessionName: f.cfg.Tmux.Session, Keepalive: f.cfg.Tmux.KeepaliveWindow}}).States(), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
+	if got, want := (windows{mux.Tmux{SessionName: f.cfg.Tmux.Session, Keepalive: f.cfg.Tmux.KeepaliveWindow}, reviews}).States(), map[string]string{name: ""}; !reflect.DeepEqual(got, want) {
 		t.Errorf("States = %v, want %v", got, want)
 	}
 	if _, err := tmux("set-option", "-w", "-t", mux.TmuxTarget("reviews", name), "@claude-state", "blocked"); err != nil {

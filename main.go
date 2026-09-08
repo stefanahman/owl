@@ -306,7 +306,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	m := model{
 		cfg: cfg,
 		runSelf: func(args ...string) error {
-			return runChild(newWindows(cfg).ChildEnv(), append(append(globalArgs(), "pr"), args...)...)
+			return runChild(newWindows(cfg, reviews).ChildEnv(), append(append(globalArgs(), "pr"), args...)...)
 		},
 		repo:     repo,
 		keys:     newKeyMap(cfg.Keys, cfg.Links),
@@ -625,7 +625,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The workspace is up (with on_open: quit the TUI is already
 		// gone). switch moves the user's client to the reviews.
 		if m.cfg.OnOpen == "switch" {
-			cmds = append(cmds, switchClient(newWindows(m.cfg)))
+			cmds = append(cmds, switchClient(newWindows(m.cfg, reviews)))
 		}
 		cmds = append(cmds, m.fetchLocal)
 
@@ -1470,7 +1470,7 @@ func main() {
 	case len(args) == 0:
 		// Before the list: states read from a tainted multiplexer never
 		// change, and the failure would surface on Enter, an hour in.
-		exitOn(newWindows(cfg).Ping())
+		exitOn(newWindows(cfg, reviews).Ping())
 		p := tea.NewProgram(initialModel(cfg))
 		var final tea.Model
 		if final, err = p.Run(); err == nil {

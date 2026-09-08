@@ -25,26 +25,26 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	cfg.Herdr.Socket = "/x/herdr.sock"
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("CMUX_WORKSPACE_ID", "")
-	if k := newWindows(cfg).Kind(); k != "tmux" {
+	if k := newWindows(cfg, reviews).Kind(); k != "tmux" {
 		t.Errorf("auto outside everything should be tmux, got %s", k)
 	}
 	t.Setenv("HERDR_ENV", "1")
-	if k := newWindows(cfg).Kind(); k != "herdr" {
+	if k := newWindows(cfg, reviews).Kind(); k != "herdr" {
 		t.Errorf("auto inside herdr should be herdr, got %s", k)
 	}
 	t.Setenv("HERDR_ENV", "")
 	t.Setenv("CMUX_WORKSPACE_ID", "W1")
-	if k := newWindows(cfg).Kind(); k != "cmux" {
+	if k := newWindows(cfg, reviews).Kind(); k != "cmux" {
 		t.Errorf("auto inside cmux should be cmux, got %s", k)
 	}
 	cfg.Mux = "tmux"
-	if k := newWindows(cfg).Kind(); k != "tmux" {
+	if k := newWindows(cfg, reviews).Kind(); k != "tmux" {
 		t.Errorf("mux: tmux should win over the environment, got %s", k)
 	}
 	t.Setenv("CMUX_WORKSPACE_ID", "")
 	cfg.Mux = "herdr"
-	if h, ok := newWindows(cfg).d.(mux.Herdr); !ok || h.Socket != "/x/herdr.sock" {
-		t.Errorf("mux: herdr should use the configured socket, got %#v", newWindows(cfg).d)
+	if h, ok := newWindows(cfg, reviews).d.(mux.Herdr); !ok || h.Socket != "/x/herdr.sock" {
+		t.Errorf("mux: herdr should use the configured socket, got %#v", newWindows(cfg, reviews).d)
 	}
 	for _, k := range []string{"tmux", "herdr", "cmux"} {
 		if w, ok := windowsByKind(k); !ok || w.Kind() != k {
@@ -54,7 +54,7 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	if _, ok := windowsByKind(""); ok {
 		t.Error("windowsByKind should know nothing else")
 	}
-	if got := (windows{mux.Tmux{SessionName: "s"}}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
+	if got := (windows{mux.Tmux{SessionName: "s"}, reviews}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
 		t.Errorf("ChildEnv = %v", got)
 	}
 }

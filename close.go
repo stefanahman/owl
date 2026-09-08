@@ -41,7 +41,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 	if len(rest) > 1 {
 		return usageError("pr close: expected at most one PR number")
 	}
-	mx := newWindows(cfg)
+	mx := newWindows(cfg, reviews)
 	var n int
 	var err error
 	if len(rest) == 1 {
@@ -53,7 +53,7 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 		return err
 	}
 
-	window := findWindow(mx, n)
+	window := findWindow(mx, func(name string) bool { return matchesPR(name, n) })
 	repo, err := mainRepo(".")
 	if err != nil {
 		return fmt.Errorf("pr close: not inside a git repository (default_repo makes owl work from anywhere)")

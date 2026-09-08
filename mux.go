@@ -1,8 +1,8 @@
-// Reviews run in a terminal multiplexer: one window per PR among
-// whatever else the multiplexer holds, a way to type into a window,
-// and what the multiplexer knows about the agent in it. The
-// multiplexers themselves — tmux, herdr, cmux — are package mux's;
-// this is the review side of them.
+// Workspaces run in a terminal multiplexer: one window per PR review
+// or per issue among whatever else the multiplexer holds, a way to
+// type into a window, and what the multiplexer knows about the agent
+// in it. The multiplexers themselves — tmux, herdr, cmux — are package
+// mux's; this is owl's side of them.
 package main
 
 import "github.com/stefanahman/mux"
@@ -16,32 +16,51 @@ const (
 	agentIdle    = mux.Idle
 )
 
-// windows is the review windows of a multiplexer: the workspaces named
-// pr-<N>[-<slug>], and nothing else the user keeps there.
-type windows struct{ d mux.Driver }
+// scope is one kind of workspace owl keeps in a multiplexer: which
+// window names are its, and under tmux which session holds them. The
+// reviews are one scope; the features another.
+type scope struct {
+	name    string                   // for messages: reviews, features
+	session func(cfg Config) string  // the tmux session
+	owns    func(window string) bool // whether a window name is one of ours
+}
 
-// newWindows is the multiplexer for this configuration: the one named,
-// or with `mux: auto` herdr or cmux when owl runs inside one of them
-// and tmux otherwise.
-func newWindows(cfg Config) windows {
-	tmux := mux.Tmux{SessionName: cfg.Tmux.Session, Keepalive: cfg.Tmux.KeepaliveWindow}
+// reviews is the scope of PR reviews: windows named pr-<N>[-<slug>].
+var reviews = scope{
+	name:    "reviews",
+	session: func(cfg Config) string { return cfg.Tmux.Session },
+	owns:    func(w string) bool { return prNumberOf(w) > 0 },
+}
+
+// windows is one scope's windows in a multiplexer, and nothing else
+// the user keeps there.
+type windows struct {
+	d  mux.Driver
+	sc scope
+}
+
+// newWindows is the multiplexer for this configuration, seen through
+// one scope: the multiplexer named, or with `mux: auto` herdr or cmux
+// when owl runs inside one of them and tmux otherwise.
+func newWindows(cfg Config, sc scope) windows {
+	tmux := mux.Tmux{SessionName: sc.session(cfg), Keepalive: cfg.Tmux.KeepaliveWindow}
 	herdr := mux.NewHerdr(cfg.Herdr.Socket)
 	switch cfg.Mux {
 	case "tmux":
-		return windows{tmux}
+		return windows{tmux, sc}
 	case "herdr":
-		return windows{herdr}
+		return windows{herdr, sc}
 	case "cmux":
-		return windows{mux.NewCmux()}
+		return windows{mux.NewCmux(), sc}
 	}
-	return windows{mux.Detect(tmux, herdr, mux.NewCmux())}
+	return windows{mux.Detect(tmux, herdr, mux.NewCmux()), sc}
 }
 
 // windowsByKind is the multiplexer a child was told about through
 // OWL_MUX, enough to notify with; ok is false for none.
 func windowsByKind(kind string) (windows, bool) {
 	d := mux.ByKind(kind)
-	return windows{d}, d != nil
+	return windows{d, reviews}, d != nil
 }
 
 // Kind names the multiplexer: the value of OWL_MUX.
@@ -59,22 +78,22 @@ func (w windows) ChildEnv() []string {
 // hooks the states come from, and the error names the fix.
 func (w windows) Ping() error { return w.d.Ping() }
 
-// Prepare makes the container of review windows exist.
+// Prepare makes the container of the scope's windows exist.
 func (w windows) Prepare(repoDir string) error { return w.d.Prepare(repoDir) }
 
-// list is the review workspaces, by name.
+// list is the scope's workspaces, by name.
 func (w windows) list() ([]mux.Workspace, error) {
 	all, err := w.d.Workspaces()
 	if err != nil {
 		return nil, err
 	}
-	var reviews []mux.Workspace
+	var ours []mux.Workspace
 	for _, ws := range all {
-		if prNumberOf(ws.Name) > 0 {
-			reviews = append(reviews, ws)
+		if w.sc.owns(ws.Name) {
+			ours = append(ours, ws)
 		}
 	}
-	return reviews, nil
+	return ours, nil
 }
 
 func (w windows) find(name string) (mux.Workspace, error) {
@@ -94,7 +113,7 @@ type noWindowError struct{ kind, name string }
 
 func (e *noWindowError) Error() string { return e.kind + ": no window " + e.name }
 
-// Windows lists the review windows by name; nil when there are none.
+// Windows lists the scope's windows by name; nil when there are none.
 func (w windows) Windows() []string {
 	list, err := w.list()
 	if err != nil {
@@ -121,7 +140,8 @@ func (w windows) Open(name, dir, startLine string) error {
 	return w.d.Run(ws, pane, startLine)
 }
 
-// States reports each review window's agent state, keyed by name.
+// States reports each of the scope's windows' agent state, keyed by
+// name.
 func (w windows) States() map[string]string {
 	states, err := w.d.States()
 	if err != nil {
@@ -129,7 +149,7 @@ func (w windows) States() map[string]string {
 	}
 	out := map[string]string{}
 	for name, state := range states {
-		if prNumberOf(name) > 0 {
+		if w.sc.owns(name) {
 			out[name] = state
 		}
 	}
@@ -187,7 +207,7 @@ func (w windows) Select(name string) error {
 	return w.d.Seen(ws)
 }
 
-// SwitchClient brings the user's client to the reviews.
+// SwitchClient brings the user's client to the scope's windows.
 func (w windows) SwitchClient() error { return w.d.Focus() }
 
 // Close removes the window.
@@ -199,10 +219,10 @@ func (w windows) Close(name string) error {
 	return w.d.Close(ws)
 }
 
-// Current is the review window owl was started in, if any.
+// Current is the scope's window owl was started in, if any.
 func (w windows) Current() (string, bool) {
 	ws, ok := w.d.Current()
-	if !ok || prNumberOf(ws.Name) == 0 {
+	if !ok || !w.sc.owns(ws.Name) {
 		return "", false
 	}
 	return ws.Name, true
@@ -214,7 +234,7 @@ func (w windows) Describe(name string) string {
 }
 
 // AttachHint tells a user outside the multiplexer how to reach the
-// reviews; "" when they are already inside.
+// scope's windows; "" when they are already inside.
 func (w windows) AttachHint() string { return w.d.AttachHint() }
 
 // Notify shows a transient message to the user, the multiplexer's way.
@@ -229,10 +249,10 @@ func (w windows) Env(name string) map[string]string {
 	return env
 }
 
-// findWindow returns the review window of PR n, or "".
-func findWindow(w windows, n int) string {
+// findWindow returns the first window the match names, or "".
+func findWindow(w windows, match func(name string) bool) string {
 	for _, name := range w.Windows() {
-		if matchesPR(name, n) {
+		if match(name) {
 			return name
 		}
 	}

@@ -40,7 +40,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err := linkLocal(cfg.Agent.LinkLocal, repo, wt); err != nil {
 		return err
 	}
-	mx := newWindows(cfg)
+	mx := newWindows(cfg, reviews)
 	if err := mx.Prepare(repo); err != nil {
 		return err
 	}

@@ -28,7 +28,7 @@ type localMsg map[string]LocalState
 // gracefully — you get whatever partial data was available.
 func (m model) fetchLocal() tea.Msg {
 	worktrees := readWorktrees()
-	windows := newWindows(m.cfg).States()
+	windows := newWindows(m.cfg, reviews).States()
 
 	out := make(map[string]LocalState)
 	for handle, wtPath := range worktrees {
