@@ -53,6 +53,12 @@ func (w windows) ChildEnv() []string {
 	return append([]string{"OWL_MUX=" + w.d.Kind()}, w.d.ChildEnv()...)
 }
 
+// Ping checks the multiplexer answers and was not started from inside
+// a Claude Code session (or, for cmux, from a shell inside tmux):
+// every agent in such a one runs without transcript or without the
+// hooks the states come from, and the error names the fix.
+func (w windows) Ping() error { return w.d.Ping() }
+
 // Prepare makes the container of review windows exist.
 func (w windows) Prepare(repoDir string) error { return w.d.Prepare(repoDir) }
 

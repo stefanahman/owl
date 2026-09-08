@@ -161,12 +161,16 @@ processes started inside it, unless cmux itself was started with
 `CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
 integration (`automation.claudeCodeIntegration` in
 `~/.config/cmux/cmux.json`).
-cmux gives its terminals the `CMUX_SURFACE_ID` its wrapper checks
-before injecting the hooks, unless `TMUX` leaked into cmux's own
-environment (an app launched from a shell inside tmux), when its
-shell integration unsets it before every command; owl types the
-start line as `CMUX_SURFACE_ID=<id> claude …` when its own terminal
-lacks the variable, which covers that case.
+
+The multiplexer has to come from a clean environment. A tmux server,
+a herdr server or the cmux app started from inside a Claude Code
+session keeps its `CLAUDECODE` marker, and every agent started in it
+is a child session that saves no transcript; cmux started from a
+shell inside tmux keeps `TMUX`, and its shell integration then hands
+`CMUX_SURFACE_ID` to tmux before every command, so the hooks the
+states come from never engage. owl reads the server's or app's
+environment before it lists anything (mux's `Ping`) and refuses with
+the fix in the message: restart it from a hotkey or a plain shell.
 
 **Not every agent tool is a backend.** The interface asks for a window
 to type into, a state to read back, a way to focus that window and a

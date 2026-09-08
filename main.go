@@ -1458,6 +1458,9 @@ func main() {
 	exitOn(enterDefaultRepo(cfg.DefaultRepo))
 	switch {
 	case len(args) == 0:
+		// Before the list: states read from a tainted multiplexer never
+		// change, and the failure would surface on Enter, an hour in.
+		exitOn(newWindows(cfg).Ping())
 		p := tea.NewProgram(initialModel(cfg))
 		var final tea.Model
 		if final, err = p.Run(); err == nil {
