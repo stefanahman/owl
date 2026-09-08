@@ -54,10 +54,14 @@ Both have the same shape: YAML frontmatter, then markdown sections named after t
 ---
 modules: [linear, pnpm-turbo]      # shipped modules to enable (see below)
 ticket_pattern: 'PROJ-\d+'         # read by the tracker modules
+brief: file                        # the design brief of Step 2: file (default), or artifact as well
 ---
 
 ## Verification
 <how to build, lint and test this repo — used by Step 3>
+
+## Design brief
+<where the shape lives in this repository: routes, contracts, schemas, migrations — used by Step 2's brief>
 
 ## Extra lenses
 <what to look for in this codebase — applied alongside Step 2's lenses>
@@ -111,6 +115,51 @@ For every changed file:
 - Pay as much attention to what the PR *removes* as what it adds. A dropped guard, retry, or defensive check is a common bug source; a subtly loosened condition (`>` → `>=`, an early return removed) hides in the diff between two similar-looking lines.
 
 If you find yourself skimming, stop and re-read.
+
+### Design brief — when the PR changes the shape of the system
+
+Decide from the file list and what you have now read — not from the description — whether the PR is *structural*: an endpoint or RPC contract added, removed or changed; a data model, schema, collection, index or migration; a service or package added, removed or split; a dependency edge between packages that did not exist before. The project file's `## Design brief` section can say where these live in this repository. If none applies, skip this section.
+
+For a structural PR, write the brief before looking for findings: the shape of a change is the user's call, and they need the map before the details. Write it to `pr-$pr-brief.md` in the directory Step 4 uses for the draft, and print it in full.
+
+The brief is a map drawn from the code — coordinates or nothing:
+
+1. Every row names the file and symbol it comes from. A row that can't is not written.
+2. What the repository doesn't show — consumers outside it, traffic, intent — is written as *not determined*, never inferred.
+3. The PR description is input for the first section only; nothing else is taken from it.
+4. Observations, not verdicts: "`ReportService.facets` reads the collection directly; the other four callers go through the messaging layer" is allowed, "this is the wrong approach" is not.
+5. One screen. Tables over prose. No sentence that restates the diff.
+
+Six sections, in this order:
+
+```markdown
+# Design brief — #<pr> <title>
+
+## Description versus code
+matches / diverges — per divergence: what the description says, what the code does, file:line
+
+## Shape, before → after
+| area | before | after | where |
+only the rows that change: components and flow, endpoints or contracts, data models, package dependencies
+
+## Compatibility
+| change | additive / breaking | consumers in this repository |
+breaking: removed or renamed, optional made required, narrowed enum, changed error shape; consumers outside the repository: not determined
+
+## Migration and reversibility
+migration or backfill: present (file) / none · old and new coexist during rollout: yes / no · door: two-way (rollback keeps working) / one-way (dropped column, rewritten data)
+
+## Companions
+| tests for the new shape | observability | docs | deprecation of what it replaces |
+present (file) / missing — no advice
+
+## Questions of approach
+the three or four questions the decision hinges on, phrased to be put to the author as they stand
+```
+
+Then stop and ask: discuss the approach first, or go on to the findings? Concerns about the shape — the approach, the boundaries, the model — become findings only from what the user decides here; the lenses below cover correctness, contracts, tests, security, performance and maintainability, not the shape.
+
+With `brief: artifact` in the project file and the Artifact tool available, also publish the brief as a page, with a mermaid diagram of the flow where the flow changed; the file stays the source.
 
 ### Review with these lenses in mind
 
@@ -210,8 +259,9 @@ The chat analysis from Step 2 is context, not the deliverable. What gets posted 
    ```
 
    One `## <path>:<line>` section per finding. Comment text: 1-3 sentences plus an optional suggested fix; if it runs long, split the finding or move context to the body — walls of prose in an inline comment get skimmed. Every `<line>` must be a line present in the PR diff, or GitHub rejects the whole review.
-3. **Present it in chat**: (a) one sentence of verdict rationale, (b) the draft file's absolute path, (c) the file's full contents in a single fenced block with nothing interleaved. That fenced block IS the review — nothing may be posted that isn't in it.
-4. **Stop here and wait.** Ask the user to approve, redirect in chat, or edit the file directly and tell you to post. No exceptions — see the golden rule at the top. "Continue", "sounds good", "you decide" on an unrelated earlier turn are NOT approval of this draft. Only an explicit go on this specific draft moves you to Step 5.
+3. **Verify every point, cold, before anyone sees the draft.** What is posted carries the user's name; a finding that is not true is the worst outcome of this workflow. For each finding in the file: re-open the cited file at the cited line and confirm the code says what the finding says; confirm the failure scenario follows from that code and nothing upstream prevents it — a guard, a type, a test, a framework default; confirm the line is in the PR diff (`gh pr diff $pr`). If your harness supports subagents, hand each finding to a fresh one with the file, the line, the claim and the scenario, and the single instruction to refute it; keep a finding only when it comes back confirmed at the same coordinates. Rewrite what survived with a changed scenario, drop the rest, re-decide the verdict from what is left, and print the tally: `verified N, dropped M` with the reason for each drop. A draft with zero findings after this is a good draft.
+4. **Present it in chat**: (a) one sentence of verdict rationale, (b) the draft file's absolute path, (c) the file's full contents in a single fenced block with nothing interleaved. That fenced block IS the review — nothing may be posted that isn't in it.
+5. **Stop here and wait.** Ask the user to approve, redirect in chat, or edit the file directly and tell you to post. No exceptions — see the golden rule at the top. "Continue", "sounds good", "you decide" on an unrelated earlier turn are NOT approval of this draft. Only an explicit go on this specific draft moves you to Step 5.
 
 ## Step 5: Post from the draft file
 

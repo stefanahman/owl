@@ -45,7 +45,7 @@ Rules:
 
 ## Architectural concerns
 
-If the whole approach is off, do not annotate 50 lines that should not exist. Post ONE top-level `issue (blocking)` in the review body describing the design concern. Inline nits on the wrong approach train the author to "fix the nits" instead of reconsidering the shape.
+The shape of a change — the approach, the boundaries, the model — is the user's call, not yours. It goes into the design brief as observations and questions, and reaches the review only from what the user decides at the brief. When the user does want it raised, it is ONE top-level `issue (blocking)` in the review body describing the design concern — never fifty inline nits on lines that should not exist, which train the author to fix the nits instead of reconsidering the shape.
 
 ## Voice
 
@@ -83,7 +83,7 @@ Never restate the code. Don't open with "this function does X" then say "the iss
 
 ## Senior architect lenses
 
-Surface these by default, not just line-level concerns:
+Surface these by default, as notes or questions — the shape itself is the user's call (above):
 
 1. **Reversibility** - if this ships and breaks, how do we roll back? Schema, contracts, migrations.
 2. **Operational burden** - observability, paging surface, runbook and on-call impact.

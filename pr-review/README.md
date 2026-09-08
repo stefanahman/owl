@@ -8,11 +8,19 @@ the way a careful senior engineer would and never posts without you:
 2. **Careful reading** — the diff plus the whole files around it and
    their callers; every finding needs a concrete failure scenario and
    survives an attempt to refute it. Vague suspicions are dropped.
-3. **Local verification** — build, lint and tests in a worktree for the
+3. **A design brief, when the shape changes** — endpoints or contracts,
+   data models, services or package edges: a one-screen map drawn from
+   the code (before → after, compatibility, reversibility, companions,
+   questions), every row with its file, unknowns marked, no verdict.
+   The skill stops here so you can judge the approach: the shape is
+   yours, not the agent's.
+4. **Local verification** — build, lint and tests in a worktree for the
    PR (the one `pr-owl open` puts you in, or one the skill creates).
-4. **A draft file** — the exact body and inline comments, written to a
-   file you can edit. The skill stops here, every time.
-5. **One atomic post** — after your explicit go, `gh api` posts verdict
+5. **A draft file, verified cold** — every finding re-checked at its
+   file and line (by a fresh subagent where the harness has them) and
+   dropped unless confirmed, then the exact body and inline comments
+   written to a file you can edit. The skill stops here, every time.
+6. **One atomic post** — after your explicit go, `gh api` posts verdict
    and comments as a single review and prints the URL.
 
 The skill is the process. Everything specific to a codebase — tracker,
@@ -51,15 +59,19 @@ Two optional files, same format, read in order:
 ---
 modules: [linear, pnpm-turbo, mongodb, service-boundaries]
 ticket_pattern: 'PROJ-\d+'
+brief: artifact
 ---
 
 ## Verification
 Integration tests need `docker compose up -d db` first.
 
+## Design brief
+Routes live in `apps/*/src/routes/`, RPC contracts in `packages/contracts/`, collection schemas in `packages/db/src/schemas/`, migrations in `packages/db/migrations/`.
+
 ## Extra lenses
-- Multi-tenant collections live in `pipelineDb` and are keyed on `tenantId`; every query filters by it.
-- Soft deletes: filter `archivedAt: null` unless the code says why not.
-- RPC contracts (Zod) live in `packages/internal/messaging/`, never in the consuming service.
+- Tenant-scoped collections are keyed on `tenantId`; every query filters by it.
+- Soft deletes: filter `deletedAt: null` unless the code says why not.
+- RPC contracts (Zod) live in `packages/contracts/`, never in the consuming service.
 
 ## Writing style
 Prefer `suggestion` blocks over prose for one-line fixes.
@@ -67,7 +79,9 @@ Prefer `suggestion` blocks over prose for one-line fixes.
 
 - `modules` — shipped add-ons to enable (below).
 - `ticket_pattern` — how issue ids look in titles, bodies and branches; read by the tracker modules.
+- `brief` — `file` (default) or `artifact`: with the Artifact tool available, the design brief is also published as a page, with the flow diagram.
 - `## Verification` — how to build, lint and test this repo (Step 3). With a stack module enabled, this adds to it.
+- `## Design brief` — where the shape lives in this repository: routes, contracts, schemas, migrations. Tells the brief where to look.
 - `## Extra lenses` — what to look for in this codebase, applied alongside the built-in lenses (Step 2). This is also where the modules read their project specifics.
 - `## Writing style` — additions to the shipped [writing-style.md](skills/pr-review/writing-style.md).
 
