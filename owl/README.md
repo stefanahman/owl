@@ -1,7 +1,15 @@
 # owl — a Claude Code plugin
 
-One skill, `/owl:review <number>`, that reviews a pull request
-the way a careful senior engineer would and never posts without you:
+Two skills. `/owl:feature <key>` implements a Linear issue in the
+worktree `owl issue open` starts you in: it reads the ticket and its
+documents, agrees the approach with you (and stops when the shape is
+yours to decide), builds in small conventional commits, verifies with
+the project's own checks, then writes the pull request as a file you
+approve — pushing and opening the PR are never pre-approved, and
+`Closes <key>` in the body hands the ticket back to Linear.
+
+`/owl:review <number>` reviews a pull request the way a careful senior
+engineer would and never posts without you:
 
 1. **Context** — `gh pr view` metadata (draft? auto-merge armed? prior
    reviews? size? external contributor?), CI status, the linked issues.
@@ -23,10 +31,11 @@ the way a careful senior engineer would and never posts without you:
 6. **One atomic post** — after your explicit go, `gh api` posts verdict
    and comments as a single review and prints the URL.
 
-The skill is the process. Everything specific to a codebase — tracker,
-build commands, house rules, review voice — comes from a file in the
-repository, so the same plugin serves a Go CLI and a TypeScript
-monorepo.
+The skills are the process. Everything specific to a codebase —
+tracker, build commands, house rules, review voice — comes from a file
+in the repository, read by both, so the same plugin serves a Go CLI and
+a TypeScript monorepo. The feature skill also reads a `## Conventions`
+section (commit and branch style, the PR template) when there is one.
 
 ## Install
 

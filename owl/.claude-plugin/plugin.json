@@ -1,7 +1,7 @@
 {
   "name": "owl",
-  "version": "0.3.0",
-  "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review",
+  "version": "0.4.0",
+  "description": "Two skills for the owl: review a pull request end to end and post it as one atomic review you approved; implement a Linear issue in its worktree and draft the pull request you approve before anything is pushed",
   "author": {
     "name": "Stefan Åhman",
     "url": "https://github.com/stefanahman"
@@ -12,6 +12,8 @@
   "keywords": [
     "pull-request",
     "code-review",
-    "github"
+    "github",
+    "linear",
+    "feature"
   ]
 }
