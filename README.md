@@ -89,10 +89,10 @@ Three companions, each optional:
   `/plugin marketplace add stefanahman/pr-owl`, then
   `/plugin install pr-review@pr-owl`. Without it, set `agent.prompt` to
   the first prompt a review should start with.
-- [tmux-spaces](https://github.com/stefanahman/tmux-spaces) keeps the
+- [spaces](https://github.com/stefanahman/spaces) keeps the
   review session in one terminal window on its own desktop space and
   opens the popup from a hotkey anywhere (macOS, yabai, Ghostty);
-  `hooks.after_open: tmux-spaces focus pr-reviews` brings that window
+  `hooks.after_open: spaces focus pr-reviews` brings that window
   to the front after every open.
 
 ## Multiplexers
@@ -116,6 +116,15 @@ forces one.
 one of them. Under herdr, run `pr-owl` in a pane of the session your
 reviews should join; from outside, `herdr.socket` says which server,
 and `PR_OWL_SESSION` is the session's name as read from that path.
+
+One config serves all three: `mux: auto` picks the multiplexer from
+the environment, `pr-owl --mux cmux` picks one for a run, and
+`hooks.after_open` takes a mapping when a hook only makes sense under
+one of them (`{tmux: spaces focus pr-reviews}`). `--config FILE`
+reads another config; `PR_OWL_CONFIG` does the same for hooks that
+can't pass flags. The multiplexers themselves are
+[mux](https://github.com/stefanahman/mux)'s drivers; pr-owl is the
+review side of them.
 
 Under cmux, run `pr-owl` in a cmux terminal: cmux's socket admits only
 processes started inside it, unless cmux itself was started with
@@ -219,6 +228,7 @@ on_open: quit                    # the TUI once an open starts: quit (popup clos
 
 hooks:
   after_open: ""                 # runs after every open with PR_OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO, _MUX set
+                                 # or one per multiplexer: {tmux: spaces focus pr-reviews}
 
 theme:                           # the three Claude-state colours (ANSI 0-255 or #rrggbb)
   working: "#dbbc7f"
@@ -252,7 +262,7 @@ matters.
 
 Two hooks, two layers: `on_open` is what the TUI itself does;
 `hooks.after_open` is a shell command run after *every* `open` (TUI or
-CLI), where window-manager glue goes — `tmux-spaces focus pr-reviews`,
+CLI), where window-manager glue goes — `spaces focus pr-reviews`,
 for one. The review session is a normal tmux session you can attach to
 or switch to from anywhere.
 
