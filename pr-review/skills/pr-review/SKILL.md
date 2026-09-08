@@ -43,7 +43,7 @@ Blanket phrases like "just do the reviews" or "go ahead" apply to running the wo
 
 ## Step 0: Project configuration
 
-This skill is the review *process*; what is specific to a codebase comes from two optional files in the repository. Read them now if they exist:
+This skill is the review *process*; what is specific to a codebase comes from two optional files in the repository. Read them now if they exist — at every invocation, even when this conversation read them before: they change between runs.
 
 1. `${CLAUDE_PROJECT_DIR}/.claude/pr-review.md` — committed, shared by the team.
 2. `${CLAUDE_PROJECT_DIR}/.claude/pr-review.local.md` — personal, gitignored. Its frontmatter keys override the shared file's; its sections add to them.
