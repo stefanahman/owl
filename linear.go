@@ -221,5 +221,5 @@ func (l Linear) Create(title string) (Issue, error) {
 
 // newTracker is the tracker for this configuration.
 func newTracker(cfg Config, notify func(string)) Tracker {
-	return Linear{Token: secret{name: "linear", ref: cfg.Linear.Token, notify: notify}, Team: cfg.Linear.Team}
+	return Linear{Token: secret{name: "linear", ref: cfg.Linear.Token, account: cfg.Linear.Account, notify: notify}, Team: cfg.Linear.Team}
 }

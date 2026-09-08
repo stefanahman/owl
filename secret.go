@@ -19,8 +19,9 @@ import (
 // secret is one configured secret: its reference and the name of the
 // file that caches it.
 type secret struct {
-	name string // the cache file's name: linear → linear.token
-	ref  string // op://…, $VAR, or the value
+	name    string // the cache file's name: linear → linear.token
+	ref     string // op://…, $VAR, or the value
+	account string // the 1Password account holding the item, when several are signed in
 	// notify tells the user why a 1Password prompt is about to appear,
 	// where the multiplexer shows messages; nil for none.
 	notify func(string)
@@ -69,7 +70,11 @@ func (s secret) value() (string, error) {
 	if s.notify != nil {
 		s.notify(fmt.Sprintf("owl reads the %s token from 1Password — once; it is kept in %s", s.name, path))
 	}
-	out, err := runOut(exec.Command("op", "read", s.ref))
+	args := []string{"read", s.ref}
+	if s.account != "" {
+		args = append(args, "--account", s.account)
+	}
+	out, err := runOut(exec.Command("op", args...))
 	if err != nil {
 		return "", fmt.Errorf("1Password: %w", err)
 	}

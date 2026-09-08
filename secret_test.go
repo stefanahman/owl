@@ -91,6 +91,18 @@ func TestSecretOtherForms(t *testing.T) {
 	if _, err := (secret{name: "x"}).value(); err != errNoSecret {
 		t.Errorf("empty: %v", err)
 	}
+	// The account, when several are signed in, reaches op.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "op"), []byte("#!/bin/sh\necho \"$*\" > "+filepath.Join(dir, "args")+"\necho key\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if v, err := (secret{name: "acct", ref: "op://Employee/Linear/credential", account: "bardotechnology.1password.eu"}).value(); err != nil || v != "key" {
+		t.Fatalf("with an account: %q, %v", v, err)
+	}
+	if args, _ := os.ReadFile(filepath.Join(dir, "args")); strings.TrimSpace(string(args)) != "read op://Employee/Linear/credential --account bardotechnology.1password.eu" {
+		t.Errorf("op args = %q", args)
+	}
 	// A failing op names 1Password.
 	fakeOp(t, "x")
 	if _, err := (secret{name: "x", ref: "op://Vault/Other/credential"}).value(); err == nil || !strings.Contains(err.Error(), "1Password") {
