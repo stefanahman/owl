@@ -9,7 +9,6 @@ package main
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -96,14 +95,7 @@ func (t tmuxMux) States() map[string]string {
 
 func (t tmuxMux) AtShell(name string) bool {
 	out, err := tmux("display-message", "-p", "-t", t.target(name), "#{pane_current_command}")
-	if err != nil {
-		return false
-	}
-	switch strings.TrimPrefix(filepath.Base(out), "-") {
-	case "sh", "bash", "zsh", "fish", "dash", "ksh", "nu":
-		return true
-	}
-	return false
+	return err == nil && isShell(out)
 }
 
 func (t tmuxMux) Prompt(name, text string) error { return t.typeLine(name, text) }
@@ -157,7 +149,7 @@ func (tmuxMux) Notify(text string) {
 	if os.Getenv("TMUX") == "" {
 		return
 	}
-	_, _ = tmux("display-message", "-d", "8000", text)
+	_, _ = tmux("display-message", "-d", "8000", "pr-owl: "+text)
 }
 
 func (t tmuxMux) Env(name string) map[string]string {

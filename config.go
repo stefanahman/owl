@@ -22,7 +22,9 @@ import (
 // key means. Obtain one via loadConfig (or defaultConfig in tests) so
 // it has been validated and the derived fields are set.
 type Config struct {
+	Mux          string       `yaml:"mux"`
 	Tmux         TmuxConfig   `yaml:"tmux"`
+	Herdr        HerdrConfig  `yaml:"herdr"`
 	Remote       string       `yaml:"remote"`
 	WorktreesDir string       `yaml:"worktrees_dir"`
 	DefaultRepo  string       `yaml:"default_repo"`
@@ -38,6 +40,10 @@ type Config struct {
 type TmuxConfig struct {
 	Session         string `yaml:"session"`
 	KeepaliveWindow string `yaml:"keepalive_window"`
+}
+
+type HerdrConfig struct {
+	Socket string `yaml:"socket"`
 }
 
 type AgentConfig struct {
@@ -184,9 +190,14 @@ func (k *keyNames) UnmarshalYAML(n *yaml.Node) error {
 // equal to defaultConfig().
 const configTemplate = `# pr-owl configuration. Every key is optional; these are the defaults.
 
+mux: auto                        # the multiplexer reviews run in: tmux, herdr, or auto (herdr when pr-owl runs inside it, else tmux)
+
 tmux:
   session: pr-reviews            # session that holds one window per review
   keepalive_window: scratch      # window that keeps the session alive with no reviews open
+
+herdr:
+  socket: ""                     # herdr's socket; default: $HERDR_SOCKET_PATH, else ~/.config/herdr/herdr.sock
 
 remote: origin                   # git remote of the GitHub repo: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root (added to .git/info/exclude)
@@ -202,10 +213,10 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (tmux switch-client to the review session, for pr-owl in a tmux window)
+on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for pr-owl in a tmux window; under herdr the focus has already moved)
 
 hooks:
-  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO set; ~ is expanded
+  after_open: ""                 # command run after ` + "`pr-owl open`" + ` with PR_OWL_PR, PR_OWL_SESSION, PR_OWL_WINDOW, PR_OWL_WORKTREE, PR_OWL_REPO, PR_OWL_MUX set; ~ is expanded
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb
   working: "#dbbc7f"
@@ -245,6 +256,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 
 func defaultConfig() Config {
 	var c Config
+	c.Mux = "auto"
 	c.Tmux = TmuxConfig{Session: "pr-reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.WorktreesDir = ".worktrees.local"
@@ -348,6 +360,11 @@ func (cfg *Config) validate() error {
 	case "quit", "stay", "switch":
 	default:
 		return fmt.Errorf("on_open must be quit, stay or switch, got %q", cfg.OnOpen)
+	}
+	switch cfg.Mux {
+	case "auto", "tmux", "herdr":
+	default:
+		return fmt.Errorf("mux must be auto, tmux or herdr, got %q", cfg.Mux)
 	}
 	for _, c := range []struct{ name, value string }{
 		{"theme.working", cfg.Theme.Working}, {"theme.blocked", cfg.Theme.Blocked}, {"theme.done", cfg.Theme.Done},

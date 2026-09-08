@@ -92,6 +92,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		"PR_OWL_PR":       strconv.Itoa(n),
 		"PR_OWL_WORKTREE": wt,
 		"PR_OWL_REPO":     repo,
+		"PR_OWL_MUX":      mx.Kind(),
 	}
 	maps.Copy(env, mx.Env(name))
 	return runAfterOpen(cfg.Hooks.AfterOpen, out, env)

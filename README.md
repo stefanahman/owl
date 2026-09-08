@@ -1,9 +1,10 @@
 # pr-owl
 
 A terminal UI of the PRs waiting for your review — and one key to turn
-any of them into a review workspace: a git worktree, a tmux window, and
-Claude Code reviewing inside it. Run it in a shell, or bind it to a
-tmux popup so it's one keystroke away from any session.
+any of them into a review workspace: a git worktree, a window in your
+terminal multiplexer (tmux or herdr), and Claude Code reviewing inside
+it. Run it in a shell, bind it to a tmux popup, or run it in a herdr
+pane, so it's one keystroke away from any session.
 
 ```
 pr-owl · acme/app                                           updated just now
@@ -57,9 +58,10 @@ go install github.com/stefanahman/pr-owl@latest   # anywhere with Go 1.25
 Prebuilt binaries for macOS and Linux (amd64, arm64) are on the
 [releases page](https://github.com/stefanahman/pr-owl/releases); from a
 checkout, `make install BIN=~/.local/bin`. Needs git, an authenticated
-`gh`, tmux (any version for `open` and `close`, ≥ 3.2 for the popup) and
-[Claude Code](https://docs.claude.com/en/docs/claude-code), the agent
-`open` starts and resumes. Windows is not supported (no tmux). Linux:
+`gh`, a multiplexer — tmux (any version for `open` and `close`, ≥ 3.2
+for the popup) or [herdr](https://github.com/herdrdev/herdr) ≥ 0.9 —
+and [Claude Code](https://docs.claude.com/en/docs/claude-code), the
+agent `open` starts and resumes. Windows is not supported. Linux:
 `xdg-open` for `o`; `y` copies through OSC 52, which most terminals
 support.
 
@@ -79,9 +81,9 @@ client to the review session), `stay` in a plain terminal.
 Three companions, each optional:
 
 - [tmux-claude-status](https://github.com/stefanahman/tmux-claude-status)
-  writes the `©` state pr-owl shows (and puts the same chips in your
-  status bar). Optional: without it the badge only says "a session
-  exists".
+  writes the `©` state pr-owl shows under tmux (and puts the same chips
+  in your status bar). Optional: without it the badge only says "a
+  window exists". herdr reports the state itself.
 - [pr-review](pr-review/README.md), the Claude Code plugin whose review
   skill is the default `agent.prompt` of a fresh workspace:
   `/plugin marketplace add stefanahman/pr-owl`, then
@@ -92,6 +94,26 @@ Three companions, each optional:
   opens the popup from a hotkey anywhere (macOS, yabai, Ghostty);
   `hooks.after_open: tmux-spaces focus pr-reviews` brings that window
   to the front after every open.
+
+## Multiplexers
+
+Reviews live in a terminal multiplexer: one window per PR, the agent
+typed into it, its state read back for the `©` badge. `mux: auto` picks
+herdr when pr-owl runs inside it (`HERDR_ENV=1`) and tmux otherwise;
+`tmux` or `herdr` forces one.
+
+| | tmux | herdr |
+|---|---|---|
+| a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree |
+| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh |
+| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself |
+| Enter arrives | `select-window`, then your hook | `workspace focus`, which every attached client follows |
+| a failure after the popup closed | tmux's status line | a herdr notification |
+| `hooks.after_open` sees | `PR_OWL_SESSION` = the session, `PR_OWL_WINDOW` = the window | `PR_OWL_SESSION` = the herdr session, `PR_OWL_WINDOW` = the label |
+
+`PR_OWL_MUX` names the one in use, for hooks that only make sense with
+one of them. Under herdr, run `pr-owl` in a pane of the session your
+reviews should join; from outside, `herdr.socket` says which server.
 
 ## Keys
 
@@ -104,7 +126,7 @@ Three companions, each optional:
 | `f` | send the check-feedback prompt to the PR's Claude session and stay in the list, like `s` (refused while Claude is blocked on a question or a permission there) |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
-| `c` | close the workspace — worktree, branch and tmux window; refused while tracked files have uncommitted changes (`pr-owl close --force <N>` discards them) |
+| `c` | close the workspace — worktree, branch and window; refused while tracked files have uncommitted changes (`pr-owl close --force <N>` discards them) |
 | `/` | filter by PR number; `esc` clears |
 | `r` | refresh |
 | `?` | help, with the full badge legend |
@@ -150,9 +172,14 @@ respected). `pr-owl config init` writes the annotated template; every
 key is optional.
 
 ```yaml
+mux: auto                        # tmux, herdr, or auto: herdr when pr-owl runs inside it, else tmux
+
 tmux:
   session: pr-reviews            # one window per review lives here
   keepalive_window: scratch      # keeps the session alive with no reviews open
+
+herdr:
+  socket: ""                     # default: $HERDR_SOCKET_PATH, else ~/.config/herdr/herdr.sock
 
 remote: origin                   # the GitHub remote: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # relative to the repo root
@@ -168,10 +195,10 @@ agent:
     - .claude/skills/*.local
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once an open starts: quit (popup closes at once), stay, or switch (tmux switch-client to the review session)
+on_open: quit                    # the TUI once an open starts: quit (popup closes at once), stay, or switch (move your client to the reviews)
 
 hooks:
-  after_open: ""                 # runs after every open with PR_OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO set
+  after_open: ""                 # runs after every open with PR_OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO, _MUX set
 
 theme:                           # the three Claude-state colours (ANSI 0-255 or #rrggbb)
   working: "#dbbc7f"

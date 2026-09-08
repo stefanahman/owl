@@ -1483,7 +1483,7 @@ func exitOn(err error) {
 	// stderr, which may be a broken pipe by now and would end the
 	// process.
 	if mx := muxByKind(os.Getenv("PR_OWL_MUX")); mx != nil {
-		mx.Notify("pr-owl: " + err.Error())
+		mx.Notify(err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "pr-owl: %v\n", err)
 	var ue usageError

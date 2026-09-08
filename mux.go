@@ -1,9 +1,14 @@
 // Reviews run in a terminal multiplexer: one window per PR inside
 // something that holds them all, a way to type into a window, and what
-// the multiplexer knows about the agent in it. tmux is the one so far.
-// The interface is the exact set of calls pr-owl makes, so another
-// multiplexer is a file, not a redesign.
+// the multiplexer knows about the agent in it. tmux and herdr are the
+// two; the interface is the exact set of calls pr-owl makes.
 package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // What the agent in a window is doing, as the multiplexer reports it;
 // "" is unknown.
@@ -54,18 +59,41 @@ type mux interface {
 	Env(name string) map[string]string
 }
 
-// newMux is the multiplexer for this configuration.
+// newMux is the multiplexer for this configuration: the one named, or
+// with `mux: auto` herdr when pr-owl runs inside it and tmux otherwise.
 func newMux(cfg Config) mux {
+	switch cfg.Mux {
+	case "tmux":
+		return tmuxMux{cfg.Tmux}
+	case "herdr":
+		return newHerdrMux(cfg.Herdr)
+	}
+	if os.Getenv("HERDR_ENV") == "1" {
+		return newHerdrMux(cfg.Herdr)
+	}
 	return tmuxMux{cfg.Tmux}
 }
 
 // muxByKind is the multiplexer a child was told about through
 // PR_OWL_MUX, enough to notify with; nil for none.
 func muxByKind(kind string) mux {
-	if kind == "tmux" {
+	switch kind {
+	case "tmux":
 		return tmuxMux{}
+	case "herdr":
+		return newHerdrMux(HerdrConfig{})
 	}
 	return nil
+}
+
+// isShell reports whether a foreground process name is a shell — the
+// agent has exited, and a typed prompt would run as a command.
+func isShell(command string) bool {
+	switch strings.TrimPrefix(filepath.Base(command), "-") {
+	case "sh", "bash", "zsh", "fish", "dash", "ksh", "nu":
+		return true
+	}
+	return false
 }
 
 // findWindow returns the review window of PR n, or "".
