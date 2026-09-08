@@ -32,9 +32,9 @@ func newWindows(cfg Config) windows {
 	case "herdr":
 		return windows{herdr}
 	case "cmux":
-		return windows{mux.Cmux{}}
+		return windows{mux.NewCmux()}
 	}
-	return windows{mux.Detect(tmux, herdr, mux.Cmux{})}
+	return windows{mux.Detect(tmux, herdr, mux.NewCmux())}
 }
 
 // windowsByKind is the multiplexer a child was told about through
@@ -168,13 +168,17 @@ func (w windows) agentPane(name string) (mux.Workspace, mux.Pane, error) {
 	return ws, pane, err
 }
 
-// Select makes the window the current one.
+// Select makes the window the current one: the user is arriving, so
+// the multiplexer may count the window as seen.
 func (w windows) Select(name string) error {
 	ws, err := w.find(name)
 	if err != nil {
 		return err
 	}
-	return w.d.Select(ws)
+	if err := w.d.Select(ws); err != nil {
+		return err
+	}
+	return w.d.Seen(ws)
 }
 
 // SwitchClient brings the user's client to the reviews.

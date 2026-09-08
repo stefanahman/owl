@@ -158,12 +158,13 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 	}
 	f.waitFile(hookOut, "cmux||"+name+"\n")
 
-	// The agent has exited (the shell alone): a prompt restarts it.
-	fake.SetTop(name, nil, []string{"zsh"})
+	// The agent has exited (the shell alone in the foreground of the
+	// surface's tty): a prompt restarts it.
+	fake.SetForeground(w.Panes[0].Surfaces[0].TTY, "-/bin/zsh")
 	if out := f.open("42", "--prompt", "again"); !strings.Contains(out, "restarted agent in "+name) {
 		t.Errorf("output: %q", out)
 	}
-	fake.SetTop(name, []string{"claude"}, []string{"2.1.263", "zsh"})
+	fake.SetForeground(w.Panes[0].Surfaces[0].TTY, "-/bin/zsh", "/x/.local/bin/claude")
 	if out := f.open("42", "--prompt", "look"); !strings.Contains(out, "sent prompt to "+name) {
 		t.Errorf("output: %q", out)
 	}
