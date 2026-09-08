@@ -54,7 +54,7 @@ Both have the same shape: YAML frontmatter, then markdown sections named after t
 ---
 modules: [linear, pnpm-turbo]      # shipped modules to enable (see below)
 ticket_pattern: 'PROJ-\d+'         # read by the tracker modules
-brief: file                        # the design brief of Step 2: file (default), or artifact as well
+brief: file                        # the design brief of Step 2: file (default), page (an HTML page next to it), or artifact (that page published)
 ---
 
 ## Verification
@@ -162,7 +162,7 @@ the three or four questions the decision hinges on, phrased to be put to the aut
 
 Then stop and ask: discuss the approach first, or go on to the findings? Concerns about the shape — the approach, the boundaries, the model — become findings only from what the user decides here; the lenses below cover correctness, contracts, tests, security, performance and maintainability, not the shape.
 
-With `brief: artifact` in the project file and the Artifact tool available, also publish the brief as a page; the file stays the source. Where the flow changed, draw it as inline SVG (load the `artifact-diagramming` skill): it renders in the file opened in a browser and on the artifact host alike, and its colours follow the page's theme through `currentColor`. Not mermaid — only the host renders it, and a `%%{init}` directive overrides the host's per-theme palette and leaves labels unreadable in the other theme.
+With `brief: page` in the project file, also write the brief as an HTML page, `pr-$pr-brief.html` next to the file, and print its `file://` path for the user to open in a browser; with `brief: artifact` and the Artifact tool available, publish that page as well and print the link. The file stays the source. Load the `artifact-design` skill for the page when it is available, and draw the flow, where it changed, as inline SVG (the `artifact-diagramming` skill): it renders in a browser and on the artifact host alike, and its colours follow the page's theme through `currentColor`. Not mermaid — only the host renders it, and a `%%{init}` directive overrides the host's per-theme palette and leaves labels unreadable in the other theme.
 
 ### Review with these lenses in mind
 
