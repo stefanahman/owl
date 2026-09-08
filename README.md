@@ -161,10 +161,12 @@ processes started inside it, unless cmux itself was started with
 `CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
 integration (`automation.claudeCodeIntegration` in
 `~/.config/cmux/cmux.json`). cmux 0.64.22 gives its terminals
-`CMUX_WORKSPACE_ID` but not the `CMUX_SURFACE_ID` its wrapper checks
-before injecting the hooks, so when owl's own terminal lacks the
-variable it types the start line as `CMUX_SURFACE_ID=<id> claude …`;
-a cmux that sets it gets the line as it is.
+cmux gives its terminals the `CMUX_SURFACE_ID` its wrapper checks
+before injecting the hooks, unless `TMUX` leaked into cmux's own
+environment (an app launched from a shell inside tmux), when its
+shell integration unsets it before every command; owl types the
+start line as `CMUX_SURFACE_ID=<id> claude …` when its own terminal
+lacks the variable, which covers that case.
 
 **Not every agent tool is a backend.** The interface asks for a window
 to type into, a state to read back, a way to focus that window and a
