@@ -1409,6 +1409,9 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
        owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
+       owl issue                        the issues assigned to you, from Linear
+       owl issue new <title…>           file an issue in linear.team, assigned to you
+       owl hoot <title…>                the same, from the owl
        owl config init | path
        owl --version`
 
@@ -1443,6 +1446,7 @@ func main() {
 					exitOn(usageError("pr: unknown command " + args[0]))
 				}
 			}
+		case "issue", "hoot":
 		case "open", "start", "close":
 			exitOn(usageError(args[0] + " is a pr command: owl pr " + args[0]))
 		default:
@@ -1457,6 +1461,12 @@ func main() {
 	}
 	exitOn(enterDefaultRepo(cfg.DefaultRepo))
 	switch {
+	case len(args) > 0 && args[0] == "issue":
+		exitOn(runIssue(cfg, args[1:], os.Stdout))
+		return
+	case len(args) > 0 && args[0] == "hoot":
+		exitOn(runIssue(cfg, append([]string{"new"}, args[1:]...), os.Stdout))
+		return
 	case len(args) == 0:
 		// Before the list: states read from a tainted multiplexer never
 		// change, and the failure would surface on Enter, an hour in.
