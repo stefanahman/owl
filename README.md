@@ -1,6 +1,6 @@
 # owl
 
-*owl became owl: a second list, your issues, is coming, so the tool
+*pr-owl became owl: a second list, your issues, is coming, so the tool
 is named after the bird, not the noun. The PR list is `owl pr`.*
 
 A terminal UI of the PRs waiting for your review — and one key to turn
