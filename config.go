@@ -190,7 +190,7 @@ func (k *keyNames) UnmarshalYAML(n *yaml.Node) error {
 // equal to defaultConfig().
 const configTemplate = `# pr-owl configuration. Every key is optional; these are the defaults.
 
-mux: auto                        # the multiplexer reviews run in: tmux, herdr, or auto (herdr when pr-owl runs inside it, else tmux)
+mux: auto                        # the multiplexer reviews run in: tmux, herdr, cmux, or auto (herdr or cmux when pr-owl runs inside one, else tmux)
 
 tmux:
   session: pr-reviews            # session that holds one window per review
@@ -363,9 +363,9 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("on_open must be quit, stay or switch, got %q", cfg.OnOpen)
 	}
 	switch cfg.Mux {
-	case "auto", "tmux", "herdr":
+	case "auto", "tmux", "herdr", "cmux":
 	default:
-		return fmt.Errorf("mux must be auto, tmux or herdr, got %q", cfg.Mux)
+		return fmt.Errorf("mux must be auto, tmux, herdr or cmux, got %q", cfg.Mux)
 	}
 	for _, c := range []struct{ name, value string }{
 		{"theme.working", cfg.Theme.Working}, {"theme.blocked", cfg.Theme.Blocked}, {"theme.done", cfg.Theme.Done},

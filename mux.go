@@ -1,7 +1,7 @@
 // Reviews run in a terminal multiplexer: one window per PR inside
 // something that holds them all, a way to type into a window, and what
-// the multiplexer knows about the agent in it. tmux and herdr are the
-// two; the interface is the exact set of calls pr-owl makes.
+// the multiplexer knows about the agent in it. tmux, herdr and cmux are
+// the three; the interface is the exact set of calls pr-owl makes.
 package main
 
 import (
@@ -63,16 +63,22 @@ type mux interface {
 }
 
 // newMux is the multiplexer for this configuration: the one named, or
-// with `mux: auto` herdr when pr-owl runs inside it and tmux otherwise.
+// with `mux: auto` herdr or cmux when pr-owl runs inside one of them
+// and tmux otherwise.
 func newMux(cfg Config) mux {
 	switch cfg.Mux {
 	case "tmux":
 		return tmuxMux{cfg.Tmux}
 	case "herdr":
 		return newHerdrMux(cfg.Herdr)
+	case "cmux":
+		return cmuxMux{}
 	}
 	if os.Getenv("HERDR_ENV") == "1" {
 		return newHerdrMux(cfg.Herdr)
+	}
+	if insideCmux() {
+		return cmuxMux{}
 	}
 	return tmuxMux{cfg.Tmux}
 }
@@ -85,6 +91,8 @@ func muxByKind(kind string) mux {
 		return tmuxMux{}
 	case "herdr":
 		return newHerdrMux(HerdrConfig{})
+	case "cmux":
+		return cmuxMux{}
 	}
 	return nil
 }
