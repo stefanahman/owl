@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stefanahman/mux"
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -292,8 +294,11 @@ func privateTmux(t *testing.T, root string) string {
 	if err := os.WriteFile(conf, []byte("set -g default-shell /bin/sh\nset -s exit-empty off\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A clean environment: the test may run inside a Claude Code
+	// session, whose markers the server would pass to every pane and
+	// the binary's audit would refuse.
 	start := exec.Command("tmux", "-L", "default", "-f", conf, "start-server")
-	start.Env = append(os.Environ(), "TMUX_TMPDIR="+sockDir, "TMUX=")
+	start.Env = append(mux.CleanEnv(os.Environ()), "TMUX_TMPDIR="+sockDir, "TMUX=")
 	if out, err := start.CombinedOutput(); err != nil {
 		t.Fatalf("tmux start-server: %v\n%s", err, out)
 	}

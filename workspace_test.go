@@ -96,7 +96,14 @@ func newFixture(t *testing.T) *fixture {
 	t.Setenv("TMUX_TMPDIR", sockDir)
 	t.Setenv("TMUX", "") // the test may itself run inside tmux; never touch that server
 	t.Setenv("HISTFILE", "")
-	f.tmuxL("-L", "default", "-f", conf, "start-server") // -L creates the socket dir; -S would not
+	// -L creates the socket dir; -S would not. The server starts with a
+	// clean environment: the test may run inside a Claude Code session,
+	// whose markers the server would pass to every pane.
+	start := exec.Command("tmux", "-L", "default", "-f", conf, "start-server")
+	start.Env = mux.CleanEnv(os.Environ())
+	if out, err := start.CombinedOutput(); err != nil {
+		t.Fatalf("start-server: %v: %s", err, out)
+	}
 	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
 	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
 	t.Setenv("TMUX", socket+",0,0") // as inside a pane of the test server
