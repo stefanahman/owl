@@ -1,7 +1,8 @@
 # owl
 
-*pr-owl became owl: a second list, your issues, is coming, so the tool
-is named after the bird, not the noun. The PR list is `owl pr`.*
+*pr-owl became owl: the tool is named after the bird, not the noun.
+The PR list is `owl pr`; the issue list, `owl issue`, is arriving — a
+table today, a workspace per ticket next.*
 
 A terminal UI of the PRs waiting for your review — and one key to turn
 any of them into a review workspace: a git worktree (a second checkout
@@ -214,12 +215,15 @@ owl pr                           the PR list
 owl pr open <N> [--prompt TEXT]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
 owl pr close [--force] [<N>]     remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
+owl issue                        the open issues assigned to you, from Linear, newest change first
+owl issue new <title…>           file an issue in linear.team, assigned to you
+owl hoot <title…>                the same, from the owl
 owl config init | path
 owl --version
 ```
 
-The noun is the scope: `pr` today, `issue` next, so that a verb never
-has to guess from the shape of an id which kind of thing it acts on.
+The noun is the scope, `pr` or `issue`, so that a verb never has to
+guess from the shape of an id which kind of thing it acts on.
 
 `open` is idempotent: it creates what is missing and selects the
 window. A workspace is named once, from the PR title at first open, and
@@ -235,6 +239,33 @@ without touching the project's `.gitignore`.
 Fork-based workflow (`origin` is your fork, `upstream` the repo the PRs
 are on)? Set `remote: upstream`: PRs are listed for, and fetched from,
 that remote.
+
+## Issues
+
+`owl issue` lists the open issues Linear assigns to you: key, priority
+(`!!!` urgent to `-` low), age of the last change, state and title.
+`owl hoot "what needs doing"` files one in `linear.team`, assigned to
+you, and prints its key and URL. The workspace per ticket — a worktree
+on the branch Linear names, a window in the multiplexer, Claude on the
+feature — is the next step.
+
+Linear is reached with a personal API key (Settings → Security &
+access), which the config holds as a *reference*, never as a value:
+
+```yaml
+linear:
+  token: op://Work/Linear API key/credential
+  team: BAR
+```
+
+An `op://` reference is read from 1Password the first time it is
+needed — owl says why before the prompt appears — and kept in
+`~/.local/state/owl/linear.token`, mode 600, the way `gh` keeps a
+token on a machine without a keyring: one approval per machine, none
+per start. A key Linear refuses is forgotten and read again, once.
+Delete the file to force that by hand. owl refuses a cache file that
+others can read. `$VAR` reads the environment instead; anything else
+is taken as the key itself.
 
 ## Configuration
 
@@ -282,6 +313,10 @@ keys:                            # rebind any action: a key name or a list
   start: s
   feedback: f
   quit: [q, ctrl+c]
+
+linear:                          # the issue tracker behind `owl issue`
+  token: ""                      # op://<vault>/<item>/<field>, $VAR, or the key; see Issues
+  team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues
 
 links:                           # your own keys, each opening a URL built from the PR
   - key: l
