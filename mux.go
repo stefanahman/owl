@@ -41,11 +41,22 @@ var features = scope{
 	owns:    func(w string) bool { return issueKeyOf(w) != "" },
 }
 
-// scopeOf is the scope of a list kind: features for issue, reviews
-// for pr.
+// projects is the scope of the conversations above the issues: windows
+// named proj-<slug>, in the tmux session project.session.
+var projects = scope{
+	name:    "projects",
+	session: func(cfg Config) string { return cfg.Project.Session },
+	owns:    func(w string) bool { return projectSlugOf(w) != "" },
+}
+
+// scopeOf is the scope of a list kind: features for issue, projects
+// for project, reviews for pr.
 func scopeOf(kind string) scope {
-	if kind == "issue" {
+	switch kind {
+	case "issue":
 		return features
+	case "project":
+		return projects
 	}
 	return reviews
 }

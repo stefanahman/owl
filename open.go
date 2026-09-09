@@ -60,6 +60,11 @@ type workspace struct {
 	dir   string            // the worktree
 	first string            // the agent's prompt for a fresh conversation
 	env   map[string]string // the scope's variables for after_open
+	// args are flags for the agent command, before the prompt. A
+	// project passes --session-id or --resume: owl keeps the id of that
+	// conversation, so it resumes as itself rather than as whatever
+	// `-c` finds most recent in the worktree.
+	args []string
 }
 
 // open brings the workspace up in the multiplexer: the window with
@@ -78,7 +83,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	where := mx.Describe(ws.name)
 	switch {
 	case !slices.Contains(mx.Windows(), ws.name):
-		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, ws.first, resume, prompt)); err != nil {
+		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, ws.first, resume, prompt, ws.args...)); err != nil {
 			return err
 		}
 		if resume {
@@ -92,7 +97,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, ws.first, resume, prompt)); err != nil {
+		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, ws.first, resume, prompt, ws.args...)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)
@@ -302,14 +307,23 @@ func linkLocal(globs []string, repo, wt string) error {
 }
 
 // startLine composes the shell line that starts the agent: the
-// configured command, `-c` to resume a prior conversation, then the
-// prompt — the explicit one, or first for a fresh conversation. A
-// resumed conversation without an explicit prompt gets none: the agent
-// shows the transcript and waits.
-func startLine(cmd, first string, resume bool, prompt string) string {
+// configured command, the workspace's own flags, `-c` to resume a
+// prior conversation, then the prompt — the explicit one, or first for
+// a fresh conversation. A resumed conversation without an explicit
+// prompt gets none: the agent shows the transcript and waits.
+//
+// `-c` is skipped when the flags already say which conversation to
+// resume. A project names its session, and `-c` would reopen whatever
+// ran last in that worktree instead.
+func startLine(cmd, first string, resume bool, prompt string, args ...string) string {
 	line := cmd
+	for _, a := range args {
+		line += " " + a
+	}
 	if resume {
-		line += " -c"
+		if !namesAConversation(args) {
+			line += " -c"
+		}
 	} else if prompt == "" {
 		prompt = first
 	}
@@ -317,6 +331,18 @@ func startLine(cmd, first string, resume bool, prompt string) string {
 		line += " " + shellQuote(prompt)
 	}
 	return line
+}
+
+// namesAConversation reports whether the flags already pick the
+// conversation to start or resume.
+func namesAConversation(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--resume", "-r", "--continue", "-c", "--session-id":
+			return true
+		}
+	}
+	return false
 }
 
 // oneLine folds newlines into spaces: the prompt is typed into the

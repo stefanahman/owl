@@ -208,9 +208,58 @@ func (w worktree) handle() string {
 	return ""
 }
 
-// isWorkspaceName reports whether a name is a review's or a feature's.
+// projHandleRe matches a project's workspace name: `proj-` and the
+// slug of the project's name.
+var projHandleRe = regexp.MustCompile(`^proj-([a-z0-9][a-z0-9-]*)$`)
+
+// projectSlugOf extracts the slug from a project's workspace name
+// (proj-sequential-capture-redesign → sequential-capture-redesign),
+// or "".
+func projectSlugOf(name string) string {
+	m := projHandleRe.FindStringSubmatch(name)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// projectSlug is a project's name as a workspace name: lower case,
+// runs of anything else folded to one dash, cut at a dash so a window
+// name stays readable. Derived from the name and not from Linear's
+// slugId, which is a hex string nobody can read in a window list.
+func projectSlug(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			dash = false
+		case !dash && b.Len() > 0:
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if len(slug) > 32 {
+		slug = strings.Trim(slug[:32], "-")
+		if i := strings.LastIndexByte(slug, '-'); i > 12 {
+			slug = slug[:i]
+		}
+	}
+	return slug
+}
+
+// matchesProject reports whether name is the workspace name for the
+// project.
+func matchesProject(name string, p Project) bool {
+	return projectSlugOf(name) == projectSlug(p.Name)
+}
+
+// isWorkspaceName reports whether a name is a review's, a feature's or
+// a project's.
 func isWorkspaceName(name string) bool {
-	return prHandleRe.MatchString(name) || issueKeyOf(name) != ""
+	return prHandleRe.MatchString(name) || issueKeyOf(name) != "" || projectSlugOf(name) != ""
 }
 
 // listWorktrees parses `git worktree list --porcelain` for the repo

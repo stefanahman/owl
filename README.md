@@ -258,6 +258,30 @@ of the work is in.
 `/` filters by name, `o` opens the project in Linear, `y` copies its
 name. Off a terminal, `owl project` prints a table.
 
+Enter opens the project's **conversation** — the one above the issues.
+It is a workspace like the others: a worktree under `worktrees_dir`
+named `proj-<slug>`, a window in `project.session`, Claude started in
+it on `/owl:project {name}`. Two things differ, and both follow from a
+project having no branch of its own:
+
+- The worktree is **detached at the remote's default branch**. git
+  refuses to check `main` out twice, and a project's agent has nothing
+  to commit: it reads, plans, dispatches with `owl issue start`, and
+  reviews what comes back. The `/owl:project` skill says so in as many
+  words.
+- owl **names the conversation**. It generates a session id on first
+  open, keeps it in `$XDG_STATE_HOME/owl/projects.json`, and passes
+  `--session-id` then `--resume` — so a project is one conversation
+  that resumes as itself, rather than whatever `-c` finds last in that
+  worktree. Session ids are machine-local, which is why they live
+  beside the Linear token and not in the repo.
+
+`owl project open|start|close <id>` does the same from a terminal,
+where `<id>` is Linear's slug or a fragment of the name — `owl project
+open sequential`. A fragment matching two projects is an error naming
+both rather than a guess. `close` removes the worktree and the window
+and keeps the session id, so the next open resumes the conversation.
+
 Linear is reached with a personal API key (Settings → Security &
 access), which the config holds as a **reference**, never as a value:
 

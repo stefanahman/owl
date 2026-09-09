@@ -18,6 +18,14 @@ func runProject(cfg Config, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return listProjects(tracker, out)
 	}
+	switch args[0] {
+	case "open":
+		return runProjectOpen(cfg, tracker, args[1:], out, true)
+	case "start":
+		return runProjectOpen(cfg, tracker, args[1:], out, false)
+	case "close":
+		return runProjectClose(cfg, tracker, args[1:], out)
+	}
 	return usageError("project: unknown command " + args[0])
 }
 

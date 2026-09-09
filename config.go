@@ -38,11 +38,20 @@ type Config struct {
 	Bindings     BindingsConfig `yaml:"bindings"`
 	Linear       LinearConfig   `yaml:"linear"`
 	Issue        IssueConfig    `yaml:"issue"`
+	Project      ProjectConfig  `yaml:"project"`
 }
 
 // IssueConfig is the feature side: where feature windows live under
 // tmux, and the agent's first prompt on an issue.
 type IssueConfig struct {
+	Session string `yaml:"session"`
+	Prompt  string `yaml:"prompt"`
+}
+
+// ProjectConfig is the project side: where project windows live under
+// tmux, and the first prompt of the conversation that sits above the
+// issues.
+type ProjectConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
 }
@@ -339,6 +348,10 @@ issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (BAR-123)
 
+project:
+  session: projects              # tmux: one window per project lives here — the conversation above the issues
+  prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
+
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: auto                    # the TUI once an open starts: auto (quit under tmux, where a popup closes at once and open finishes behind it; stay under herdr and cmux, where the list keeps its own workspace), quit, stay (keep the list), switch (move your client to the reviews, for owl in a tmux window)
 
@@ -401,6 +414,7 @@ func defaultConfig() Config {
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
+	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}"}
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
 		Cmd:       "claude --permission-mode auto",
@@ -560,6 +574,9 @@ func (cfg *Config) validate() error {
 	}
 	if cfg.Issue.Session == "" {
 		return errors.New("issue.session must name the tmux session for features")
+	}
+	if cfg.Project.Session == "" {
+		return errors.New("project.session must name the tmux session for projects")
 	}
 	for k := range cfg.Hooks.AfterOpen {
 		switch k {

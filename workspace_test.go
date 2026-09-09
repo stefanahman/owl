@@ -740,6 +740,51 @@ func TestStartLine(t *testing.T) {
 			t.Errorf("startLine(resume=%v, %q) = %q, want %q", c.resume, c.prompt, got, c.want)
 		}
 	}
+
+	// A project names its own conversation. The flags come before the
+	// prompt, and `-c` is not added on top: it would resume whatever ran
+	// last in the worktree instead of the session owl is holding.
+	fresh := startLine(cmd, first, false, "", "--session-id", "u-u-i-d")
+	if want := "claude --permission-mode auto --session-id u-u-i-d '/review 42'"; fresh != want {
+		t.Errorf("fresh project start = %q, want %q", fresh, want)
+	}
+	again := startLine(cmd, first, true, "", "--resume", "u-u-i-d")
+	if want := "claude --permission-mode auto --resume u-u-i-d"; again != want {
+		t.Errorf("resumed project = %q, want %q", again, want)
+	}
+	// Without such a flag the old behaviour stands.
+	if got := startLine(cmd, first, true, "", "--add-dir", "/wt"); got != "claude --permission-mode auto --add-dir /wt -c" {
+		t.Errorf("flags that name no conversation = %q", got)
+	}
+}
+
+func TestProjectSlug(t *testing.T) {
+	cases := []struct{ name, want string }{
+		{"Sequential Capture redesign", "sequential-capture-redesign"},
+		// Over 32 characters it cuts at the last dash, so a window name
+		// ends on a whole word.
+		{"Emission Categories — Plumbing / data modelling", "emission-categories-plumbing"},
+		{"Sven v2 — Deterministic harness + autofix", "sven-v2-deterministic-harness"},
+		{"Bardo Backstage (BACKEND / bardo-system)", "bardo-backstage-backend-bardo"},
+		{"  ", ""},
+	}
+	for _, c := range cases {
+		if got := projectSlug(c.name); got != c.want {
+			t.Errorf("projectSlug(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+	// The workspace name round-trips, and does not collide with the
+	// other two kinds.
+	name := "proj-" + projectSlug("Sequential Capture redesign")
+	if projectSlugOf(name) != "sequential-capture-redesign" {
+		t.Errorf("projectSlugOf(%q) = %q", name, projectSlugOf(name))
+	}
+	if !isWorkspaceName(name) || issueKeyOf(name) != "" || prNumberOf(name) != 0 {
+		t.Errorf("%q is not cleanly a project's workspace name", name)
+	}
+	if projectSlugOf("pr-42") != "" || projectSlugOf("bar-4159-thing") != "" {
+		t.Error("a review's or a feature's name reads as a project's")
+	}
 }
 
 func TestParseOpenArgs(t *testing.T) {

@@ -370,12 +370,15 @@ func initialProjectModel(cfg Config, tracker Tracker) model {
 // directly.
 func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCacheFile) model {
 	m := newModel(cfg, repo, nil)
-	m.kind, m.sc, m.tracker = "project", features, tracker
+	m.kind, m.sc, m.tracker = "project", projects, tracker
 	m.search.Placeholder = "project name"
 	m.search.CharLimit = 64
 	m.keys = newKeyMap(cfg.Keys, nil)
+	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, "open project conversation")
+	m.keys.Start.SetHelp(m.keys.Start.Help().Key, "start (stay)")
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open project in Linear")
 	m.keys.Yank.SetHelp(m.keys.Yank.Help().Key, "yank project name")
+	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, "close the project workspace")
 	if cache != nil {
 		m.projects = cache.Projects
 		m.issues = cache.Issues
@@ -991,12 +994,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
 	case key.Matches(msg, m.keys.Enter), key.Matches(msg, m.keys.Start):
-		// A project has no workspace yet: the conversation at that level
-		// is the next piece, and Enter is the key it will land on.
-		if m.kind == "project" {
-			m.notice = fmt.Errorf("the project conversation is not built yet — o opens it in Linear")
-			break
-		}
 		if row, ok := m.selectedRow(); ok {
 			if key.Matches(msg, m.keys.Enter) {
 				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.id(), ""), true)
@@ -1149,6 +1146,9 @@ func (m model) localOf(r visibleRow) LocalState {
 	}
 	if r.issue != nil {
 		return findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, r.issue.Key) })
+	}
+	if r.project != nil {
+		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project) })
 	}
 	return LocalState{}
 }
@@ -1799,6 +1799,9 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
        owl issue new <title…>           file an issue in linear.team, assigned to you
        owl project                      the projects you work in, from Linear
+       owl project open <id> [--prompt TEXT] open (or focus) the project's conversation
+       owl project start <id> [--prompt TEXT] the same without going there
+       owl project close [--force] <id> remove the project's worktree and window
        owl hoot <title…>                the same, from the owl
        owl config init | path
        owl --version`
@@ -1852,7 +1855,11 @@ func main() {
 			}
 		case "project":
 			if len(args) > 1 {
-				exitOn(usageError("project: unknown command " + args[1]))
+				switch args[1] {
+				case "open", "start", "close":
+				default:
+					exitOn(usageError("project: unknown command " + args[1]))
+				}
 			}
 		case "hoot":
 		case "open", "start", "close":
@@ -1883,7 +1890,7 @@ func main() {
 		return
 	case len(args) > 0 && args[0] == "project":
 		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
-			exitOn(newWindows(cfg, features).Ping())
+			exitOn(newWindows(cfg, projects).Ping())
 			tracker := newTracker(cfg, func(text string) {
 				fmt.Fprintln(os.Stderr, text)
 				newWindows(cfg, features).Notify(text)

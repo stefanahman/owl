@@ -94,7 +94,7 @@ const (
 	nameCeiling    = 60
 	// projectFixed is everything on the row but the name: cursor, the
 	// bar, the percentage, the counts, the milestones, the state, gaps.
-	projectFixed = 2 + 2 + barCells + 1 + 4 + 2 + mineWidth + 2 + milestoneWidth + 1 + stateWidth
+	projectFixed = 2 + 5 + 2 + barCells + 1 + 4 + 2 + mineWidth + 2 + milestoneWidth + 1 + stateWidth
 )
 
 func (m model) projectNameWidth() int {
@@ -125,6 +125,10 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 	if selected {
 		cursor = "▸ "
 	}
+	starting := ""
+	if _, ok := m.inflight[row.id()]; ok {
+		starting = m.spinner.View()
+	}
 	state := ""
 	if !strings.EqualFold(p.State.Name, row.sectionTitle) {
 		state = p.State.Name
@@ -142,8 +146,9 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 	}
 	w := m.projectNameWidth()
 	return strings.TrimRight(fmt.Sprintf(
-		"%s%-*s  %s %3.0f%%  %s  %s %s",
+		"%s%s %-*s  %s %3.0f%%  %s  %s %s",
 		cursor,
+		workspaceBadges(m.localOf(row), starting),
 		w, trim(p.Name, w),
 		progressBar(p.Progress),
 		p.Progress*100,
@@ -175,6 +180,8 @@ func (m model) projectCountsSummary() string {
 func (m model) projectLegend() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
+		fmt.Sprintf("  %s   worktree and window for the project's conversation", styleWorktree.Render("⎇")),
+		fmt.Sprintf("  %s   Claude in it — working, blocked, done, idle as on the other lists", styleClaudeWorking.Render("©")),
 		fmt.Sprintf("  %s  Linear's own progress for the project", progressBar(0.6)),
 		"  12/127      your open issues in it, over every issue it holds",
 		"  11 ms       milestones: the project's own structure, and where its specs live",

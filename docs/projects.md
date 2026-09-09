@@ -1,8 +1,19 @@
 # The project layer
 
-A design note, not a description of what owl does. Nothing here is
-built. It records what was decided, what it costs, and what is still
-open, so the session that builds it starts from something.
+A design note. The first two pieces are built — `owl project` (the
+list) and `owl project open` (the conversation, detached worktree,
+owl-named session). What follows the rules below is not: the fork down
+into an issue, the join back up, the shared/separate branch mode, and
+the plan file. The note stays as it was written, so the reasoning is
+readable next to what came of it.
+
+Two things changed in the building. The project's worktree is
+**detached** at the default branch rather than on it — git refuses the
+same branch in two worktrees, and a reading room needs no branch. And
+the session ids live in `$XDG_STATE_HOME/owl/projects.json`, not the
+repo: a Claude session is machine-local and means nothing in a clone
+somewhere else. The plan file, when it lands, still belongs in the
+repo.
 
 owl has two scopes today: reviews (`owl pr`) and features (`owl issue`).
 This is the third — projects — and an agent that works at that level,
