@@ -344,7 +344,7 @@ on_open: auto                    # the TUI once an open starts: auto (quit under
 
 hooks:
   after_open: ""                 # command run after an open with OWL_PR (a review) or OWL_ISSUE and OWL_BRANCH (a feature), OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
-                                 # A mapping gives one per multiplexer, e.g. {tmux: spaces focus pr-reviews}: none under herdr and cmux, where the window is already in front
+                                 # A mapping gives one per multiplexer, e.g. {tmux: spaces focus reviews}: none under herdr and cmux, where the window is already in front
 
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb
   working: "#dbbc7f"
