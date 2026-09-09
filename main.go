@@ -81,6 +81,13 @@ type projectsMsg struct {
 	projects []Project
 }
 
+// doneProjectsMsg carries the projects completed inside
+// doneProjectWindow — the project list's answer to doneMsg.
+type doneProjectsMsg struct {
+	gen      int
+	projects []Project
+}
+
 // localTickMsg asks for the local overlay again. Claude's state is
 // whatever the multiplexer reports as Claude works; following it every
 // two seconds — a status bar's cadence — lets a © change colour as
@@ -294,16 +301,17 @@ type model struct {
 	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
-	repo       string // owner/name on GitHub
-	repoDir    string // the repository's main working tree; "" outside a repo
-	me         string
-	prs        []PR
-	merged     []PR
-	issues     []Issue
-	doneIssues []Issue         // completed inside doneWindow; the Done section
-	projects   []Project       // the project list's rows
-	issuePRs   map[string][]PR // the repo's open PRs by issue key, for the issue rows
-	localState map[string]LocalState
+	repo         string // owner/name on GitHub
+	repoDir      string // the repository's main working tree; "" outside a repo
+	me           string
+	prs          []PR
+	merged       []PR
+	issues       []Issue
+	doneIssues   []Issue         // completed inside doneWindow; the Done section
+	projects     []Project       // the project list's rows
+	doneProjects []Project       // completed inside doneProjectWindow; the Done section
+	issuePRs     map[string][]PR // the repo's open PRs by issue key, for the issue rows
+	localState   map[string]LocalState
 
 	// load state
 	ready       bool      // the list has been fetched (or read from the cache)
@@ -381,6 +389,7 @@ func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCac
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, "close the project workspace")
 	if cache != nil {
 		m.projects = cache.Projects
+		m.doneProjects = cache.DoneProjects
 		m.issues = cache.Issues
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -487,7 +496,7 @@ func (m model) fetches() []tea.Cmd {
 		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs, m.fetchDone}
 	case "project":
 		// The issues too: a row says how much of the project is yours.
-		return []tea.Cmd{m.fetchProjects, m.fetchIssues}
+		return []tea.Cmd{m.fetchProjects, m.fetchIssues, m.fetchDoneProjects}
 	}
 	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
 }
@@ -501,7 +510,7 @@ func fetchUser() tea.Msg { return userMsg(currentUser()) }
 // best-effort.
 func (m model) persistCache() {
 	if m.kind == "project" {
-		saveProjectCache(projectCacheFile{Projects: m.projects, Issues: m.issues, FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveProjectCache(projectCacheFile{Projects: m.projects, DoneProjects: m.doneProjects, Issues: m.issues, FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
 	}
 	if m.kind == "issue" {
@@ -836,6 +845,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.doneIssues = msg.issues
+		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
+	case doneProjectsMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.doneProjects = msg.projects
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()

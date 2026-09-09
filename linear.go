@@ -27,6 +27,9 @@ type Tracker interface {
 	Done(since time.Time) ([]Issue, error)
 	// Projects lists the open projects the user works in.
 	Projects() ([]Project, error)
+	// DoneProjects lists the user's projects completed since the given
+	// time — what just left the open list, still worth seeing.
+	DoneProjects(since time.Time) ([]Project, error)
 	// Project fetches one by Linear's slug id or UUID.
 	Project(id string) (Project, error)
 	// Issue fetches one by its identifier (BAR-123).
@@ -84,7 +87,10 @@ type Project struct {
 	Progress  float64   `json:"progress"` // 0..1, Linear's own
 	Scope     int       `json:"scope"`    // issues in it, whoever they belong to
 	UpdatedAt time.Time `json:"updatedAt"`
-	State     struct {
+	// CompletedAt is when the project was closed; the zero time while
+	// it is open, since Linear sends null.
+	CompletedAt time.Time `json:"completedAt"`
+	State       struct {
 		Name string `json:"name"` // In Progress
 		Type string `json:"type"` // backlog, planned, started, paused, completed, canceled
 	} `json:"status"`
@@ -99,7 +105,7 @@ type Project struct {
 // projectFields is what the project query selects. `scope` is the
 // issue count: the issues connection caps at fifty, so counting its
 // nodes would report 50 for a project of 915.
-const projectFields = `id name slugId url progress scope updatedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
+const projectFields = `id name slugId url progress scope updatedAt completedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
 const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } team { key }`
@@ -261,29 +267,34 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 	})
 }
 
-// projectsQuery walks the open projects the user works in.
+// mineFilter is the half of a project filter that says the project is
+// the user's: they lead it, or they are a member.
 //
-// "Works in" is a union, not membership. Filtering by lead or member
-// alone drops the project holding most of the work: Sequential Capture
-// redesign has twelve of the user's sixteen open issues and lists
-// neither. An issue assigned to you in a project nobody added you to
-// is still a project you are working in, so the third clause asks for
-// exactly that. `isMe` keeps it to one round trip — no viewer lookup
-// to feed an id into the filter.
-const projectsQuery = `query($first: Int!, $after: String) {
+// It does not ask Linear for "a project I have an issue in", though
+// that is the other half of what owl means. The obvious clause,
+// `issues: { some: { assignee: { isMe }, state: { type: { nin: … } } } }`,
+// does not conjoin per issue: Linear reads it as *some* issue is mine
+// and *some* issue is open, which in a project of 920 issues is always
+// true. It let Bardo Backstage in, where the user is neither lead nor
+// member and both of their issues are closed. Nesting the two under
+// `and:` inside `some` behaves identically. So that half is derived
+// here instead, from issues owl has already fetched.
+const mineFilter = `or: [ { lead: { isMe: { eq: true } } }, { members: { isMe: { eq: true } } } ]`
+
+const openProjectsQuery = `query($first: Int!, $after: String) {
   projects(first: $first, after: $after, orderBy: updatedAt, filter: {
-    status: { type: { nin: ["completed", "canceled"] } },
-    or: [
-      { lead: { isMe: { eq: true } } },
-      { members: { isMe: { eq: true } } },
-      { issues: { some: { assignee: { isMe: { eq: true } }, state: { type: { nin: ["completed", "canceled"] } } } } }
-    ]
+    status: { type: { nin: ["completed", "canceled"] } }, ` + mineFilter + `
   }) { nodes { ` + projectFields + ` } pageInfo { hasNextPage endCursor } }
 }`
 
-// Projects: the open projects the user works in, newest change first,
-// every page of them.
-func (l Linear) Projects() ([]Project, error) {
+const doneProjectsQuery = `query($first: Int!, $after: String, $since: DateTimeOrDuration!) {
+  projects(first: $first, after: $after, orderBy: updatedAt, filter: {
+    status: { type: { eq: "completed" } }, completedAt: { gte: $since }, ` + mineFilter + `
+  }) { nodes { ` + projectFields + ` } pageInfo { hasNextPage endCursor } }
+}`
+
+// projectsWhere reads every page of a projects query.
+func (l Linear) projectsWhere(query string, vars map[string]any) ([]Project, error) {
 	var all []Project
 	var after *string
 	for {
@@ -296,7 +307,11 @@ func (l Linear) Projects() ([]Project, error) {
 				} `json:"pageInfo"`
 			} `json:"projects"`
 		}
-		if err := l.query(projectsQuery, map[string]any{"first": 50, "after": after}, &r); err != nil {
+		page := map[string]any{"first": 50, "after": after}
+		for k, v := range vars {
+			page[k] = v
+		}
+		if err := l.query(query, page, &r); err != nil {
 			return nil, err
 		}
 		all = append(all, r.Projects.Nodes...)
@@ -305,6 +320,56 @@ func (l Linear) Projects() ([]Project, error) {
 		}
 		after = &r.Projects.PageInfo.EndCursor
 	}
+}
+
+// Projects: the open projects the user works in — the ones they lead
+// or belong to, plus the ones their own open issues are filed in.
+//
+// The second half is the reason the list is worth having: Sequential
+// Capture redesign holds twelve of the user's sixteen open issues and
+// they neither lead it nor belong to it. Since Linear cannot be asked
+// that question (mineFilter), owl answers it from the issues it
+// already fetches, and looks up only what is missing — one 90ms call
+// per project, and there are two.
+func (l Linear) Projects() ([]Project, error) {
+	all, err := l.projectsWhere(openProjectsQuery, nil)
+	if err != nil {
+		return nil, err
+	}
+	have := make(map[string]bool, len(all))
+	for _, p := range all {
+		have[p.ID] = true
+	}
+	issues, err := l.Issues()
+	if err != nil {
+		return all, nil // the list without the derived half beats no list
+	}
+	for _, is := range issues {
+		if is.Project.ID == "" || have[is.Project.ID] {
+			continue
+		}
+		have[is.Project.ID] = true
+		p, err := l.Project(is.Project.ID)
+		if err != nil || p.ID == "" {
+			continue
+		}
+		// It came from an open issue of the user's, but the project
+		// itself may have been closed since; the Done section decides
+		// whether that is shown, not this one.
+		if p.State.Type == "completed" || p.State.Type == "canceled" {
+			continue
+		}
+		all = append(all, p)
+	}
+	return all, nil
+}
+
+// DoneProjects: the projects the user leads or belongs to that were
+// completed since the given time. Not derived from issues the way the
+// open list is — a finished project's issues are finished too, and the
+// user's own issue history is not fetched that far back.
+func (l Linear) DoneProjects(since time.Time) ([]Project, error) {
+	return l.projectsWhere(doneProjectsQuery, map[string]any{"since": since.UTC().Format(time.RFC3339)})
 }
 
 // Project looks one up by Linear's slug id (the tail of its URL) or

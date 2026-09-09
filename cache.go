@@ -42,10 +42,11 @@ type issueCacheFile struct {
 // projectCacheFile is the project list's on-disk shape. The issues
 // ride along because a row counts how many of them are yours.
 type projectCacheFile struct {
-	Projects  []Project `json:"projects"`
-	Issues    []Issue   `json:"issues"`
-	FetchedAt time.Time `json:"fetchedAt"`
-	Cursor    int       `json:"cursor"`
+	Projects     []Project `json:"projects"`
+	DoneProjects []Project `json:"doneProjects"`
+	Issues       []Issue   `json:"issues"`
+	FetchedAt    time.Time `json:"fetchedAt"`
+	Cursor       int       `json:"cursor"`
 }
 
 // cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl; "" when neither

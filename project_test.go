@@ -88,6 +88,51 @@ func TestProjectListRendersSectionsAndColumns(t *testing.T) {
 	}
 }
 
+// fixtureDoneProjects is one project completed inside the window and
+// one completed a fortnight ago — the second must not reach the list.
+func fixtureDoneProjects() []Project {
+	mk := func(name, slug string, ago time.Duration) Project {
+		p := Project{ID: "uuid-" + slug, Name: name, SlugID: slug, Progress: 1, Scope: 16,
+			UpdatedAt: time.Now().Add(-ago), CompletedAt: time.Now().Add(-ago)}
+		p.State.Name, p.State.Type = "Completed", "completed"
+		return p
+	}
+	return []Project{
+		mk("Rule-driven activity grouping", "f6824f4cbe9e", 2*24*time.Hour),
+		mk("Business Rules Domain Skeleton", "cad61172cd23", 14*24*time.Hour),
+	}
+}
+
+func TestProjectListShowsWhatJustCompleted(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	m := newProjectModel(defaultConfig(), "acme/example", nil, nil)
+	m.projects, m.doneProjects, m.issues, m.ready = fixtureProjects(), fixtureDoneProjects(), projectIssues(), true
+	m.width, m.height = 140, 30
+	m.resizeViewport()
+
+	var b strings.Builder
+	for _, row := range m.visibleProjectRows() {
+		b.WriteString(m.renderRow(row, false) + "\n")
+	}
+	out := stripANSI(b.String())
+
+	if !strings.Contains(out, "Completed") || !strings.Contains(out, "· 7d") {
+		t.Errorf("no Completed section:\n%s", out)
+	}
+	if !strings.Contains(out, "Rule-driven activity grouping") {
+		t.Errorf("a project completed two days ago is missing:\n%s", out)
+	}
+	// Past the window, however the tracker or a stale cache answered.
+	if strings.Contains(out, "Business Rules Domain Skeleton") {
+		t.Errorf("a project completed a fortnight ago is in the list:\n%s", out)
+	}
+	// The section is named what Linear calls the state, so the row does
+	// not repeat it.
+	if strings.Count(out, "Completed") != 1 {
+		t.Errorf("the completed row repeats its section's state name:\n%s", out)
+	}
+}
+
 func TestProjectListFiltersByName(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	m := newProjectModel(defaultConfig(), "acme/example", nil, nil)
@@ -142,8 +187,13 @@ func TestProjectTable(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^PROGRESS\s+ISSUES\s+MS\s+STATE\s+PROJECT$`).MatchString(out.String()) {
 		t.Errorf("table header:\n%s", out.String())
 	}
-	if !regexp.MustCompile(`(?m)^62%\s+127\s+2\s+In Progress\s+Sequential Capture redesign$`).MatchString(out.String()) {
+	if !regexp.MustCompile(`(?m)^62%\s+127\s+1\s+In Progress\s+Sequential Capture redesign$`).MatchString(out.String()) {
 		t.Errorf("table rows:\n%s", out.String())
+	}
+	// The table is the open list: a completed project belongs to the
+	// TUI's Done section, not to a table piped into something else.
+	if strings.Contains(out.String(), "Rule-driven activity grouping") {
+		t.Errorf("the table lists a completed project:\n%s", out.String())
 	}
 	if err := runProject(cfg, []string{"bogus"}, &out); err == nil {
 		t.Error("unknown project command should fail")

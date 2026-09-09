@@ -252,10 +252,24 @@ and the state name only where the section does not already say it — a
 status named Paused but typed `started` sits under In progress and says
 so.
 
+A fourth section, **Completed · 7d**, holds what you finished in the
+last week — a week rather than the issue list's day, because projects
+finish on a different clock and one closed on Monday is still news on
+Friday.
+
 Which projects are yours is a union: the ones you lead, the ones you
 belong to, and the ones you have an open issue in. That last clause is
 not decoration — filtering by membership alone drops the project most
 of the work is in.
+
+owl works that third clause out itself rather than asking Linear,
+because Linear cannot answer it. Its project filter
+`issues: { some: { assignee: { isMe }, state: { type: { nin: … } } } }`
+does not conjoin per issue: it matches when *some* issue is yours and
+*some* issue is open, which in a project of 920 is always true, and
+`and:` inside `some` behaves the same. So owl asks Linear only for
+lead-or-member, and derives the rest from the issues it has already
+fetched — one 90ms lookup per project that is missing.
 
 `/` filters by name, `o` opens the project in Linear, `y` copies its
 name. Off a terminal, `owl project` prints a table.

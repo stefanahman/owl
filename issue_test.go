@@ -72,7 +72,7 @@ func TestIssueListAndHoot(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^KEY\s+PRIO\s+AGE\s+STATE\s+PROJECT\s+TITLE$`).MatchString(out.String()) {
 		t.Errorf("list header:\n%s", out.String())
 	}
-	if !regexp.MustCompile(`(?m)^BAR-4159\s+!!\s+\S+\s+In Review\s+Sequential Capture\s+Company fuzzy match$`).MatchString(out.String()) || !strings.Contains(out.String(), "BAR-4160") {
+	if !regexp.MustCompile(`(?m)^BAR-4159\s+!!\s+\S+\s+In Review\s+Sequential Capture rede…\s+Company fuzzy match$`).MatchString(out.String()) || !strings.Contains(out.String(), "BAR-4160") {
 		t.Errorf("list rows:\n%s", out.String())
 	}
 	out.Reset()

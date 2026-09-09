@@ -72,13 +72,18 @@ Then stop and let the user steer. Do not dispatch anything unasked.
 
 ## Step 4: Dispatch
 
-When the user picks work, put it in its own workspace:
+When the user picks work, put it in its own workspace — **in two calls, in this order**:
 
 ```sh
-owl issue start BAR-1234 --prompt "…"
+owl issue start BAR-1234                      # 1. the workspace, on owl's own first prompt
+owl issue start BAR-1234 --prompt "…"         # 2. the briefing, into the agent now running
 ```
 
-`start`, not `open`: `open` moves the user to the new window, and this conversation is where they are. The prompt is the briefing that issue's agent begins with — what the milestone requires of it, what has already been decided, what it must not do. Write it as if to someone who has not read this conversation, because they have not.
+The order is not a style choice. `--prompt` **replaces** the first prompt owl would otherwise send, which is `/owl:feature {key}` from `issue.prompt`. Dispatch with a prompt on the first call and that issue's agent never enters the feature workflow: no ticket read, no approach agreed with the user, and — the part that matters — none of its manners, since `/owl:feature` is what guarantees nothing is pushed and no pull request is opened without the user's say-so. A bare `start` gets the workflow; the second call lands the briefing in the agent already running it.
+
+`start`, not `open`: `open` moves the user to the new window, and this conversation is where they are.
+
+The briefing is what the milestone requires of this issue, what has already been decided, and what it must not do. Write it as if to someone who has not read this conversation, because they have not — a forked conversation is not what happens here; the issue's agent starts cold with `/owl:feature` and whatever you tell it.
 
 One at a time unless the user asks for more. Each dispatched agent is another concurrent session on the same repository.
 

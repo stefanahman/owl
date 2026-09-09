@@ -8,10 +8,26 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
+
+// fetchDoneProjects asks the tracker for what the user finished inside
+// doneProjectWindow. A failure leaves the Done section empty rather
+// than failing the list: the open projects are the point.
+func (m model) fetchDoneProjects() tea.Msg {
+	gen := m.fetchGen
+	if m.tracker == nil {
+		return doneProjectsMsg{gen, nil}
+	}
+	projects, err := m.tracker.DoneProjects(time.Now().Add(-doneProjectWindow))
+	if err != nil {
+		return doneProjectsMsg{gen, nil}
+	}
+	return doneProjectsMsg{gen, projects}
+}
 
 // fetchProjects asks the tracker for the open projects the user works
 // in. The issue list's fetch runs beside it: the number that says
@@ -29,17 +45,31 @@ func (m model) fetchProjects() tea.Msg {
 	return projectsMsg{gen, projects}
 }
 
+// doneProjectWindow is how far back the Done section reaches. A week,
+// not the issue list's day: projects finish on a different clock, and
+// one closed on Monday is still news on Friday.
+const (
+	doneProjectWindow      = 7 * 24 * time.Hour
+	doneProjectWindowLabel = "7d"
+)
+
 // projectSections are the project list's groups, in order: what is
-// moving, what is next, what waits. Linear's `paused` sits with the
-// backlog — it is not being worked on either way.
+// moving, what is next, what waits, what just finished. Linear's
+// `paused` sits with the backlog — it is not being worked on either
+// way.
 var projectSections = []struct {
 	title string
+	note  string // dim, after the title
 	style lipgloss.Style
 	types []string
 }{
-	{"In progress", styleSectionOK, []string{"started"}},
-	{"Planned", styleSectionTodo, []string{"planned"}},
-	{"Backlog", styleSectionWait, []string{"backlog", "paused"}},
+	{"In progress", "", styleSectionOK, []string{"started"}},
+	{"Planned", "", styleSectionTodo, []string{"planned"}},
+	{"Backlog", "", styleSectionWait, []string{"backlog", "paused"}},
+	// "Completed", not the issue list's "Done": each section is named
+	// what the tracker calls that state, which is also what stops the
+	// row repeating it.
+	{"Completed", doneProjectWindowLabel, styleSectionMerged, []string{"completed"}},
 }
 
 // visibleProjectRows groups the projects by status type, newest change
@@ -47,14 +77,24 @@ var projectSections = []struct {
 // case-insensitively — applied.
 func (m model) visibleProjectRows() []visibleRow {
 	filter := strings.ToLower(m.search.Value())
+	// The open list and the done one are fetched apart; the sections
+	// split them again by status type, and Projects() excludes what
+	// DoneProjects() returns, so nothing lands twice.
+	all := make([]Project, 0, len(m.projects)+len(m.doneProjects))
+	all = append(append(all, m.projects...), m.doneProjects...)
 	var out []visibleRow
 	for _, sec := range projectSections {
 		var members []Project
-		for _, p := range m.projects {
+		for _, p := range all {
 			if !contains(sec.types, p.State.Type) {
 				continue
 			}
 			if filter != "" && !strings.Contains(strings.ToLower(p.Name), filter) {
+				continue
+			}
+			// The window is the query's, but a cache read from an earlier
+			// week would smuggle older ones in: hold the line here too.
+			if p.State.Type == "completed" && time.Since(p.CompletedAt) > doneProjectWindow {
 				continue
 			}
 			members = append(members, p)
@@ -63,7 +103,7 @@ func (m model) visibleProjectRows() []visibleRow {
 			continue
 		}
 		sort.SliceStable(members, func(i, j int) bool { return members[i].UpdatedAt.After(members[j].UpdatedAt) })
-		out = append(out, visibleRow{sectionTitle: sec.title, sectionStyle: sec.style})
+		out = append(out, visibleRow{sectionTitle: sec.title, sectionNote: sec.note, sectionStyle: sec.style})
 		for i := range members {
 			out = append(out, visibleRow{project: &members[i], sectionTitle: sec.title})
 		}

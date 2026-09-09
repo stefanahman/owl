@@ -21,7 +21,8 @@ type fakeLinear struct {
 	created   []string
 	doneSince string // the completedAt bound the last Done() sent
 
-	projectLookups int // project(id:) calls, to prove open takes the cheap path
+	projectLookups    int    // project(id:) calls, to prove open takes the cheap path
+	doneProjectsSince string // the completedAt bound the last DoneProjects() sent
 }
 
 func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
@@ -42,8 +43,8 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		return map[string]any{"id": "uuid-" + key, "identifier": key, "title": title, "branchName": branch, "priority": 2, "priorityLabel": "High", "url": "https://linear.app/x/issue/" + key, "updatedAt": "2026-09-08T13:55:43.474Z", "state": map[string]string{"name": state, "type": stype}, "project": nil, "team": map[string]string{"key": "BAR"}}
 	}
 	// A project, as Linear sends it on the issues that belong to one.
-	inProject := func(n map[string]any, name string) map[string]any {
-		n["project"] = map[string]string{"name": name}
+	inProject := func(n map[string]any, slug, name string) map[string]any {
+		n["project"] = map[string]string{"id": "uuid-" + slug, "name": name}
 		return n
 	}
 	var data any
@@ -67,10 +68,10 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			}
 			n := issue("BAR-4286", "Open update-activity fields", "bar-4286-open-update-activity", "Done", "completed")
 			n["completedAt"] = "2026-09-09T09:00:00.000Z"
-			nodes = []any{inProject(n, "Endpoint Validation")}
+			nodes = []any{inProject(n, "5b16b5f4", "Endpoint Validation")}
 		case len(stype["nin"].([]any)) == 2:
 			// Two pages of one: the client must follow the cursor.
-			nodes, page = []any{inProject(issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"), "Sequential Capture")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
+			nodes, page = []any{inProject(issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"), "a76d38ca8527", "Sequential Capture redesign")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
 			if after, _ := req.Variables["after"].(string); after == "cursor-1" {
 				nodes, page = []any{issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
 			} else if after != "" {
@@ -102,12 +103,16 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			data = map[string]any{"project": nil}
 		}
 	case strings.Contains(req.Query, "projects(first:"):
-		// The union is the whole point: a project the user neither leads
-		// nor belongs to, but has an open issue in, must be in the answer.
-		for _, want := range []string{"lead: { isMe: { eq: true } }", "members: { isMe: { eq: true } }", "assignee: { isMe: { eq: true } }"} {
+		// Lead or member, and nothing about issues: Linear's project-level
+		// `issues: { some: … }` does not conjoin per issue, so owl asks
+		// only what Linear can answer and derives the rest itself.
+		for _, want := range []string{"lead: { isMe: { eq: true } }", "members: { isMe: { eq: true } }"} {
 			if !strings.Contains(req.Query, want) {
 				f.t.Errorf("projects query lacks %q: %s", want, req.Query)
 			}
+		}
+		if strings.Contains(req.Query, "assignee:") {
+			f.t.Errorf("the projects query still asks Linear about issues: %s", req.Query)
 		}
 		project := func(name, slug, state, stype string, progress float64, scope int, milestones []any) map[string]any {
 			return map[string]any{
@@ -119,14 +124,26 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 				"projectMilestones": map[string]any{"nodes": milestones},
 			}
 		}
-		milestone := func(name string, progress float64) map[string]any {
-			return map[string]any{"id": "ms-" + name, "name": name, "progress": progress}
+		// `$since`, not "completedAt": the field is selected by both
+		// queries, so only the variable tells the two apart.
+		if strings.Contains(req.Query, "$since") {
+			// The Done window. Its bound is recorded for the assertion.
+			f.doneProjectsSince, _ = req.Variables["since"].(string)
+			done := project("Rule-driven activity grouping", "f6824f4cbe9e", "Completed", "completed", 1, 16, nil)
+			done["completedAt"] = time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
+			data = map[string]any{"projects": map[string]any{
+				"nodes":    []any{done},
+				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+			}}
+			break
 		}
-		nodes, page := []any{project("Sequential Capture redesign", "a76d38ca8527", "In Progress", "started", 0.62, 127,
-			[]any{milestone("M3.5 — Downstream compatibility", 0.8), milestone("M5 — Output evaluation", 0.1)})},
+		// Two pages of one, both led by the user: the client must follow
+		// the cursor. Sequential Capture is deliberately absent — it is
+		// the one owl has to derive from the user's own issues.
+		nodes, page := []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
 			map[string]any{"hasNextPage": true, "endCursor": "proj-1"}
 		if after, _ := req.Variables["after"].(string); after == "proj-1" {
-			nodes, page = []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
+			nodes, page = []any{project("Modernize Mongoose schema typing", "302be79ae9df", "Backlog", "backlog", 0.14, 7, nil)},
 				map[string]any{"hasNextPage": false, "endCursor": nil}
 		} else if after != "" {
 			f.t.Errorf("projects query with an unknown cursor %q", after)
@@ -184,7 +201,7 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	}
 	// The project comes back where there is one, and an issue outside a
 	// project reads as empty rather than failing to parse.
-	if issues[0].Project.Name != "Sequential Capture" || issues[1].Project.Name != "" {
+	if issues[0].Project.Name != "Sequential Capture redesign" || issues[0].Project.ID == "" || issues[1].Project.Name != "" {
 		t.Errorf("projects = %q, %q", issues[0].Project.Name, issues[1].Project.Name)
 	}
 	// An open issue has no completedAt: Linear sends null.
@@ -199,21 +216,39 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	if f.doneSince != "2026-09-08T12:00:00Z" {
 		t.Errorf("Done() asked for completedAt >= %q", f.doneSince)
 	}
+	// Two pages Linear answers, plus the one owl derives: BAR-4159 is
+	// assigned to the user in Sequential Capture redesign, which they
+	// neither lead nor belong to, so Linear's filter cannot return it.
 	projects, err := l.Projects()
-	if err != nil || len(projects) != 2 {
+	if err != nil || len(projects) != 3 {
 		t.Fatalf("Projects() = %+v, %v", projects, err)
 	}
-	p := projects[0]
-	if p.Name != "Sequential Capture redesign" || p.SlugID != "a76d38ca8527" || p.State.Type != "started" || p.Lead.Name != "Stefan Åhman" {
-		t.Errorf("first project = %+v", p)
+	byName := map[string]Project{}
+	for _, p := range projects {
+		byName[p.Name] = p
+	}
+	for _, want := range []string{"Raw-data JSON ingest", "Modernize Mongoose schema typing", "Sequential Capture redesign"} {
+		if _, ok := byName[want]; !ok {
+			t.Errorf("Projects() lacks %q: %+v", want, projects)
+		}
+	}
+	derived := byName["Sequential Capture redesign"]
+	if derived.SlugID != "a76d38ca8527" || derived.State.Type != "started" || derived.Lead.Name != "Stefan Åhman" {
+		t.Errorf("the derived project = %+v", derived)
 	}
 	// scope is the project's issue count, not the length of a capped
 	// connection; progress is Linear's own fraction.
-	if p.Scope != 127 || p.Progress != 0.62 || len(p.Milestones.Nodes) != 2 || p.Milestones.Nodes[0].Progress != 0.8 {
-		t.Errorf("project numbers = scope %d, progress %v, milestones %+v", p.Scope, p.Progress, p.Milestones.Nodes)
+	if derived.Scope != 127 || derived.Progress != 0.62 || len(derived.Milestones.Nodes) != 1 {
+		t.Errorf("project numbers = scope %d, progress %v, milestones %+v", derived.Scope, derived.Progress, derived.Milestones.Nodes)
 	}
-	if projects[1].Name != "Raw-data JSON ingest" || len(projects[1].Milestones.Nodes) != 0 {
-		t.Errorf("second project = %+v", projects[1])
+
+	// The Done window is a week, and its bound reaches Linear.
+	doneProjects, err := l.DoneProjects(time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC))
+	if err != nil || len(doneProjects) != 1 || doneProjects[0].State.Type != "completed" || doneProjects[0].CompletedAt.IsZero() {
+		t.Fatalf("DoneProjects() = %+v, %v", doneProjects, err)
+	}
+	if f.doneProjectsSince != "2026-09-02T12:00:00Z" {
+		t.Errorf("DoneProjects() asked for completedAt >= %q", f.doneProjectsSince)
 	}
 
 	one, err := l.Issue("BAR-4159")

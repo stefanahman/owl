@@ -1,6 +1,6 @@
 {
   "name": "owl",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Four skills for the owl: review a pull request and post it as one atomic review you approved; implement a Linear issue in its worktree and draft the pull request you approve; hold the conversation above the issues, planning a Linear project and dispatching its work into issue workspaces; take a Dependabot pull request to mergeable, fixing what the bump broke on the bot's branch, with the review drafted for your approval",
   "author": {
     "name": "Stefan Åhman",
