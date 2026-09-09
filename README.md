@@ -1,16 +1,16 @@
 # owl
 
-**The pull requests waiting for your review and the issues waiting for
-your hands, one keystroke from any terminal.** Press Enter on one and it
-becomes a workspace: a git worktree on its branch, a window in your
-multiplexer — tmux, herdr or cmux — and Claude Code inside it, on the
-review or on the feature.
+**The pull requests waiting for your review, the issues waiting for
+your hands, and the projects they belong to, one keystroke from any
+terminal.** Press Enter on a row and it becomes a workspace: a git
+worktree, a window in your multiplexer — tmux, herdr or cmux — and
+Claude Code inside it, on the review, the feature or the project.
 
 [![ci](https://github.com/stefanahman/owl/actions/workflows/ci.yml/badge.svg)](https://github.com/stefanahman/owl/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/stefanahman/owl)](https://github.com/stefanahman/owl/releases)
 [![license](https://img.shields.io/github/license/stefanahman/owl)](LICENSE)
 
-[Install](#install) · [Quick start](#quick-start) · [Reviews](#reviews-owl-pr) · [Features](#features-owl-issue) · [Keys](#keys) · [Configuration](#configuration) · [Multiplexers](docs/multiplexers.md) · [The plugin](owl/README.md)
+[Install](#install) · [Quick start](#quick-start) · [Reviews](#reviews-owl-pr) · [Features](#features-owl-issue) · [Projects](#projects-owl-project) · [Keys](#keys) · [Configuration](#configuration) · [Multiplexers](docs/multiplexers.md) · [The plugin](owl/README.md)
 
 ```
 owl · acme/app                                              updated just now
@@ -34,10 +34,12 @@ request carries the review, the window carries the agent; the lists
 read all of it back from GitHub, Linear and the multiplexer, so nothing
 is written twice and nothing goes stale in a second place.
 
-- **Two lists, one shape.** `owl pr` groups pull requests by where you
-  sit on them — todo, waiting for you, waiting for the author,
+- **Three lists, one shape.** `owl pr` groups pull requests by where
+  you sit on them — todo, waiting for you, waiting for the author,
   approved, merged today. `owl issue` groups the Linear issues assigned
-  to you by state. Same keys, same badges.
+  to you by state. `owl project` holds the projects those issues belong
+  to, with the conversation that plans and dispatches them. Same keys,
+  same badges.
 - **Workspaces on demand.** Enter fetches the branch into a worktree,
   opens a window, starts Claude on a first prompt. `c` removes all
   three; the conversation stays on disk, so the next Enter resumes it.
@@ -305,25 +307,26 @@ form that puts a secret in the config.
 
 ## Keys
 
-| key | on a PR | on an issue |
-|---|---|---|
-| `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped | the same |
-| `n` | next PR that needs you: todo, or Claude blocked or done | next issue whose Claude needs you |
-| `↵` | open (or focus) the review workspace, then `on_open` | open (or focus) the feature workspace |
-| `s` | start the workspace and stay in the list — no `on_open`, no `after_open`; press it on one row after another | the same |
-| `f` | send the check-feedback prompt to the PR's Claude and stay; only on a PR with a conversation | — |
-| `o` | open the PR in the browser | open the issue in Linear |
-| `y` | copy the PR URL | copy the issue key |
-| `c` | close the workspace: worktree, branch and window; refused while tracked files have uncommitted changes (`owl pr close --force <N>` discards them) | the same, for the feature |
-| `/` | filter by number; `esc` clears | filter by key or title |
-| `r` `?` `q` | refresh, help with the full legend, quit | the same |
+| key | on a PR | on an issue | on a project |
+|---|---|---|---|
+| `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped | the same | the same |
+| `n` | next PR that needs you: todo, or Claude blocked or done | next issue whose Claude needs you | next project whose Claude needs you |
+| `↵` | open (or focus) the review workspace, then `on_open` | open (or focus) the feature workspace | open (or focus) the project's conversation |
+| `s` | start the workspace and stay in the list — no `on_open`, no `after_open`; press it on one row after another | the same | the same |
+| `f` | send the check-feedback prompt to the PR's Claude and stay; only on a PR with a conversation | — | — |
+| `o` | open the PR in the browser | open the issue in Linear | open the project in Linear |
+| `y` | copy the PR URL | copy the issue key | copy the project name, what `/` and a search take |
+| `c` | close the workspace: worktree, branch and window; refused while tracked files have uncommitted changes (`owl pr close --force <N>` discards them) | the same, for the feature | worktree and window; the session id is kept, so the next `↵` resumes the conversation |
+| `/` | filter by number; `esc` clears | filter by key, title or project | filter by name |
+| `r` `?` `q` | refresh, help with the full legend, quit | the same | the same |
 
 `↵`, `s`, `f` and `c` run in the background: the list stays usable
 while the child works, the row shows a spinner in the worktree slot, a
 second press on the same row is refused until it reports, and a
 failure shows in the action row — or, once a popup has closed, as a
 notification from the multiplexer. Every key is rebindable (`keys`),
-and `bindings` add your own.
+and `bindings` add your own to the PR and issue lists; a project row
+takes none until it has more than one workspace to aim at.
 
 ### Prompts and links on a key
 
@@ -371,30 +374,34 @@ owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of i
 owl issue start <KEY> [--prompt TEXT] the same without going there
 owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
 owl issue new <title…>                file an issue in linear.team, assigned to you
+owl project                           the projects you work in; a table when stdout is not a terminal
+owl project open <id> [--prompt TEXT] open (or focus) the project's conversation; <id> is Linear's slug or a fragment of the name
+owl project start <id> [--prompt TEXT] the same without going there
+owl project close [--force] <id>      remove the project's worktree and window; the session id is kept
 owl hoot <title…>                     the same, from the owl
 owl config init | path
 owl --version
 ```
 
-The noun is the scope, `pr` or `issue`, so a verb never has to guess
-from the shape of an id which kind of thing it acts on. `close` exits 2
-when there was nothing to remove.
+The noun is the scope — `pr`, `issue` or `project` — so a verb never
+has to guess from the shape of an id which kind of thing it acts on.
+`close` exits 2 when there was nothing to remove.
 
 ## How it works
 
 | layer | what | owner |
 |---|---|---|
-| git worktree | `<repo>/.worktrees.local/<name>` on a branch of the same name: `pr-<N>-<slug>` fetched from `pull/N/head`, or the issue's branch | `open` creates, `close` removes |
+| git worktree | `<repo>/.worktrees.local/<name>` on a branch of the same name: `pr-<N>-<slug>` fetched from `pull/N/head`, or the issue's branch. A project's `proj-<slug>` is detached at the remote's default branch instead: it has no branch of its own, and its agent reads rather than commits | `open` creates, `close` removes |
 | window | same name, in the multiplexer, cwd the worktree, running `agent.cmd` | `open` creates, `close` kills |
-| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c` |
+| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c`, or by `--session-id` for a project, whose id owl keeps in `$XDG_STATE_HOME/owl/projects.json` |
 
 A prompt (`f`, a binding, `open --prompt`) is typed into the window as
 one line of keystrokes. If the agent has exited — the window is back at
 a shell — it is started again with `-c` and the prompt; while Claude is
 blocked on a question or a permission, the prompt is refused. owl works
 on one repo at a time — the working directory's, or `default_repo` —
-and window names carry the PR number or issue key, not the repo, so
-keep one repo per session.
+and window names carry the PR number, the issue key or the project
+slug, not the repo, so keep one repo per session.
 
 The multiplexers differ in how a window is made, how the state is
 read and what happens after Enter: [docs/multiplexers.md](docs/multiplexers.md)
