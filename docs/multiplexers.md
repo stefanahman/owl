@@ -67,19 +67,33 @@ after the scope: `reviews`, `features`, `projects`. No new vocabulary —
 those are the tmux session names and the names of Stefan's spaces, so
 renaming one means renaming all of them.
 
-The group is made from the first workspace that needs it, which becomes
-its anchor, and cmux drops the group when its last member closes. So
-owl touches groups on exactly one path — `windows.Open`, the branch
-that runs when the window does not exist yet — and never on close.
-Grouping on every open would look harmless and would not be: it would
-drag a workspace back that you had pulled out of its group by hand.
+The group is meant to be made from the first workspace that needs it,
+which becomes its anchor, so that cmux drops the group when its last
+member closes. owl therefore touches groups on exactly one path —
+`windows.Open`, the branch that runs when the window does not exist yet
+— and never on close. Grouping on every open would look harmless and
+would not be: it would drag a workspace back that you had pulled out of
+its group by hand.
 
-Two things to know when it misbehaves. A group is identified by its
-name, because the id the API carries is not reachable from cmux's CLI:
-rename the group in the sidebar and owl stops finding it, and the next
-open makes a second group under the old name. And the style is
-best-effort — cmux does not check that an SF Symbol exists, so a
-misspelt `icon` gives you a group with no icon rather than an error.
+**As of owl 0.11.0 that is the intent and not the behaviour.** cmux's
+`workspace-group create --from <ws>` does not anchor the group on the
+workspace it is given: it generates an anchor of its own, titled after
+the group, and adds it alongside. So a group is born with two members,
+one of them a workspace nobody asked for, and it outlives its last
+review because the generated anchor is still in it. That is the
+dedicated-anchor shape this design rejected. The repair — `set-anchor`
+onto the real workspace, then close the generated one — belongs in mux
+rather than here, and owl gets it with the next bump. Until then,
+`mux: tmux` in the config avoids it, and a phantom workspace can be
+closed by hand.
+
+Two more things to know when it misbehaves. A group is identified by
+its name, because the id the API carries is not reachable from cmux's
+CLI: rename the group in the sidebar and owl stops finding it, and the
+next open makes a second group under the old name. And the style is
+stored without validation — cmux keeps whatever string it is given, so
+a misspelt `icon` draws nothing rather than failing. (The three
+shipped symbols, `eye`, `hammer` and `square.stack.3d.up`, do resolve.)
 
 ## A clean environment
 
