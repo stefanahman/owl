@@ -199,17 +199,30 @@ Enter opens the feature workspace, `o` opens the issue in Linear, `y`
 copies its key, `/` filters by key, title or project. Off a terminal,
 `owl issue` prints a table of the open ones.
 
-A feature workspace is a worktree on the branch Linear names for the
-issue (`bar-4159-company-fuzzy-match`): tracking the remote's branch
-when it is already there, started from the default branch otherwise,
-with no upstream set, so a `git push` cannot land it on main by
-accident. Claude starts in it on `/owl:feature <KEY>`, resuming a prior
-conversation with `-c`. The issue's key is read back from the
-workspace's name — which is how the row finds a worktree made by hand
-or by Claude Code's own worktree tool, as long as the name starts with
-the key. `close` removes the worktree, the local branch and the window;
-the remote branch is never touched, and a branch with commits that
-exist nowhere else is refused unless `--force`.
+A feature workspace is a worktree for the issue. `open` looks for the
+work that already exists before making any of its own:
+
+1. **A worktree already checked out for the issue** — one of owl's,
+   else one made by hand or by Claude Code's worktree tool, used where
+   it stands. git will not check a branch out twice, so a worktree
+   outside `worktrees_dir` has to be reused rather than duplicated;
+   `open` says where it landed, and `close` leaves it alone.
+2. **A branch carrying the key**, local or on the remote. Work on an
+   issue rarely lives on the slug Linear names: it is pushed from
+   `bar-4098-credit-flip-uniform-sets` or `fix/bar-4157-projection`.
+   Several is the rare case — a stack, a second attempt — and the
+   newest commit wins, with the others named so the choice is visible.
+3. **The branch Linear names** (`bar-4159-company-fuzzy-match`), only
+   when nothing carries the key, started from the remote's default
+   branch with no upstream set, so a `git push` cannot land it on main
+   by accident.
+
+Claude starts in the worktree on `/owl:feature <KEY>`, resuming a prior
+conversation with `-c`. `close` removes the worktree, the local branch
+and the window — but never a worktree outside `worktrees_dir`, nor a
+branch another worktree holds, and a branch with commits that exist
+nowhere else is refused unless `--force`. The remote branch is never
+touched.
 
 `owl hoot "what needs doing"` files an issue in `linear.team`, assigned
 to you, and prints its key and URL.

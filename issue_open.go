@@ -45,40 +45,42 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 }
 
 // ensureIssueWorktree returns the workspace name and worktree path for
-// the issue, creating them when no worktree exists yet: on the branch
-// Linear names for the issue — tracking the remote's copy when the
-// branch is there, started from the remote's default branch when not.
-// The name is the branch (its last segment, should Linear ever put a
-// slash in one).
+// the issue. It looks for the work that already exists before making
+// any of its own, in three steps:
+//
+//  1. A worktree checked out for the issue — owl's own, else one
+//     someone else made, used where it stands.
+//  2. A branch carrying the key, local or on the remote. The work on an
+//     issue rarely lives on the slug Linear names: it is pushed from
+//     `bar-4098-credit-flip-uniform-sets` or `fix/bar-4157-projection`,
+//     and creating a fresh branch beside it strands the real one.
+//  3. Only when nothing carries the key, the branch Linear names,
+//     started from the remote's default branch.
 func ensureIssueWorktree(cfg Config, repo, key string, tracker Tracker, out io.Writer) (name, wt string, err error) {
-	list, err := listWorktrees(repo)
-	if err != nil {
-		return "", "", err
-	}
-	for _, w := range list {
-		if h := w.handle(); h != "" && matchesIssue(h, key) {
-			return h, w.Path, nil
+	if w, own, ok := findIssueWorktree(repo, cfg.WorktreesDir, key); ok {
+		if !own {
+			fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", w.Branch, cfg.WorktreesDir, w.Path)
 		}
+		return filepath.Base(w.Path), w.Path, nil
 	}
-	issue, err := tracker.Issue(key)
-	if err != nil {
-		return "", "", err
-	}
-	branch := issue.Branch
-	if branch == "" {
-		return "", "", fmt.Errorf("%s: Linear names no branch for it", key)
-	}
-	name = path.Base(branch)
-	if !matchesIssue(name, key) {
-		return "", "", fmt.Errorf("%s: Linear's branch %q does not carry the key; owl finds a feature by it", key, branch)
-	}
-	wt = filepath.Join(repo, cfg.WorktreesDir, name)
 	if _, err := git(repo, "fetch", "--quiet", cfg.Remote); err != nil {
 		return "", "", err
 	}
+	branch, err := issueBranch(repo, cfg.Remote, key, tracker, out)
+	if err != nil {
+		return "", "", err
+	}
+	name = worktreeName(branch, key)
+	wt = filepath.Join(repo, cfg.WorktreesDir, name)
 	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {
 		return "", "", err
 	}
+	// A worktree whose directory is gone — deleted by hand, or a
+	// scratchpad the machine cleaned — keeps its registration, and that
+	// registration still holds its branch: `worktree add` would refuse
+	// the very branch the work is on. Dropping those is what prune is
+	// for, and it is a no-op when there are none.
+	_, _ = git(repo, "worktree", "prune")
 	switch {
 	case refExists(repo, "refs/heads/"+branch):
 		fmt.Fprintf(out, "checking out %s into %s\n", branch, wt)
@@ -95,6 +97,49 @@ func ensureIssueWorktree(cfg Config, repo, key string, tracker Tracker, out io.W
 		return "", "", err
 	}
 	return name, wt, nil
+}
+
+// issueBranch picks the branch the feature works on: the newest of
+// those already carrying the key, else the one Linear names. Several
+// is the rare case — a stack, a second attempt — and the newest is the
+// one being worked on; the others are named so the choice is visible.
+func issueBranch(repo, remote, key string, tracker Tracker, out io.Writer) (string, error) {
+	if found := issueBranches(repo, remote, key); len(found) > 0 {
+		if len(found) > 1 {
+			fmt.Fprintf(out, "%s: %d branches carry the key, taking the newest\n", key, len(found))
+			for _, b := range found {
+				mark := "  "
+				if b == found[0] {
+					mark = "▸ "
+				}
+				fmt.Fprintf(out, "%s%s\n", mark, b)
+			}
+		}
+		return found[0], nil
+	}
+	issue, err := tracker.Issue(key)
+	if err != nil {
+		return "", err
+	}
+	if issue.Branch == "" {
+		return "", fmt.Errorf("%s: no branch carries the key and Linear names none", key)
+	}
+	if !matchesIssue(path.Base(issue.Branch), key) {
+		return "", fmt.Errorf("%s: Linear's branch %q does not carry the key; owl finds a feature by it", key, issue.Branch)
+	}
+	return issue.Branch, nil
+}
+
+// worktreeName is the directory a branch's workspace gets: the
+// branch's last segment when that already leads with the key, else the
+// key in front of it — close and the inference find a feature by the
+// key in the name.
+func worktreeName(branch, key string) string {
+	base := path.Base(branch)
+	if matchesIssue(base, key) {
+		return base
+	}
+	return strings.ToLower(key) + "-" + base
 }
 
 // refExists reports whether the repository has the ref.

@@ -79,8 +79,24 @@ func closeWorkspace(cfg Config, mx windows, label string, match func(name string
 	}
 	defer unlock()
 	wt := findWorktreeBy(repo, cfg.WorktreesDir, match)
-	branches := localBranches(repo, match)
+	// Only the worktrees under worktrees_dir are owl's, and only the
+	// branches no other worktree holds. `open` reuses a worktree
+	// someone else made rather than checking the branch out twice; what
+	// it did not create it does not remove.
+	held := heldElsewhere(repo, wt)
+	var branches, elsewhere []string
+	for _, br := range localBranches(repo, match) {
+		if dir, ok := held[br]; ok {
+			elsewhere = append(elsewhere, br)
+			fmt.Fprintf(out, "%s: %s is checked out in %s, leaving it\n", label, br, dir)
+			continue
+		}
+		branches = append(branches, br)
+	}
 	if wt == "" && len(branches) == 0 && window == "" {
+		if len(elsewhere) > 0 {
+			return fmt.Errorf("%s: nothing of owl's to remove — the work is in a worktree it does not own", label)
+		}
 		return nothingToCloseError{label: label, repo: repo}
 	}
 	// Changed tracked files are work in progress — an experiment, a fix

@@ -189,6 +189,10 @@ func lockWorkspace(repo, label string) (unlock func(), err error) {
 type worktree struct {
 	Path   string
 	Branch string // short name; "" when detached
+	// Prunable is git's own word for a registration whose directory is
+	// gone. It stays listed until `git worktree prune` runs, so owl must
+	// skip it rather than hand out a path that does not exist.
+	Prunable bool
 }
 
 // handle returns the workspace name a worktree is known by: its
@@ -223,9 +227,95 @@ func listWorktrees(dir string) ([]worktree, error) {
 			list = append(list, worktree{Path: strings.TrimPrefix(line, "worktree ")})
 		case strings.HasPrefix(line, "branch refs/heads/") && len(list) > 0:
 			list[len(list)-1].Branch = strings.TrimPrefix(line, "branch refs/heads/")
+		case strings.HasPrefix(line, "prunable") && len(list) > 0:
+			list[len(list)-1].Prunable = true
 		}
 	}
 	return list, nil
+}
+
+// branchCarries reports whether a branch name mentions the issue key
+// anywhere. Not the same question as matchesIssue: a workspace is
+// named by owl and leads with the key, a branch is named by whoever
+// pushed it — `bar-4098-credit-flip`, `fix/bar-4157-projection`.
+func branchCarries(branch, key string) bool {
+	key = strings.ToUpper(key)
+	for _, k := range issueKeysIn(branch) {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
+// issueBranches lists the branches carrying the key, newest commit
+// first, local and the remote's — a remote-only branch by the local
+// name it would be checked out under. git keeps the index; this is one
+// command, not a walk.
+func issueBranches(repo, remote, key string) []string {
+	out, err := git(repo, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads", "refs/remotes/"+remote)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	seen := map[string]bool{}
+	for _, ref := range strings.Fields(out) {
+		name := strings.TrimPrefix(ref, remote+"/")
+		if name == "HEAD" || seen[name] || !branchCarries(name, key) {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names
+}
+
+// findIssueWorktree returns the worktree already checked out for the
+// issue: one of owl's own first, then one someone else made — git
+// refuses to check a branch out twice, so a foreign worktree has to be
+// used where it stands or not at all. own reports which it found.
+func findIssueWorktree(repo, worktreesDir, key string) (w worktree, own, ok bool) {
+	list, err := listWorktrees(repo)
+	if err != nil {
+		return worktree{}, false, false
+	}
+	base := filepath.Join(repo, worktreesDir)
+	var foreign worktree
+	var found bool
+	for _, w := range list {
+		if w.Prunable {
+			continue
+		}
+		if !matchesIssue(filepath.Base(w.Path), key) && !branchCarries(w.Branch, key) {
+			continue
+		}
+		if filepath.Dir(w.Path) == base {
+			return w, true, true
+		}
+		if !found {
+			foreign, found = w, true
+		}
+	}
+	return foreign, false, found
+}
+
+// heldElsewhere maps each branch checked out in a worktree other than
+// the one at except, to that worktree's path. git refuses to delete a
+// branch a worktree holds, and a worktree owl is not removing — one
+// someone else made — is not owl's to empty.
+func heldElsewhere(repo, except string) map[string]string {
+	held := map[string]string{}
+	list, err := listWorktrees(repo)
+	if err != nil {
+		return held
+	}
+	for _, w := range list {
+		if w.Prunable || w.Branch == "" || w.Path == except {
+			continue
+		}
+		held[w.Branch] = w.Path
+	}
+	return held
 }
 
 // shellQuote single-quotes s for a POSIX shell.

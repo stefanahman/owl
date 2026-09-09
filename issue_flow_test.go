@@ -127,6 +127,112 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	}
 }
 
+// commitAt commits with a fixed committer date, so "newest branch" is
+// decided by the fixture and not by how fast the test ran.
+func (f *fixture) commitAt(dir, when, msg string) {
+	f.t.Helper()
+	if err := os.Setenv("GIT_COMMITTER_DATE", when); err != nil {
+		f.t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("GIT_COMMITTER_DATE") }()
+	f.git(dir, "commit", "-q", "-m", msg)
+}
+
+// pushBranch puts a branch carrying the issue's key on the origin,
+// named the way a person or an agent names one — the key, then a slug
+// of their own, not the slug Linear names.
+func (f *fixture) pushBranch(branch, file, when string) {
+	f.t.Helper()
+	f.git(f.origin, "checkout", "-q", "-b", branch)
+	f.write(filepath.Join(f.origin, file), "the real work\n")
+	f.git(f.origin, "add", ".")
+	f.commitAt(f.origin, when, branch)
+	f.git(f.origin, "checkout", "-q", "main")
+}
+
+func TestIssueOpenTakesTheBranchThatCarriesTheKey(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	// BAR-4160's work was pushed from a branch of its own. Linear names
+	// bar-4160-per-tenant-override; nobody used it.
+	f.pushBranch("bar-4160-credit-flip", "flip.txt", "2026-01-01T00:00:00Z")
+
+	wt := filepath.Join(f.repo, ".worktrees.local", "bar-4160-credit-flip")
+	if out := f.openIssue("bar-4160"); !strings.Contains(out, "fetching origin/bar-4160-credit-flip into "+wt) {
+		t.Errorf("output: %q", out)
+	}
+	if !f.exists(filepath.Join(wt, "flip.txt")) {
+		t.Errorf("%s lacks the work on the branch", wt)
+	}
+	// The point of the whole thing: no second branch beside the real one.
+	if refExists(f.repo, "refs/heads/bar-4160-per-tenant-override") {
+		t.Error("open created Linear's branch beside the one carrying the key")
+	}
+}
+
+func TestIssueOpenTakesTheNewestOfSeveral(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	f.pushBranch("bar-4160-first-try", "first.txt", "2026-01-01T00:00:00Z")
+	f.pushBranch("bar-4160-second-try", "second.txt", "2026-06-01T00:00:00Z")
+
+	out := f.openIssue("bar-4160")
+	for _, want := range []string{
+		"BAR-4160: 2 branches carry the key, taking the newest",
+		"▸ bar-4160-second-try",
+		"  bar-4160-first-try",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	wt := filepath.Join(f.repo, ".worktrees.local", "bar-4160-second-try")
+	if got := f.git(wt, "branch", "--show-current"); got != "bar-4160-second-try" {
+		t.Errorf("worktree branch %q", got)
+	}
+}
+
+func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	// Another agent's worktree, outside worktrees_dir, on a branch
+	// carrying the key. git will not check that branch out twice, so
+	// owl has to use it where it stands.
+	foreign := filepath.Join(f.root, "elsewhere", "bar-4160-flip")
+	f.git(f.repo, "worktree", "add", "-q", "-b", "bar-4160-credit-flip", foreign, "origin/main")
+
+	out := f.openIssue("bar-4160")
+	for _, want := range []string{"bar-4160-credit-flip is checked out outside .worktrees.local", foreign, "opening it there"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", "bar-4160-flip")) {
+		t.Error("open made a second worktree for a branch already checked out")
+	}
+	// close leaves what it did not create, and says so.
+	var buf strings.Builder
+	if err := runIssue(f.cfg, []string{"close", "BAR-4160"}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "bar-4160-credit-flip is checked out in "+foreign+", leaving it") {
+		t.Errorf("close output: %q", buf.String())
+	}
+	if !f.exists(foreign) || !refExists(f.repo, "refs/heads/bar-4160-credit-flip") {
+		t.Error("close removed a worktree or branch it does not own")
+	}
+
+	// A worktree whose directory is gone is git's "prunable": still
+	// listed, never handed out.
+	if err := os.RemoveAll(foreign); err != nil {
+		t.Fatal(err)
+	}
+	out = f.openIssue("bar-4160")
+	if strings.Contains(out, foreign) {
+		t.Errorf("open reused a worktree whose directory is gone:\n%s", out)
+	}
+}
+
 func TestIssueClose(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
