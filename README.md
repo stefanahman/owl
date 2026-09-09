@@ -118,11 +118,13 @@ client to the review session), `stay` in a plain terminal.
 
 Three companions, each optional:
 
-- [tmux-claude-status](https://github.com/stefanahman/tmux-claude-status)
+- [claude-status](https://github.com/stefanahman/claude-status)
   writes the `©` state owl shows under tmux (and puts the same chips
-  in your status bar). Without it the badge only says "a window
-  exists". herdr reports the state itself; cmux through its own
-  Claude Code hooks.
+  in your status bar) and under cmux (a pill in the sidebar). Without
+  it the badge only says "a window exists" under tmux, and under cmux
+  it comes from cmux's own Claude Code hooks, which also count the
+  60-second idle reminder as waiting for you. herdr reports the state
+  itself.
 - [owl, the plugin](owl/README.md), whose `review`
   skill is the default `agent.prompt` of a fresh workspace (installed
   in step 2 above). It is what makes the default prompt do something;
@@ -146,8 +148,8 @@ forces one.
 | | tmux | herdr | cmux |
 |---|---|---|---|
 | a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree | a workspace named `pr-<N>-<slug>`, cwd the worktree |
-| the agent's state | tmux-claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same everywhere: finished, not yet looked at | cmux's Claude Code hooks, through the wrapper it puts on the shell's PATH: `running`, `needsInput`, `idle`. `done` is idle with cmux's notification about the turn unread; Enter in owl marks it read |
-| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux | refused from the hook state; an agent the wrapper never saw shows no state and gets the text typed |
+| the agent's state | claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same everywhere: finished, not yet looked at | claude-status's sidebar pill when the plugin runs there; without it cmux's own Claude Code hooks, whose `needsInput` also covers the 60-second idle reminder. `done` is the pill's `done` (or cmux's `idle`) with cmux's notification about the turn unread; Enter in owl marks it read |
+| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux | refused from claude-status's pill, or from cmux's hook state without it; an agent neither saw shows no state and gets the text typed |
 | Enter arrives | `select-window`, then your hook | `workspace focus`; every attached client follows | `workspace select`, and `focus-window` when owl runs outside cmux |
 | a failure after the popup closed | tmux's status line | a herdr notification | a cmux notification, on owl's own workspace |
 | `hooks.after_open` sees | `OWL_SESSION` = the session, `OWL_WINDOW` = the window | `OWL_SESSION` = the herdr session, `OWL_WINDOW` = the label | `OWL_WINDOW` = the name; cmux has no session |
