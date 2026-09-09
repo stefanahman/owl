@@ -23,7 +23,7 @@ func (f *fixture) projectWindows() []string {
 }
 
 func TestProjectOpenCreatesTheConversation(t *testing.T) {
-	f, _ := issueFixture(t)
+	f, fake := issueFixture(t)
 	t.Chdir(f.repo)
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
@@ -32,6 +32,16 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 	var out strings.Builder
 	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
 		t.Fatal(err)
+	}
+	// One lookup by id, and not the filtered list of every project the
+	// user works in: that query has been measured at eighteen seconds.
+	if fake.projectLookups != 1 {
+		t.Errorf("project lookups = %d, want 1", fake.projectLookups)
+	}
+	for _, q := range fake.queries {
+		if strings.Contains(q, "projects(first:") {
+			t.Errorf("open by id fetched the whole project list:\n%s", q)
+		}
 	}
 	name := "proj-sequential-capture-redesign"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)

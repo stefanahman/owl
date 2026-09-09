@@ -91,6 +91,13 @@ func newSessionID() (string, error) {
 // matches is an error naming them — guessing between projects would
 // open the wrong conversation.
 func findProject(tracker Tracker, id string) (Project, error) {
+	// An id resolves on its own, and that is the path the list uses:
+	// one lookup instead of every project the user works in, with all
+	// their milestones, behind a filter that scans the workspace's
+	// issues. The difference is 90ms against seconds.
+	if p, err := tracker.Project(id); err == nil && p.ID != "" {
+		return p, nil
+	}
 	all, err := tracker.Projects()
 	if err != nil {
 		return Project{}, err

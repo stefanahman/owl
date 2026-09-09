@@ -27,6 +27,8 @@ type Tracker interface {
 	Done(since time.Time) ([]Issue, error)
 	// Projects lists the open projects the user works in.
 	Projects() ([]Project, error)
+	// Project fetches one by Linear's slug id or UUID.
+	Project(id string) (Project, error)
 	// Issue fetches one by its identifier (BAR-123).
 	Issue(key string) (Issue, error)
 	// Create files an issue in the configured team, assigned to the
@@ -145,7 +147,12 @@ func (l Linear) post(q string, vars map[string]any, out any) error {
 	}
 	client := l.Client
 	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
+		// Linear's latency varies by a factor of fifty on the same query:
+		// the project list has been measured at 380ms and, minutes
+		// later, at 18.3s. A tight timeout turns that into a failure
+		// where waiting would have worked, and every fetch here is
+		// either async behind a cache or a one-shot command.
+		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -298,6 +305,20 @@ func (l Linear) Projects() ([]Project, error) {
 		}
 		after = &r.Projects.PageInfo.EndCursor
 	}
+}
+
+// Project looks one up by Linear's slug id (the tail of its URL) or
+// its UUID — 90ms, against the seconds the filtered list can take, and
+// the whole of what `owl project open <id>` needs.
+func (l Linear) Project(id string) (Project, error) {
+	var r struct {
+		Project Project `json:"project"`
+	}
+	q := `query($id: String!) { project(id: $id) { ` + projectFields + ` } }`
+	if err := l.query(q, map[string]any{"id": id}, &r); err != nil {
+		return Project{}, err
+	}
+	return r.Project, nil
 }
 
 // Issue looks one up by identifier; Linear's issue(id:) takes the

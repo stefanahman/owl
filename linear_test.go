@@ -20,6 +20,8 @@ type fakeLinear struct {
 	queries   []string
 	created   []string
 	doneSince string // the completedAt bound the last Done() sent
+
+	projectLookups int // project(id:) calls, to prove open takes the cheap path
 }
 
 func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +80,27 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			f.t.Errorf("assignedIssues with an unexpected filter: %v", filter)
 		}
 		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": nodes, "pageInfo": page}}}
+	case strings.Contains(req.Query, "project(id: $id)"):
+		// One lookup, not the whole filtered list: this is the path
+		// `owl project open <id>` takes.
+		f.projectLookups++
+		switch id, _ := req.Variables["id"].(string); id {
+		case "a76d38ca8527", "uuid-a76d38ca8527":
+			data = map[string]any{"project": map[string]any{
+				"id": "uuid-a76d38ca8527", "name": "Sequential Capture redesign", "slugId": "a76d38ca8527",
+				"url": "https://linear.app/x/project/a76d38ca8527", "progress": 0.62, "scope": 127,
+				"updatedAt": "2026-09-08T13:55:43.474Z",
+				"status":    map[string]string{"name": "In Progress", "type": "started"},
+				"lead":      map[string]string{"name": "Stefan Åhman"},
+				"projectMilestones": map[string]any{"nodes": []any{
+					map[string]any{"id": "ms-1", "name": "M3.5 — Downstream compatibility", "progress": 0.8},
+				}},
+			}}
+		default:
+			// Linear answers a name fragment with a null project, not an
+			// error; the caller falls back to the list.
+			data = map[string]any{"project": nil}
+		}
 	case strings.Contains(req.Query, "projects(first:"):
 		// The union is the whole point: a project the user neither leads
 		// nor belongs to, but has an open issue in, must be in the answer.
