@@ -252,6 +252,16 @@ and the state name only where the section does not already say it — a
 status named Paused but typed `started` sits under In progress and says
 so.
 
+A project in one of `project.dim_statuses` renders **dim throughout** —
+name, bar and counts — while staying in the section its status type
+puts it in. It is present and not moving, which is a different thing
+from being elsewhere. The default is `[Paused]`, and it is a config key
+rather than a rule in the code because nothing in the data marks such a
+status: Linear has no `paused` status *type*, so a workspace's Paused
+is typed `started`, identical to In Progress. Naming it here is the
+only honest way to tell them apart, and it keeps working when you
+rename it or add another.
+
 A fourth section, **Completed · 7d**, holds what you finished in the
 last week — a week rather than the issue list's day, because projects
 finish on a different clock and one closed on Monday is still news on
@@ -458,6 +468,7 @@ issue:
 project:
   session: projects              # tmux: one window per project — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
+  dim_statuses: [Paused]         # statuses that mean present but not moving; their rows render dim
 
 groups:                          # cmux workspace groups, one per scope; tmux and herdr ignore them
   reviews:  { color: "#00afff", icon: eye }

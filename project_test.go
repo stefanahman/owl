@@ -133,6 +133,51 @@ func TestProjectListShowsWhatJustCompleted(t *testing.T) {
 	}
 }
 
+func TestProjectListDimsParkedStatuses(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	render := func(cfg Config) string {
+		m := newProjectModel(cfg, "acme/example", nil, nil)
+		m.projects, m.issues, m.ready = fixtureProjects(), projectIssues(), true
+		m.width, m.height = 140, 30
+		m.resizeViewport()
+		var b strings.Builder
+		for _, row := range m.visibleProjectRows() {
+			b.WriteString(m.renderRow(row, false) + "\n")
+		}
+		return b.String()
+	}
+	// The fixture's Bardo Backstage is named Paused and typed started,
+	// which is how Linear stores it: nothing but the name separates it
+	// from In Progress.
+	if !defaultConfig().Project.dimmed("Paused") || !defaultConfig().Project.dimmed("paused") {
+		t.Error("Paused is not dimmed by default, in either case")
+	}
+	if defaultConfig().Project.dimmed("In Progress") {
+		t.Error("In Progress is dimmed")
+	}
+
+	dimmed := render(defaultConfig())
+	plain := defaultConfig()
+	plain.Project.DimStatuses = nil
+	// Same rows, same order, same words — only the styling differs.
+	if undimmed := render(plain); dimmed == undimmed {
+		t.Errorf("dim_statuses changed nothing:\n%s", dimmed)
+	} else if stripANSI(dimmed) != stripANSI(undimmed) {
+		t.Errorf("dimming moved or reworded a row:\n%s\n---\n%s", stripANSI(dimmed), stripANSI(undimmed))
+	}
+	// A parked project stays in the section Linear's type puts it in.
+	rows := strings.Split(stripANSI(dimmed), "\n")
+	var section string
+	for _, r := range rows {
+		if r != "" && !strings.HasPrefix(r, " ") && !strings.HasPrefix(r, "▸") {
+			section = r
+		}
+		if strings.Contains(r, "Bardo Backstage") && section != "In progress" {
+			t.Errorf("the paused project left its section, into %q", section)
+		}
+	}
+}
+
 func TestProjectListFiltersByName(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	m := newProjectModel(defaultConfig(), "acme/example", nil, nil)

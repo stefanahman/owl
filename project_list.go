@@ -144,8 +144,10 @@ func (m model) projectNameWidth() int {
 	return clampInt(m.width-projectFixed, nameFloor, nameCeiling)
 }
 
-// progressBar draws Linear's own fraction as ten cells.
-func progressBar(f float64) string {
+// progressBar draws Linear's own fraction as ten cells. A parked
+// project's bar is dim throughout: the progress is still true, it is
+// just not moving.
+func progressBar(f float64, dim bool) string {
 	full := int(f*barCells + 0.5)
 	if full > barCells {
 		full = barCells
@@ -153,7 +155,11 @@ func progressBar(f float64) string {
 	if full < 0 {
 		full = 0
 	}
-	return styleApproved.Render(strings.Repeat("▓", full)) + styleDim.Render(strings.Repeat("░", barCells-full))
+	filled := styleApproved
+	if dim {
+		filled = styleDim
+	}
+	return filled.Render(strings.Repeat("▓", full)) + styleDim.Render(strings.Repeat("░", barCells-full))
 }
 
 // renderProjectRow: cursor, name, the progress bar, your open issues
@@ -174,20 +180,28 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 	if n := len(p.Milestones.Nodes); n > 0 {
 		milestones = fmt.Sprintf("%d ms", n)
 	}
+	// Parked: present, and not moving. The whole row recedes rather
+	// than leaving its section, because a paused project is still one
+	// of yours and still where Linear puts it.
+	dim := m.cfg.Project.dimmed(p.State.Name)
 	// Your share is the point of the row, so it stays undimmed when
 	// there is one and recedes when the project holds nothing of yours.
 	mine := m.mineIn(*p)
 	counts, style := fmt.Sprintf("%d/%d", mine, p.Scope), styleDim
-	if mine > 0 {
+	if mine > 0 && !dim {
 		style = lipgloss.NewStyle()
 	}
 	w := m.projectNameWidth()
+	name := fmt.Sprintf("%-*s", w, trim(p.Name, w))
+	if dim {
+		name = styleDim.Render(name)
+	}
 	return strings.TrimRight(fmt.Sprintf(
-		"%s%s %-*s  %s %3.0f%%  %s  %s %s",
+		"%s%s %s  %s %3.0f%%  %s  %s %s",
 		cursor,
 		workspaceBadges(m.localOf(row), starting),
-		w, trim(p.Name, w),
-		progressBar(p.Progress),
+		name,
+		progressBar(p.Progress, dim),
 		p.Progress*100,
 		cell(counts, mineWidth, style),
 		cell(milestones, milestoneWidth, styleDim),
@@ -219,7 +233,7 @@ func (m model) projectLegend() string {
 		styleHeader.Render("Legend"),
 		fmt.Sprintf("  %s   worktree and window for the project's conversation", styleWorktree.Render("⎇")),
 		fmt.Sprintf("  %s   Claude in it — working, blocked, done, idle as on the other lists", styleClaudeWorking.Render("©")),
-		fmt.Sprintf("  %s  Linear's own progress for the project", progressBar(0.6)),
+		fmt.Sprintf("  %s  Linear's own progress for the project", progressBar(0.6, false)),
 		"  12/127      your open issues in it, over every issue it holds",
 		"  11 ms       milestones: the project's own structure, and where its specs live",
 		"",

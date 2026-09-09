@@ -72,6 +72,23 @@ type GroupsConfig struct {
 type ProjectConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
+	// DimStatuses are the statuses that mean present but not moving.
+	// Nothing in the data marks them: Linear types Paused as `started`,
+	// the same as In Progress, because `paused` is not one of the types
+	// a workspace can give a status. Naming them here is what separates
+	// them, and it keeps owl out of the business of knowing that a
+	// status called Paused is special.
+	DimStatuses []string `yaml:"dim_statuses"`
+}
+
+// dimmed reports whether a status is one of the parked ones.
+func (p ProjectConfig) dimmed(status string) bool {
+	for _, s := range p.DimStatuses {
+		if strings.EqualFold(s, status) {
+			return true
+		}
+	}
+	return false
 }
 
 // LinearConfig is the issue tracker: the key, as a reference, and the
@@ -369,6 +386,7 @@ issue:
 project:
   session: projects              # tmux: one window per project lives here — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
+  dim_statuses: [Paused]         # statuses that mean present but not moving: their rows render dim. Linear types Paused as started, the same as In Progress, so only this tells them apart
 
 groups:                          # cmux workspace groups, one per scope, named after the scope itself; tmux and herdr have no such thing and ignore this
   reviews:                       # the group is made from the first workspace that needs it, and cmux removes it when the last member closes
@@ -443,7 +461,7 @@ func defaultConfig() Config {
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
-	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}"}
+	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}", DimStatuses: []string{"Paused"}}
 	c.Groups = GroupsConfig{
 		Reviews:  GroupStyle{Color: "#00afff", Icon: "eye"},
 		Features: GroupStyle{Color: "#00d75f", Icon: "hammer"},
