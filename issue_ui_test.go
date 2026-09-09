@@ -57,8 +57,11 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	r.Author.Login = "alice"
 	approved.Reviews = []Review{r}
 	draft := PR{Number: 3550, HeadRefName: "bar-4578-step-a", IsDraft: true}
+	// A second PR on BAR-4159, from a branch nobody named after Linear's
+	// slug: both chips show, newest first.
+	second := PR{Number: 3561, HeadRefName: "fix/bar-4159-particle-guard"}
 	tm.Send(issuesMsg{issues: fixtureIssues()})
-	tm.Send(branchPRsMsg{prs: []PR{approved, draft}})
+	tm.Send(issuePRsMsg{prs: []PR{approved, draft, second}})
 	tm.Send(localMsg{"bar-4160-per-tenant-override": {Worktree: "/wt/bar-4160-per-tenant-override", Window: "bar-4160-per-tenant-override", ClaudeState: agentBlocked}})
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -68,7 +71,7 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 		"owl · issues · acme/example",
 		"In progress", "Todo", "Backlog",
 		"BAR-4160", "⎇", "©", // the workspace and the blocked agent
-		"BAR-4159", "!!", "8h", "In Review", "#3543✓",
+		"BAR-4159", "!!", "8h", "In Review", "#3561  #3543✓",
 		"BAR-4578", "!!!", "#3550 draft",
 		"BAR-4404", "Shadow output validation",
 		"4 open · 2 in progress · 1 todo · 1 backlog",
@@ -150,12 +153,13 @@ func TestIssueCacheRoundTrip(t *testing.T) {
 		t.Fatal("a cache from nowhere")
 	}
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
-	m.issues, m.branchPRs, m.ready, m.cursor = fixtureIssues(), byBranch([]PR{{Number: 7, HeadRefName: "bar-4159-company-fuzzy-match"}}), true, 2
+	m.issues, m.ready, m.cursor = fixtureIssues(), true, 2
+	m.issuePRs = byIssueKey([]PR{{Number: 7, HeadRefName: "bar-4159-company-fuzzy-match"}})
 	m.lastFetched = time.Now()
 	m.persistCache()
 	resumed := newIssueModel(defaultConfig(), "acme/example", nil, loadIssueCache())
-	if len(resumed.issues) != 4 || resumed.branchPRs["bar-4159-company-fuzzy-match"].Number != 7 || !resumed.ready || resumed.cursor != 2 {
-		t.Errorf("resumed = %d issues, prs %v, ready %v, cursor %d", len(resumed.issues), resumed.branchPRs, resumed.ready, resumed.cursor)
+	if len(resumed.issues) != 4 || len(resumed.issuePRs["BAR-4159"]) != 1 || resumed.issuePRs["BAR-4159"][0].Number != 7 || !resumed.ready || resumed.cursor != 2 {
+		t.Errorf("resumed = %d issues, prs %v, ready %v, cursor %d", len(resumed.issues), resumed.issuePRs, resumed.ready, resumed.cursor)
 	}
 }
 

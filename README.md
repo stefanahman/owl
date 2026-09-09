@@ -179,9 +179,12 @@ Backlog
 The issues Linear assigns to you, in three sections by state — in
 progress, todo, backlog — newest change first. A row shows the key,
 the workspace badges, the priority (`!!!` urgent to `-` low), the age
-of the last change, the title, the state, and the open PR on the
-issue's branch when there is one: `#N✓` approved by someone, `#N⚠`
-changes requested, `#N draft`. Enter opens the feature workspace, `o`
+of the last change, the title, the state, and every open PR whose head
+branch carries the issue's key, newest first: `#N✓` approved by
+someone, `#N⚠` changes requested, `#N draft`. The key and not the whole
+branch name, since a PR is as often pushed from
+`fix/bar-4159-particle-guard` as from the slug Linear names.
+Enter opens the feature workspace, `o`
 opens the issue in Linear, `y` copies its key, `/` filters by key or
 title. Off a terminal, `owl issue` prints a table.
 

@@ -26,26 +26,57 @@ func (m model) fetchIssues() tea.Msg {
 	return issuesMsg{gen, issues}
 }
 
-// fetchBranchPRs lists the repo's open PRs, mine included: an issue's
-// row shows the PR for its branch.
-func (m model) fetchBranchPRs() tea.Msg {
+// fetchIssuePRs lists the repo's open PRs, mine included: an issue's
+// row shows the PRs opened for it.
+func (m model) fetchIssuePRs() tea.Msg {
 	gen := m.fetchGen
 	if m.repo == "" {
-		return branchPRsMsg{gen, nil} // no GitHub repo: the rows just have no PR
+		return issuePRsMsg{gen, nil} // no GitHub repo: the rows just have no PR
 	}
 	prs, err := ghPRList(m.repo, "open", "")
 	if err != nil {
-		return branchPRsMsg{gen, nil} // gh down or offline: the issues still list
+		return issuePRsMsg{gen, nil} // gh down or offline: the issues still list
 	}
-	return branchPRsMsg{gen, prs}
+	return issuePRsMsg{gen, prs}
 }
 
-// byBranch indexes PRs by head branch.
-func byBranch(prs []PR) map[string]PR {
-	out := make(map[string]PR, len(prs))
+// byIssueKey indexes PRs by the issue keys their head branch carries,
+// newest first — an issue may well have several open at once.
+//
+// By the key and not by Linear's branchName: only the branches owl
+// itself creates carry that slug verbatim, and one PR in ten is pushed
+// from it. A branch keeps the key and rewrites the slug —
+// `bar-4159-company-fuzzy-match-particle-guard` for an issue Linear
+// names `bar-4159-company-fuzzy-match-accepts-particle-only-name-overlap`
+// — so matching the whole string finds almost nothing.
+func byIssueKey(prs []PR) map[string][]PR {
+	out := map[string][]PR{}
 	for _, pr := range prs {
-		out[pr.HeadRefName] = pr
+		for _, key := range issueKeysIn(pr.HeadRefName) {
+			out[key] = append(out[key], pr)
+		}
 	}
+	for _, list := range out {
+		sort.SliceStable(list, func(i, j int) bool { return list[i].Number > list[j].Number })
+	}
+	return out
+}
+
+// flattenPRs is the index back as the flat list the cache holds, each
+// PR once however many issues it is filed under, newest first so the
+// file does not churn on the map's iteration order.
+func flattenPRs(index map[string][]PR) []PR {
+	var out []PR
+	seen := map[int]bool{}
+	for _, list := range index {
+		for _, pr := range list {
+			if !seen[pr.Number] {
+				seen[pr.Number] = true
+				out = append(out, pr)
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Number > out[j].Number })
 	return out
 }
 
@@ -100,7 +131,7 @@ func contains(list []string, s string) bool {
 }
 
 // renderIssueRow: cursor, key, the workspace badges, priority, age,
-// title, state, and the branch's PR when there is one.
+// title, state, and the issue's open PRs when there are any.
 func (m model) renderIssueRow(row visibleRow, selected bool) string {
 	is := row.issue
 	cursor := "  "
@@ -122,7 +153,7 @@ func (m model) renderIssueRow(row visibleRow, selected bool) string {
 		styleDim.Render(fmt.Sprintf("%3s", age)),
 		trim(is.Title, 60),
 		styleDim.Render(is.State.Name),
-		prChip(m.branchPRs[is.Branch], is.Branch != ""),
+		prChips(m.issuePRs[is.Key]),
 	)
 }
 
@@ -158,23 +189,29 @@ func workspaceBadges(ls LocalState, starting string) string {
 	return strings.Join(parts, " ")
 }
 
-// prChip names the PR on the issue's branch: `#N`, dim while a draft,
-// with ⚠ when a reviewer requested changes and ✓ when one approved.
-// Nothing when the branch has no open PR.
-func prChip(pr PR, ok bool) string {
-	if !ok || pr.Number == 0 {
-		return ""
+// prChips names every open PR on the issue, newest first. Nothing when
+// it has none.
+func prChips(prs []PR) string {
+	var b strings.Builder
+	for _, pr := range prs {
+		b.WriteString("  " + prChip(pr))
 	}
+	return b.String()
+}
+
+// prChip names one PR: `#N`, dim while a draft, with ⚠ when a reviewer
+// requested changes and ✓ when one approved.
+func prChip(pr PR) string {
 	chip := fmt.Sprintf("#%d", pr.Number)
 	switch {
 	case pr.HasChangesRequested():
-		return "  " + styleChangesReqd.Render(chip+"⚠")
+		return styleChangesReqd.Render(chip + "⚠")
 	case pr.anyApproved():
-		return "  " + styleApproved.Render(chip+"✓")
+		return styleApproved.Render(chip + "✓")
 	case pr.IsDraft:
-		return "  " + styleDraft.Render(chip+" draft")
+		return styleDraft.Render(chip + " draft")
 	}
-	return "  " + chip
+	return chip
 }
 
 // anyApproved reports whether any reviewer's latest verdict approves.
@@ -213,6 +250,6 @@ func (m model) issueLegend() string {
 		fmt.Sprintf("  %s   Claude idle — finished and seen (session still available)", styleClaudeDone.Render("©")),
 		fmt.Sprintf("  %s   Claude session — no state set (fresh window)", styleClaudeNeutral.Render("©")),
 		"  !!! !! ! -   priority: urgent, high, medium, low",
-		fmt.Sprintf("  %s %s %s   the PR on the issue's branch: approved, changes requested, draft", styleApproved.Render("#N✓"), styleChangesReqd.Render("#N⚠"), styleDraft.Render("#N draft")),
+		fmt.Sprintf("  %s %s %s   the issue's open PRs, newest first: approved, changes requested, draft", styleApproved.Render("#N✓"), styleChangesReqd.Render("#N⚠"), styleDraft.Render("#N draft")),
 	)
 }

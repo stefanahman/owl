@@ -55,14 +55,14 @@ type mergedMsg struct {
 }
 type userMsg string // authenticated user login
 
-// issuesMsg and branchPRsMsg are the issue list's fetches: the open
-// issues assigned to the user, and the repo's open PRs by head branch,
-// which is how an issue's row shows the PR for its branch.
+// issuesMsg and issuePRsMsg are the issue list's fetches: the open
+// issues assigned to the user, and the repo's open PRs, which the rows
+// show against the issue key their head branch carries.
 type issuesMsg struct {
 	gen    int
 	issues []Issue
 }
-type branchPRsMsg struct {
+type issuePRsMsg struct {
 	gen int
 	prs []PR
 }
@@ -278,7 +278,7 @@ type model struct {
 	prs        []PR
 	merged     []PR
 	issues     []Issue
-	branchPRs  map[string]PR // the repo's open PRs by head branch, for the issue rows
+	issuePRs   map[string][]PR // the repo's open PRs by issue key, for the issue rows
 	localState map[string]LocalState
 
 	// load state
@@ -346,7 +346,7 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
 	if cache != nil {
 		m.issues = cache.Issues
-		m.branchPRs = byBranch(cache.BranchPRs)
+		m.issuePRs = byIssueKey(cache.IssuePRs)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
 		m.cursor = cache.Cursor
@@ -426,7 +426,7 @@ func (m model) Init() tea.Cmd {
 // fetches are the list's remote fetches, for Init, refresh and focus.
 func (m model) fetches() []tea.Cmd {
 	if m.kind == "issue" {
-		return []tea.Cmd{m.fetchIssues, m.fetchBranchPRs}
+		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs}
 	}
 	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
 }
@@ -440,7 +440,7 @@ func fetchUser() tea.Msg { return userMsg(currentUser()) }
 // best-effort.
 func (m model) persistCache() {
 	if m.kind == "issue" {
-		saveIssueCache(issueCacheFile{Issues: m.issues, BranchPRs: slices.Collect(maps.Values(m.branchPRs)), FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveIssueCache(issueCacheFile{Issues: m.issues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
 	}
 	saveCache(m.repo, cacheFile{
@@ -755,11 +755,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 		m.persistCache()
 
-	case branchPRsMsg:
+	case issuePRsMsg:
 		if msg.gen != m.fetchGen {
 			break
 		}
-		m.branchPRs = byBranch(msg.prs)
+		m.issuePRs = byIssueKey(msg.prs)
 		m.refreshList()
 		m.persistCache()
 

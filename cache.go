@@ -33,7 +33,7 @@ type cacheFile struct {
 // issueCacheFile is the issue list's on-disk shape.
 type issueCacheFile struct {
 	Issues    []Issue   `json:"issues"`
-	BranchPRs []PR      `json:"branchPrs"`
+	IssuePRs  []PR      `json:"issuePrs"`
 	FetchedAt time.Time `json:"fetchedAt"`
 	Cursor    int       `json:"cursor"`
 }

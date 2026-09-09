@@ -62,6 +62,30 @@ func matchesIssue(name, key string) bool {
 	return issueKeyOf(name) == strings.ToUpper(key)
 }
 
+// issueKeyRefRe finds an issue key inside a longer name, at a word
+// boundary. Unanchored, unlike issueHandleRe: a workspace is named by
+// owl and carries the key first, a branch is named by whoever pushed
+// it and carries the key wherever they put it — `fix/bar-4157-…` as
+// readily as `bar-4157-…`.
+var issueKeyRefRe = regexp.MustCompile(`(?i)\b[a-z]+-[0-9]+`)
+
+// issueKeysIn returns every issue key a name mentions, upper-cased and
+// deduplicated. A dependency branch's version reads as a key too
+// (`sharp-0.35.4` → SHARP-0); nothing ever looks one of those up, so a
+// stray costs a map entry and nothing more.
+func issueKeysIn(name string) []string {
+	var keys []string
+	seen := map[string]bool{}
+	for _, m := range issueKeyRefRe.FindAllString(name, -1) {
+		key := strings.ToUpper(m)
+		if !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
 // issueKeyRe is the shape of an issue key: a team's letters, a dash,
 // a number.
 var issueKeyRe = regexp.MustCompile(`^[A-Za-z]+-[0-9]+$`)
