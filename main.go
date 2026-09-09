@@ -74,6 +74,13 @@ type doneMsg struct {
 	issues []Issue
 }
 
+// projectsMsg is the project list's fetch: the open projects the user
+// works in.
+type projectsMsg struct {
+	gen      int
+	projects []Project
+}
+
 // localTickMsg asks for the local overlay again. Claude's state is
 // whatever the multiplexer reports as Claude works; following it every
 // two seconds — a status bar's cadence — lets a © change colour as
@@ -240,10 +247,10 @@ func applyTheme(t ThemeConfig) {
 // Row model
 // ------------------------------------------------------------
 
-// visibleRow is a section header, a PR row or an issue row. On a
-// header sectionTitle is what it says; on an issue row it is the
-// section the row sits in, which decides whether the row repeats its
-// state name (renderIssueRow).
+// visibleRow is a section header, a PR row, an issue row or a project
+// row. On a header sectionTitle is what it says; on an issue or
+// project row it is the section the row sits in, which decides whether
+// the row repeats its state name.
 type visibleRow struct {
 	sectionTitle string
 	sectionNote  string // dim, after the title: the Done section's window
@@ -252,19 +259,23 @@ type visibleRow struct {
 	status       ReviewStatus
 	merged       bool
 	issue        *Issue
+	project      *Project
 }
 
 // header reports whether the row is a section title.
-func (r visibleRow) header() bool { return r.pr == nil && r.issue == nil }
+func (r visibleRow) header() bool { return r.pr == nil && r.issue == nil && r.project == nil }
 
 // id names what the row is about, for inflight and the children: a
-// PR's number, an issue's key.
+// PR's number, an issue's key, a project's slug.
 func (r visibleRow) id() string {
 	if r.pr != nil {
 		return strconv.Itoa(r.pr.Number)
 	}
 	if r.issue != nil {
 		return r.issue.Key
+	}
+	if r.project != nil {
+		return r.project.SlugID
 	}
 	return ""
 }
@@ -290,6 +301,7 @@ type model struct {
 	merged     []PR
 	issues     []Issue
 	doneIssues []Issue         // completed inside doneWindow; the Done section
+	projects   []Project       // the project list's rows
 	issuePRs   map[string][]PR // the repo's open PRs by issue key, for the issue rows
 	localState map[string]LocalState
 
@@ -343,6 +355,35 @@ func initialIssueModel(cfg Config, tracker Tracker) model {
 	repo := currentRepo(cfg.Remote)
 	m := newIssueModel(cfg, repo, tracker, loadIssueCache())
 	m.repoDir, _ = mainRepo(".")
+	return m
+}
+
+// initialProjectModel is newProjectModel with the repo, the working
+// tree and the project cache.
+func initialProjectModel(cfg Config, tracker Tracker) model {
+	m := newProjectModel(cfg, currentRepo(cfg.Remote), tracker, loadProjectCache())
+	m.repoDir, _ = mainRepo(".")
+	return m
+}
+
+// newProjectModel builds the project list's model. Tests call it
+// directly.
+func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCacheFile) model {
+	m := newModel(cfg, repo, nil)
+	m.kind, m.sc, m.tracker = "project", features, tracker
+	m.search.Placeholder = "project name"
+	m.search.CharLimit = 64
+	m.keys = newKeyMap(cfg.Keys, nil)
+	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open project in Linear")
+	m.keys.Yank.SetHelp(m.keys.Yank.Help().Key, "yank project name")
+	if cache != nil {
+		m.projects = cache.Projects
+		m.issues = cache.Issues
+		m.ready = true
+		m.lastFetched = cache.FetchedAt
+		m.cursor = cache.Cursor
+		m.clampCursor()
+	}
 	return m
 }
 
@@ -438,8 +479,12 @@ func (m model) Init() tea.Cmd {
 
 // fetches are the list's remote fetches, for Init, refresh and focus.
 func (m model) fetches() []tea.Cmd {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs, m.fetchDone}
+	case "project":
+		// The issues too: a row says how much of the project is yours.
+		return []tea.Cmd{m.fetchProjects, m.fetchIssues}
 	}
 	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
 }
@@ -452,6 +497,10 @@ func fetchUser() tea.Msg { return userMsg(currentUser()) }
 // row selected. All errors swallowed inside the writer — cache is
 // best-effort.
 func (m model) persistCache() {
+	if m.kind == "project" {
+		saveProjectCache(projectCacheFile{Projects: m.projects, Issues: m.issues, FetchedAt: m.lastFetched, Cursor: m.cursor})
+		return
+	}
 	if m.kind == "issue" {
 		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
@@ -602,8 +651,11 @@ func (m model) openPRInBrowser(pr *PR) tea.Cmd {
 
 // bindings is the list's own: the PR list's or the issue list's.
 func (m model) bindings() []Binding {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return m.cfg.Bindings.Issue
+	case "project":
+		return nil // no per-row prompts until a project has a workspace
 	}
 	return m.cfg.Bindings.PR
 }
@@ -785,6 +837,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 		m.persistCache()
 
+	case projectsMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.projects = msg.projects
+		m.ready = true
+		m.refreshing = false
+		m.err = nil
+		m.lastFetched = time.Now()
+		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
 	case mergedMsg:
 		if msg.gen != m.fetchGen {
 			break
@@ -925,12 +990,17 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
-	case key.Matches(msg, m.keys.Enter):
-		if row, ok := m.selectedRow(); ok {
-			return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.id(), ""), true)
+	case key.Matches(msg, m.keys.Enter), key.Matches(msg, m.keys.Start):
+		// A project has no workspace yet: the conversation at that level
+		// is the next piece, and Enter is the key it will land on.
+		if m.kind == "project" {
+			m.notice = fmt.Errorf("the project conversation is not built yet — o opens it in Linear")
+			break
 		}
-	case key.Matches(msg, m.keys.Start):
 		if row, ok := m.selectedRow(); ok {
+			if key.Matches(msg, m.keys.Enter) {
+				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.id(), ""), true)
+			}
 			return m.launch(row.id(), "starting "+row.label()+"…", m.startWorkspace(row.id(), ""), false)
 		}
 	case key.Matches(msg, m.keys.Browser):
@@ -940,12 +1010,20 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if is := m.selectedIssue(); is != nil {
 			return m, func() tea.Msg { return openURL(m.cfg.OpenCmd, is.URL) }
 		}
+		if p := m.selectedProject(); p != nil {
+			return m, func() tea.Msg { return openURL(m.cfg.OpenCmd, p.URL) }
+		}
 	case key.Matches(msg, m.keys.Yank):
 		if pr := m.selectedPR(); pr != nil {
 			return m, yankPRURL(pr)
 		}
 		if is := m.selectedIssue(); is != nil {
 			return m, tea.SetClipboard(is.Key)
+		}
+		// The name, not the slug: it is what `owl issue --project` and a
+		// search take.
+		if p := m.selectedProject(); p != nil {
+			return m, tea.SetClipboard(p.Name)
 		}
 	case key.Matches(msg, m.keys.Next):
 		m.jumpToNextAttention()
@@ -1047,6 +1125,12 @@ func (m model) selectedPR() *PR {
 func (m model) selectedIssue() *Issue {
 	row, _ := m.selectedRow()
 	return row.issue
+}
+
+// selectedProject returns the project under the cursor, or nil.
+func (m model) selectedProject() *Project {
+	row, _ := m.selectedRow()
+	return row.project
 }
 
 // label is how the action row names the row: #42, BAR-4159.
@@ -1160,8 +1244,11 @@ func (m *model) resizeViewport() {
 // visibleRows builds the section-grouped row list with the search
 // filter applied. Sections with zero visible rows are omitted.
 func (m model) visibleRows() []visibleRow {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return m.visibleIssueRows()
+	case "project":
+		return m.visibleProjectRows()
 	}
 	filter := m.search.Value()
 
@@ -1266,6 +1353,9 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	if row.issue != nil {
 		return m.renderIssueRow(row, selected)
 	}
+	if row.project != nil {
+		return m.renderProjectRow(row, selected)
+	}
 	cursor := "  "
 	if selected {
 		cursor = "▸ "
@@ -1344,16 +1434,22 @@ func (m model) actionRowView() string {
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
 func (m model) hasData() bool {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return len(m.issues) > 0
+	case "project":
+		return len(m.projects) > 0
 	}
 	return len(m.prs) > 0 || len(m.merged) > 0
 }
 
-// noun is what the list holds, plural: PRs or issues.
+// noun is what the list holds, plural: PRs, issues or projects.
 func (m model) noun() string {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return "issues"
+	case "project":
+		return "projects"
 	}
 	return "PRs"
 }
@@ -1361,8 +1457,11 @@ func (m model) noun() string {
 // countsSummary is the idle-state action row content: a compact
 // count-per-group line so a glance tells you today's shape.
 func (m model) countsSummary() string {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return m.issueCountsSummary()
+	case "project":
+		return m.projectCountsSummary()
 	}
 	if m.me == "" || len(m.prs) == 0 && len(m.merged) == 0 {
 		return styleDim.Render(fmt.Sprintf("%d open", len(m.prs)))
@@ -1388,8 +1487,11 @@ func (m model) countsSummary() string {
 // is omitted before the first fetch completes (lastFetched is zero).
 func (m model) titleLine(repo string) string {
 	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		left = styleHeader.Render(fmt.Sprintf("owl · issues · %s", repo))
+	case "project":
+		left = styleHeader.Render(fmt.Sprintf("owl · projects · %s", repo))
 	}
 	right := ""
 	if !m.lastFetched.IsZero() {
@@ -1453,8 +1555,11 @@ func (m model) helpModalView() string {
 
 // legend explains the glyphs of the list's rows.
 func (m model) legend() string {
-	if m.kind == "issue" {
+	switch m.kind {
+	case "issue":
 		return m.issueLegend()
+	case "project":
+		return m.projectLegend()
 	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
@@ -1513,6 +1618,8 @@ func (m model) render() string {
 		switch {
 		case m.search.Value() != "":
 			b.WriteString(fmt.Sprintf("\nno %s match /%s\n", m.noun(), m.search.Value()))
+		case m.kind == "project":
+			b.WriteString("\nno open projects you work in.\n")
 		case m.kind == "issue":
 			b.WriteString("\nno open issues assigned to you.\n")
 		default:
@@ -1691,6 +1798,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl issue start <KEY> [--prompt TEXT] the same without going there
        owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
        owl issue new <title…>           file an issue in linear.team, assigned to you
+       owl project                      the projects you work in, from Linear
        owl hoot <title…>                the same, from the owl
        owl config init | path
        owl --version`
@@ -1742,6 +1850,10 @@ func main() {
 					exitOn(usageError("issue: unknown command " + args[1]))
 				}
 			}
+		case "project":
+			if len(args) > 1 {
+				exitOn(usageError("project: unknown command " + args[1]))
+			}
 		case "hoot":
 		case "open", "start", "close":
 			exitOn(usageError(args[0] + " is a pr command: owl pr " + args[0]))
@@ -1768,6 +1880,18 @@ func main() {
 			return
 		}
 		exitOn(runIssue(cfg, args[1:], os.Stdout))
+		return
+	case len(args) > 0 && args[0] == "project":
+		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
+			exitOn(newWindows(cfg, features).Ping())
+			tracker := newTracker(cfg, func(text string) {
+				fmt.Fprintln(os.Stderr, text)
+				newWindows(cfg, features).Notify(text)
+			})
+			runTUI(initialProjectModel(cfg, tracker))
+			return
+		}
+		exitOn(runProject(cfg, args[1:], os.Stdout))
 		return
 	case len(args) > 0 && args[0] == "hoot":
 		exitOn(runIssue(cfg, append([]string{"new"}, args[1:]...), os.Stdout))

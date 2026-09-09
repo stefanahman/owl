@@ -227,6 +227,37 @@ touched.
 `owl hoot "what needs doing"` files an issue in `linear.team`, assigned
 to you, and prints its key and URL.
 
+## Projects (`owl project`)
+
+```
+owl · projects · acme/app                                   updated just now
+14 projects · 6 in progress · 1 planned · 7 backlog · 15 issues yours
+────────────────────────────────────────────────────────────────────────────
+In progress
+▸ Sequential Capture redesign          ▓▓▓▓▓▓░░░░  62%  12/127  11 ms
+  Emission Categories — Plumbing       ▓▓▓▓▓▓▓░░░  71%   0/6     4 ms
+  Bardo Backstage (BACKEND)            ▓░░░░░░░░░   8%   0/917         Paused
+Planned
+  Endpoint Validation w. LLM errors    ▓▓▓▓▓░░░░░  50%   2/4
+Backlog
+  Sven v2 — Deterministic harness      ▓▓▓░░░░░░░  28%   0/18    6 ms
+```
+
+The projects you work in, in three sections by status, newest change
+first. A row shows the name, Linear's own progress as ten cells, **your
+open issues over every issue the project holds**, the milestone count,
+and the state name only where the section does not already say it — a
+status named Paused but typed `started` sits under In progress and says
+so.
+
+Which projects are yours is a union: the ones you lead, the ones you
+belong to, and the ones you have an open issue in. That last clause is
+not decoration — filtering by membership alone drops the project most
+of the work is in.
+
+`/` filters by name, `o` opens the project in Linear, `y` copies its
+name. Off a terminal, `owl project` prints a table.
+
 Linear is reached with a personal API key (Settings → Security &
 access), which the config holds as a **reference**, never as a value:
 

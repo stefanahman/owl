@@ -39,6 +39,15 @@ type issueCacheFile struct {
 	Cursor     int       `json:"cursor"`
 }
 
+// projectCacheFile is the project list's on-disk shape. The issues
+// ride along because a row counts how many of them are yours.
+type projectCacheFile struct {
+	Projects  []Project `json:"projects"`
+	Issues    []Issue   `json:"issues"`
+	FetchedAt time.Time `json:"fetchedAt"`
+	Cursor    int       `json:"cursor"`
+}
+
 // cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl; "" when neither
 // can be found.
 func cacheDir() string {
@@ -92,6 +101,24 @@ func loadIssueCache() *issueCacheFile {
 	return &c
 }
 
+// projectCachePath is the project list's cache file. Like the issue
+// list's it is not per repo: the projects are the user's.
+func projectCachePath() string {
+	if cacheDir() == "" {
+		return ""
+	}
+	return filepath.Join(cacheDir(), "projects.json")
+}
+
+// loadProjectCache is loadCache for the project list.
+func loadProjectCache() *projectCacheFile {
+	var c projectCacheFile
+	if !readJSON(projectCachePath(), &c) {
+		return nil
+	}
+	return &c
+}
+
 // readJSON parses the file into v; false when there is nothing usable.
 func readJSON(path string, v any) bool {
 	if path == "" {
@@ -109,6 +136,8 @@ func readJSON(path string, v any) bool {
 func saveCache(repo string, c cacheFile) { writeJSON(cachePath(repo), c) }
 
 func saveIssueCache(c issueCacheFile) { writeJSON(issueCachePath(), c) }
+
+func saveProjectCache(c projectCacheFile) { writeJSON(projectCachePath(), c) }
 
 // writeJSON writes the cache atomically (temp file + rename) so a
 // crash mid-write never leaves a truncated JSON on disk. All errors

@@ -53,8 +53,10 @@ type Issue struct {
 		Type string `json:"type"` // triage, backlog, unstarted, started, completed, canceled
 	} `json:"state"`
 	// Project is the piece of work the issue belongs to; empty for an
-	// issue filed outside one.
+	// issue filed outside one. The id is what the project list counts
+	// by — two projects may be named alike.
 	Project struct {
+		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"project"`
 	Team struct {
@@ -98,7 +100,7 @@ type Project struct {
 const projectFields = `id name slugId url progress scope updatedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
-const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { name } team { key }`
+const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } team { key }`
 
 // Linear talks to one workspace with one user's key.
 type Linear struct {
