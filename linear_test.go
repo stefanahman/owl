@@ -137,13 +137,16 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			}}
 			break
 		}
-		// Two pages of one, both led by the user: the client must follow
-		// the cursor. Sequential Capture is deliberately absent — it is
-		// the one owl has to derive from the user's own issues.
-		nodes, page := []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
+		// Two pages of one, both the user's: the client must follow the
+		// cursor.
+		milestone := func(name string, progress float64) map[string]any {
+			return map[string]any{"id": "ms-" + name, "name": name, "progress": progress}
+		}
+		nodes, page := []any{project("Sequential Capture redesign", "a76d38ca8527", "In Progress", "started", 0.62, 127,
+			[]any{milestone("M3.5 — Downstream compatibility", 0.8), milestone("M5 — Output evaluation", 0.1)})},
 			map[string]any{"hasNextPage": true, "endCursor": "proj-1"}
 		if after, _ := req.Variables["after"].(string); after == "proj-1" {
-			nodes, page = []any{project("Modernize Mongoose schema typing", "302be79ae9df", "Backlog", "backlog", 0.14, 7, nil)},
+			nodes, page = []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
 				map[string]any{"hasNextPage": false, "endCursor": nil}
 		} else if after != "" {
 			f.t.Errorf("projects query with an unknown cursor %q", after)
@@ -216,30 +219,24 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	if f.doneSince != "2026-09-08T12:00:00Z" {
 		t.Errorf("Done() asked for completedAt >= %q", f.doneSince)
 	}
-	// Two pages Linear answers, plus the one owl derives: BAR-4159 is
-	// assigned to the user in Sequential Capture redesign, which they
-	// neither lead nor belong to, so Linear's filter cannot return it.
+	// Two pages of one: the client must follow the cursor. Nothing is
+	// derived — the list is what Linear says the user leads or belongs
+	// to, and membership is maintained in Linear.
 	projects, err := l.Projects()
-	if err != nil || len(projects) != 3 {
+	if err != nil || len(projects) != 2 {
 		t.Fatalf("Projects() = %+v, %v", projects, err)
 	}
-	byName := map[string]Project{}
-	for _, p := range projects {
-		byName[p.Name] = p
+	p := projects[0]
+	if p.Name != "Sequential Capture redesign" || p.SlugID != "a76d38ca8527" || p.State.Type != "started" || p.Lead.Name != "Stefan Åhman" {
+		t.Errorf("first project = %+v", p)
 	}
-	for _, want := range []string{"Raw-data JSON ingest", "Modernize Mongoose schema typing", "Sequential Capture redesign"} {
-		if _, ok := byName[want]; !ok {
-			t.Errorf("Projects() lacks %q: %+v", want, projects)
-		}
-	}
-	derived := byName["Sequential Capture redesign"]
-	if derived.SlugID != "a76d38ca8527" || derived.State.Type != "started" || derived.Lead.Name != "Stefan Åhman" {
-		t.Errorf("the derived project = %+v", derived)
+	if projects[1].Name != "Raw-data JSON ingest" || len(projects[1].Milestones.Nodes) != 0 {
+		t.Errorf("second project = %+v", projects[1])
 	}
 	// scope is the project's issue count, not the length of a capped
 	// connection; progress is Linear's own fraction.
-	if derived.Scope != 127 || derived.Progress != 0.62 || len(derived.Milestones.Nodes) != 1 {
-		t.Errorf("project numbers = scope %d, progress %v, milestones %+v", derived.Scope, derived.Progress, derived.Milestones.Nodes)
+	if p.Scope != 127 || p.Progress != 0.62 || len(p.Milestones.Nodes) != 2 || p.Milestones.Nodes[0].Progress != 0.8 {
+		t.Errorf("project numbers = scope %d, progress %v, milestones %+v", p.Scope, p.Progress, p.Milestones.Nodes)
 	}
 
 	// The Done window is a week, and its bound reaches Linear.

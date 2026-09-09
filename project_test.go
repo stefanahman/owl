@@ -187,7 +187,7 @@ func TestProjectTable(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^PROGRESS\s+ISSUES\s+MS\s+STATE\s+PROJECT$`).MatchString(out.String()) {
 		t.Errorf("table header:\n%s", out.String())
 	}
-	if !regexp.MustCompile(`(?m)^62%\s+127\s+1\s+In Progress\s+Sequential Capture redesign$`).MatchString(out.String()) {
+	if !regexp.MustCompile(`(?m)^62%\s+127\s+2\s+In Progress\s+Sequential Capture redesign$`).MatchString(out.String()) {
 		t.Errorf("table rows:\n%s", out.String())
 	}
 	// The table is the open list: a completed project belongs to the

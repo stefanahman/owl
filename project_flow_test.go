@@ -124,7 +124,7 @@ func TestProjectOpenRefusesAnAmbiguousName(t *testing.T) {
 	// Both fixture projects contain an "a"; owl names them rather than
 	// opening the wrong conversation.
 	err := runProject(f.cfg, []string{"open", "a"}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "matches 3 projects") {
+	if err == nil || !strings.Contains(err.Error(), "matches 2 projects") {
 		t.Errorf("ambiguous name: %v", err)
 	}
 	if err := runProject(f.cfg, []string{"open", "nothing at all"}, io.Discard); err == nil || !strings.Contains(err.Error(), "no project matches") {

@@ -267,18 +267,19 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 	})
 }
 
-// mineFilter is the half of a project filter that says the project is
-// the user's: they lead it, or they are a member.
+// mineFilter says the project is the user's: they lead it, or they are
+// a member. That is the whole definition, and membership in Linear is
+// where it is maintained — owl does not infer it.
 //
-// It does not ask Linear for "a project I have an issue in", though
-// that is the other half of what owl means. The obvious clause,
-// `issues: { some: { assignee: { isMe }, state: { type: { nin: … } } } }`,
-// does not conjoin per issue: Linear reads it as *some* issue is mine
-// and *some* issue is open, which in a project of 920 issues is always
-// true. It let Bardo Backstage in, where the user is neither lead nor
-// member and both of their issues are closed. Nesting the two under
-// `and:` inside `some` behaves identically. So that half is derived
-// here instead, from issues owl has already fetched.
+// It once also asked for "a project I have an open issue in", to catch
+// a project nobody had added the user to. That clause cannot be
+// expressed: `issues: { some: { assignee: { isMe }, state: { type: {
+// nin: … } } } }` does not conjoin per issue — Linear matches when
+// *some* issue is the user's and *some* issue is open, which in a
+// project of 920 is always true, and `and:` inside `some` is no
+// different. Deriving it client-side worked but bought a filter that
+// disagreed with the project's own membership. Joining the project is
+// the fix, and it fixes it for everyone reading Linear, not just here.
 const mineFilter = `or: [ { lead: { isMe: { eq: true } } }, { members: { isMe: { eq: true } } } ]`
 
 const openProjectsQuery = `query($first: Int!, $after: String) {
@@ -322,52 +323,14 @@ func (l Linear) projectsWhere(query string, vars map[string]any) ([]Project, err
 	}
 }
 
-// Projects: the open projects the user works in — the ones they lead
-// or belong to, plus the ones their own open issues are filed in.
-//
-// The second half is the reason the list is worth having: Sequential
-// Capture redesign holds twelve of the user's sixteen open issues and
-// they neither lead it nor belong to it. Since Linear cannot be asked
-// that question (mineFilter), owl answers it from the issues it
-// already fetches, and looks up only what is missing — one 90ms call
-// per project, and there are two.
+// Projects: the open projects the user leads or belongs to, newest
+// change first, every page of them. One query.
 func (l Linear) Projects() ([]Project, error) {
-	all, err := l.projectsWhere(openProjectsQuery, nil)
-	if err != nil {
-		return nil, err
-	}
-	have := make(map[string]bool, len(all))
-	for _, p := range all {
-		have[p.ID] = true
-	}
-	issues, err := l.Issues()
-	if err != nil {
-		return all, nil // the list without the derived half beats no list
-	}
-	for _, is := range issues {
-		if is.Project.ID == "" || have[is.Project.ID] {
-			continue
-		}
-		have[is.Project.ID] = true
-		p, err := l.Project(is.Project.ID)
-		if err != nil || p.ID == "" {
-			continue
-		}
-		// It came from an open issue of the user's, but the project
-		// itself may have been closed since; the Done section decides
-		// whether that is shown, not this one.
-		if p.State.Type == "completed" || p.State.Type == "canceled" {
-			continue
-		}
-		all = append(all, p)
-	}
-	return all, nil
+	return l.projectsWhere(openProjectsQuery, nil)
 }
 
 // DoneProjects: the projects the user leads or belongs to that were
-// completed since the given time. Not derived from issues the way the
-// open list is — a finished project's issues are finished too, and the
-// user's own issue history is not fetched that far back.
+// completed since the given time.
 func (l Linear) DoneProjects(since time.Time) ([]Project, error) {
 	return l.projectsWhere(doneProjectsQuery, map[string]any{"since": since.UTC().Format(time.RFC3339)})
 }
