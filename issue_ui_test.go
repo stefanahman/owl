@@ -194,3 +194,35 @@ func TestIssueListLegendNamesFeatures(t *testing.T) {
 		}
 	}
 }
+
+// An issue binding hands its prompt, with the row's key, through start.
+func TestIssueBindingHandsThePrompt(t *testing.T) {
+	cfg, err := parseConfig([]byte("bindings:\n  issue:\n    - {key: p, name: Continue, prompt: \"Continue {key}\"}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, calls := testIssueModel(t)
+	m.cfg = cfg
+	m.keys = newKeyMap(cfg.Keys, cfg.Bindings.Issue)
+	m.issues = fixtureIssues()
+	m.ready = true
+	m.cfg.OnOpen = "stay"
+	m.width, m.height = 140, 30
+	m.resizeViewport()
+	m.clampCursor()
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	nm := next.(model)
+	if cmd == nil || nm.inflight["BAR-4160"] != "Continue on BAR-4160…" {
+		t.Fatalf("p did not launch: inflight %v", nm.inflight)
+	}
+	runBatch(cmd)
+	time.Sleep(100 * time.Millisecond)
+	if len(*calls) != 1 || (*calls)[0] != "start BAR-4160 --prompt Continue BAR-4160" {
+		t.Errorf("child args %v", *calls)
+	}
+	// f is no issue key unless bound there: nothing launches.
+	nm.inflight = map[string]string{}
+	if _, cmd := nm.Update(tea.KeyPressMsg{Code: 'f', Text: "f"}); cmd != nil {
+		t.Error("f launched something on the issue list")
+	}
+}

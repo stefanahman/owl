@@ -10,8 +10,11 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -708,14 +711,89 @@ func TestStartStaysInTheList(t *testing.T) {
 		t.Error("a local tick should refetch and reschedule")
 	}
 
-	// f is the same kind of key: it stays in the list too.
+	// f, the shipped binding, is the same kind of key: it stays in the
+	// list too.
 	m.localState = map[string]LocalState{"pr-3543-feat": {Window: "pr-3543-feat"}}
 	fed, cmd := m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if fm := fed.(model); cmd == nil || fm.inflight["3543"] != "sending feedback to #3543…" || fm.farewell != "" {
+	if fm := fed.(model); cmd == nil || fm.inflight["3543"] != "check feedback on #3543…" || fm.farewell != "" {
 		t.Errorf("f: cmd=%v inflight=%v farewell=%q", cmd, fm.inflight, fm.farewell)
 	}
 	if _, quit := cmd().(tea.QuitMsg); quit {
 		t.Error("f must not quit")
+	}
+}
+
+// A prompt binding of the user's hands its prompt to the row's agent
+// through start --prompt, fresh workspace or not; a url binding opens.
+func TestBindingsOnThePRList(t *testing.T) {
+	cfg, err := parseConfig([]byte("bindings:\n  pr:\n    - {key: d, name: Dependabot, prompt: \"/owl:dependabot {pr}\"}\n    - {key: l, name: Linear, pattern: 'PROJ-\\d+', url: 'https://tracker.example/{id}'}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testModel(t)
+	m.cfg = cfg
+	m.keys = newKeyMap(cfg.Keys, cfg.Bindings.PR)
+	var mu sync.Mutex
+	var calls []string
+	m.runSelf = func(args ...string) error {
+		mu.Lock()
+		calls = append(calls, strings.Join(args, " "))
+		mu.Unlock()
+		return nil
+	}
+	m.prs = fixturePRs()
+	m.ready = true
+	m.cfg.OnOpen = "stay"
+	m.width, m.height = 120, 30
+	m.resizeViewport()
+	m.clampCursor()
+	pr := m.selectedPR()
+	if pr == nil {
+		t.Fatal("no PR selected")
+	}
+
+	// d: no workspace, no conversation — it starts one with the prompt.
+	next, cmd := m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	nm := next.(model)
+	want := fmt.Sprintf("Dependabot on #%d…", pr.Number)
+	if cmd == nil || nm.inflight[strconv.Itoa(pr.Number)] != want {
+		t.Fatalf("d: cmd=%v inflight=%v, want %q", cmd, nm.inflight, want)
+	}
+	runBatch(cmd)
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	got := append([]string(nil), calls...)
+	mu.Unlock()
+	if len(got) != 1 || got[0] != fmt.Sprintf("start %d --prompt /owl:dependabot %d", pr.Number, pr.Number) {
+		t.Errorf("child args %v", got)
+	}
+
+	// l: a url binding opens the URL; without a match it does nothing.
+	nm.inflight = map[string]string{}
+	m = nm
+	m.prs[0].Title, m.prs[0].Body, m.prs[0].HeadRefName = "PROJ-7 ticket", "", "x"
+	m.clampCursor()
+	_, cmd = m.handleKey(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	if cmd == nil {
+		t.Fatal("l did nothing with a matching pattern")
+	}
+	m.prs[0].Title = "no ticket"
+	if _, cmd := m.handleKey(tea.KeyPressMsg{Code: 'l', Text: "l"}); cmd != nil {
+		t.Error("l should be a no-op when the pattern matches nothing")
+	}
+
+	// The help view names the bindings.
+	var names []string
+	for _, row := range m.keys.FullHelp() {
+		for _, b := range row {
+			names = append(names, b.Help().Desc)
+		}
+	}
+	legend := strings.Join(names, " • ")
+	for _, want := range []string{"check feedback", "Dependabot", "Linear"} {
+		if !strings.Contains(legend, want) {
+			t.Errorf("help lacks %q: %s", want, legend)
+		}
 	}
 }
 

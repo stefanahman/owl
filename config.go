@@ -23,21 +23,21 @@ import (
 // key means. Obtain one via loadConfig (or defaultConfig in tests) so
 // it has been validated and the derived fields are set.
 type Config struct {
-	Mux          string       `yaml:"mux"`
-	Tmux         TmuxConfig   `yaml:"tmux"`
-	Herdr        HerdrConfig  `yaml:"herdr"`
-	Remote       string       `yaml:"remote"`
-	WorktreesDir string       `yaml:"worktrees_dir"`
-	DefaultRepo  string       `yaml:"default_repo"`
-	Agent        AgentConfig  `yaml:"agent"`
-	OpenCmd      string       `yaml:"open_cmd"`
-	OnOpen       string       `yaml:"on_open"`
-	Hooks        HooksConfig  `yaml:"hooks"`
-	Theme        ThemeConfig  `yaml:"theme"`
-	Keys         KeysConfig   `yaml:"keys"`
-	Links        []LinkConfig `yaml:"links"`
-	Linear       LinearConfig `yaml:"linear"`
-	Issue        IssueConfig  `yaml:"issue"`
+	Mux          string         `yaml:"mux"`
+	Tmux         TmuxConfig     `yaml:"tmux"`
+	Herdr        HerdrConfig    `yaml:"herdr"`
+	Remote       string         `yaml:"remote"`
+	WorktreesDir string         `yaml:"worktrees_dir"`
+	DefaultRepo  string         `yaml:"default_repo"`
+	Agent        AgentConfig    `yaml:"agent"`
+	OpenCmd      string         `yaml:"open_cmd"`
+	OnOpen       string         `yaml:"on_open"`
+	Hooks        HooksConfig    `yaml:"hooks"`
+	Theme        ThemeConfig    `yaml:"theme"`
+	Keys         KeysConfig     `yaml:"keys"`
+	Bindings     BindingsConfig `yaml:"bindings"`
+	Linear       LinearConfig   `yaml:"linear"`
+	Issue        IssueConfig    `yaml:"issue"`
 }
 
 // IssueConfig is the feature side: where feature windows live under
@@ -65,38 +65,107 @@ type HerdrConfig struct {
 }
 
 type AgentConfig struct {
-	Cmd            string   `yaml:"cmd"`
-	Prompt         string   `yaml:"prompt"`
-	FeedbackPrompt string   `yaml:"feedback_prompt"`
-	LinkLocal      []string `yaml:"link_local"`
+	Cmd       string   `yaml:"cmd"`
+	Prompt    string   `yaml:"prompt"`
+	LinkLocal []string `yaml:"link_local"`
 }
 
-// LinkConfig is a user-defined key that opens a URL built from the
-// selected PR. URL placeholders: {pr}, {repo}, {branch}, {url}, and
-// {id} — the first match of Pattern in the PR's title, body and branch.
-type LinkConfig struct {
+// BindingsConfig is the user's keys on a row, one list per list: what
+// a key does to a PR and what it does to an issue are different
+// things, and a key may mean one thing here and another there.
+type BindingsConfig struct {
+	PR    []Binding `yaml:"pr"`
+	Issue []Binding `yaml:"issue"`
+}
+
+// Binding is one key on a row and what it does: a prompt handed to
+// the agent — a fresh workspace starts with it, a running Claude
+// receives it, a blocked one refuses it — or a URL opened. The help
+// view lists bindings by name.
+type Binding struct {
 	Key     keyNames `yaml:"key"`
-	Name    string   `yaml:"name"` // shown in the help view
-	Pattern string   `yaml:"pattern"`
+	Name    string   `yaml:"name"`
+	Prompt  string   `yaml:"prompt"`
 	URL     string   `yaml:"url"`
+	Pattern string   `yaml:"pattern"` // {id} is its first match in the row's title, body and branch
+	When    string   `yaml:"when"`    // conversation: only where a workspace or a prior conversation exists
 
 	re *regexp.Regexp // compiled Pattern; nil when Pattern is empty
 }
 
-// expand builds the link's URL for a PR. ok is false when Pattern is
-// set and matches nothing — the key then does nothing.
-func (l LinkConfig) expand(repo string, pr *PR) (url string, ok bool) {
+// whenConversation is the one condition a binding can carry: the key
+// applies to work that has been started, never starts it.
+const whenConversation = "conversation"
+
+// text is the binding's prompt or URL, whichever it is.
+func (b Binding) text() string {
+	if b.URL != "" {
+		return b.URL
+	}
+	return b.Prompt
+}
+
+// expand fills the binding's placeholders from a row's values, and
+// {id} from the pattern's first match in haystack. ok is false when
+// the pattern matches nothing — the key then does nothing.
+func (b Binding) expand(values map[string]string, haystack string) (string, bool) {
 	id := ""
-	if l.re != nil {
-		id = l.re.FindString(pr.Title + "\n" + pr.Body + "\n" + pr.HeadRefName)
-		if id == "" {
+	if b.re != nil {
+		if id = b.re.FindString(haystack); id == "" {
 			return "", false
 		}
 	}
-	r := strings.NewReplacer(
-		"{pr}", strconv.Itoa(pr.Number), "{repo}", repo, "{branch}", pr.HeadRefName, "{url}", pr.URL, "{id}", id,
-	)
-	return r.Replace(l.URL), true
+	pairs := []string{"{id}", id}
+	for k, v := range values {
+		pairs = append(pairs, "{"+k+"}", v)
+	}
+	return strings.NewReplacer(pairs...).Replace(b.text()), true
+}
+
+// forPR expands the binding for a PR: {pr}, {repo}, {branch}, {url},
+// {id} over title, body and branch.
+func (b Binding) forPR(repo string, pr *PR) (string, bool) {
+	return b.expand(map[string]string{"pr": strconv.Itoa(pr.Number), "repo": repo, "branch": pr.HeadRefName, "url": pr.URL},
+		pr.Title+"\n"+pr.Body+"\n"+pr.HeadRefName)
+}
+
+// forIssue expands the binding for an issue: {key}, {repo}, {branch},
+// {url}, {id} over title and branch.
+func (b Binding) forIssue(repo string, is *Issue) (string, bool) {
+	return b.expand(map[string]string{"key": is.Key, "repo": repo, "branch": is.Branch, "url": is.URL},
+		is.Title+"\n"+is.Branch)
+}
+
+// mergeBindings lays the user's bindings over the defaults by key: a
+// user entry with a default's first key replaces it in place, the
+// others follow in the user's order.
+func mergeBindings(defaults, user []Binding) []Binding {
+	out := append([]Binding(nil), defaults...)
+	for _, b := range user {
+		replaced := false
+		for i := range defaults { // only a shipped entry is replaced; two of the user's own collide in validate
+			if d := out[i]; len(d.Key) > 0 && len(b.Key) > 0 && d.Key[0] == b.Key[0] {
+				out[i] = b
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// feedbackPrompt is what the shipped `f` binding sends. Two-pass
+// self-critique + a RESOLVED taxonomy, calm tenor: encouraging
+// language increases deliberation, urgency causes shortcuts.
+const feedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
+
+// defaultBindings are the keys owl ships on a row; a user's entry
+// with the same key replaces one.
+func defaultBindings() BindingsConfig {
+	return BindingsConfig{PR: []Binding{{Key: keyNames{"f"}, Name: "check feedback", Prompt: feedbackPrompt, When: whenConversation}}}
 }
 
 type HooksConfig struct {
@@ -154,7 +223,6 @@ type KeysConfig struct {
 	PageDown keyNames `yaml:"page_down"`
 	Open     keyNames `yaml:"open"`
 	Start    keyNames `yaml:"start"`
-	Feedback keyNames `yaml:"feedback"`
 	Browser  keyNames `yaml:"browser"`
 	Yank     keyNames `yaml:"yank"`
 	Next     keyNames `yaml:"next"`
@@ -176,7 +244,6 @@ func (k KeysConfig) each(fn func(action string, keys keyNames)) {
 	fn("page_down", k.PageDown)
 	fn("open", k.Open)
 	fn("start", k.Start)
-	fn("feedback", k.Feedback)
 	fn("browser", k.Browser)
 	fn("yank", k.Yank)
 	fn("next", k.Next)
@@ -188,31 +255,36 @@ func (k KeysConfig) each(fn func(action string, keys keyNames)) {
 	fn("quit", k.Quit)
 }
 
-// validateBindings rejects actions and links with no key, and a key
-// bound twice (built-in action or link).
-func validateBindings(k KeysConfig, links []LinkConfig) error {
+// validateBindings rejects actions and bindings with no key, and a key
+// bound twice within one list — the built-in actions and that list's
+// bindings; a key may differ between the PR list and the issue list.
+func validateBindings(k KeysConfig, b BindingsConfig) error {
 	var errs []error
-	bound := map[string]string{} // key name → "keys.quit" / "links[0]"
-	claim := func(owner string, keys keyNames) {
-		if len(keys) == 0 {
-			errs = append(errs, fmt.Errorf("%s: no key", owner))
+	scope := func(name string, list []Binding) {
+		bound := map[string]string{} // key name → "keys.quit" / "bindings.pr[0]"
+		claim := func(owner string, keys keyNames) {
+			if len(keys) == 0 {
+				errs = append(errs, fmt.Errorf("%s: no key", owner))
+			}
+			for _, key := range keys {
+				if key == "" {
+					errs = append(errs, fmt.Errorf("%s: empty key name", owner))
+					continue
+				}
+				if other, dup := bound[key]; dup {
+					errs = append(errs, fmt.Errorf("key %q is bound to both %s and %s", key, other, owner))
+					continue
+				}
+				bound[key] = owner
+			}
 		}
-		for _, key := range keys {
-			if key == "" {
-				errs = append(errs, fmt.Errorf("%s: empty key name", owner))
-				continue
-			}
-			if other, dup := bound[key]; dup {
-				errs = append(errs, fmt.Errorf("key %q is bound to both %s and %s", key, other, owner))
-				continue
-			}
-			bound[key] = owner
+		k.each(func(action string, keys keyNames) { claim("keys."+action, keys) })
+		for i, e := range list {
+			claim(fmt.Sprintf("bindings.%s[%d]", name, i), e.Key)
 		}
 	}
-	k.each(func(action string, keys keyNames) { claim("keys."+action, keys) })
-	for i, l := range links {
-		claim(fmt.Sprintf("links[%d]", i), l.Key)
-	}
+	scope("pr", b.PR)
+	scope("issue", b.Issue)
 	return errors.Join(errs...)
 }
 
@@ -258,7 +330,6 @@ default_repo: ""                 # repo to use when owl is started outside a git
 agent:
   cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
   prompt: "/owl:review {pr}"    # first prompt of a fresh review; {pr} is the PR number
-  feedback_prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
     - .claude/settings.local.json
     - .claude/*.local.md
@@ -289,7 +360,6 @@ keys:                            # one key name or a list; names as bubbletea sp
   page_down: [pgdown, ctrl+d]
   open: enter
   start: s
-  feedback: f
   browser: o
   yank: y
   next: n
@@ -305,15 +375,24 @@ linear:                          # the issue tracker behind ` + "`owl issue`" + 
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in
   team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues
 
-# links: extra keys, each opening a URL built from the selected PR (via open_cmd).
-# Placeholders: {pr} number, {repo} owner/name, {branch} head branch, {url} the PR's page,
-# and {id} — the first match of ` + "`pattern`" + ` in the PR title, body and branch (no match → the key does nothing).
-#
-# links:
-#   - key: l
-#     name: Linear                # shown in the help view
-#     pattern: 'PROJ-\d+'
-#     url: https://linear.app/<org>/issue/{id}
+bindings:                        # your own keys on a row: a prompt handed to the agent, or a URL opened; ` + "`?`" + ` lists them by name
+  pr:                            # on a PR; placeholders {pr}, {repo}, {branch}, {url}, and {id} — the first match of ` + "`pattern`" + ` in the title, body and branch (no match → the key does nothing)
+    - key: f                     # shipped; an entry of yours with the same key replaces it, other keys add to it
+      name: check feedback
+      prompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
+      when: conversation         # only where a workspace or a prior conversation exists; without it, a fresh workspace starts with the prompt
+    # - key: d
+    #   name: Dependabot
+    #   prompt: "/owl:dependabot {pr}"
+    # - key: l
+    #   name: Linear
+    #   pattern: 'PROJ-\d+'
+    #   url: https://linear.app/<org>/issue/{id}
+  # issue:                       # on an issue; placeholders {key}, {repo}, {branch}, {url}, {id} (pattern over title and branch)
+  #   - key: p
+  #     name: Continue
+  #     prompt: "Continue {key} where the last session left off"
+  #     when: conversation
 `
 
 func defaultConfig() Config {
@@ -324,21 +403,18 @@ func defaultConfig() Config {
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
-		Cmd:    "claude --permission-mode auto",
-		Prompt: "/owl:review {pr}",
-		// The `f` key's message. Two-pass self-critique + a RESOLVED
-		// taxonomy, calm tenor: encouraging language increases
-		// deliberation, urgency causes shortcuts.
-		FeedbackPrompt: "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict.",
-		LinkLocal:      []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
+		Cmd:       "claude --permission-mode auto",
+		Prompt:    "/owl:review {pr}",
+		LinkLocal: []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
 	}
+	c.Bindings = defaultBindings()
 	c.OnOpen = "quit"
 	c.Theme = ThemeConfig{Working: "#dbbc7f", Blocked: "214", Done: "42"}
 	c.Keys = KeysConfig{
 		Up: keyNames{"up", "k"}, Down: keyNames{"down", "j"},
 		Top: keyNames{"g", "home"}, Bottom: keyNames{"G", "end"},
 		PageUp: keyNames{"pgup", "ctrl+u"}, PageDown: keyNames{"pgdown", "ctrl+d"},
-		Open: keyNames{"enter"}, Start: keyNames{"s"}, Feedback: keyNames{"f"}, Browser: keyNames{"o"},
+		Open: keyNames{"enter"}, Start: keyNames{"s"}, Browser: keyNames{"o"},
 		Yank: keyNames{"y"}, Next: keyNames{"n"}, Cleanup: keyNames{"c"},
 		Search: keyNames{"/"}, Cancel: keyNames{"esc"}, Refresh: keyNames{"r"}, Help: keyNames{"?"},
 		Quit: keyNames{"q", "ctrl+c"},
@@ -389,15 +465,60 @@ func loadConfig() (Config, error) {
 	return cfg, nil
 }
 
+// moved is what a config from before bindings may still say, and
+// where each of it went; said before the strict decode, so the
+// message is this and not "field not found".
+var moved = []struct{ path, to string }{
+	{"links", "links moved to bindings.pr, one entry per link with url:"},
+	{"keys.feedback", "keys.feedback moved to bindings.pr: the key of the shipped feedback binding"},
+	{"agent.feedback_prompt", "agent.feedback_prompt moved to bindings.pr: the prompt of the shipped feedback binding"},
+}
+
+// movedKeys reports the first key of the old shape found in the YAML.
+func movedKeys(data []byte) error {
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil // the strict decode reports the real problem
+	}
+	for _, m := range moved {
+		node := any(doc)
+		found := true
+		for _, part := range strings.Split(m.path, ".") {
+			mp, ok := node.(map[string]any)
+			if !ok {
+				found = false
+				break
+			}
+			if node, ok = mp[part]; !ok {
+				found = false
+				break
+			}
+		}
+		if found {
+			return errors.New(m.to)
+		}
+	}
+	return nil
+}
+
 // parseConfig overlays YAML onto the defaults and validates the result.
 func parseConfig(data []byte) (Config, error) {
+	if err := movedKeys(data); err != nil {
+		return Config{}, err
+	}
 	cfg := defaultConfig()
+	// The bindings the user writes merge with the shipped ones by key;
+	// decoded on their own so the defaults are not simply replaced.
+	defaults := cfg.Bindings
+	cfg.Bindings = BindingsConfig{}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	// io.EOF: no document at all (empty file, comments only).
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, err
 	}
+	cfg.Bindings.PR = mergeBindings(defaults.PR, cfg.Bindings.PR)
+	cfg.Bindings.Issue = mergeBindings(defaults.Issue, cfg.Bindings.Issue)
 	cfg.DefaultRepo = expandHome(cfg.DefaultRepo)
 	for k, v := range cfg.Hooks.AfterOpen {
 		cfg.Hooks.AfterOpen[k] = expandHome(v)
@@ -418,7 +539,6 @@ func (cfg *Config) validate() error {
 		{"worktrees_dir", cfg.WorktreesDir},
 		{"agent.cmd", cfg.Agent.Cmd},
 		{"agent.prompt", cfg.Agent.Prompt},
-		{"agent.feedback_prompt", cfg.Agent.FeedbackPrompt},
 	}
 	for _, r := range required {
 		if r.value == "" {
@@ -455,22 +575,34 @@ func (cfg *Config) validate() error {
 			return fmt.Errorf("%s: %q is not an ANSI colour number (0-255) or #rrggbb", c.name, c.value)
 		}
 	}
-	for i := range cfg.Links {
-		l := &cfg.Links[i]
-		if l.Name == "" || l.URL == "" {
-			return fmt.Errorf("links[%d]: name and url are required", i)
-		}
-		if l.Pattern != "" {
-			re, err := regexp.Compile(l.Pattern)
-			if err != nil {
-				return fmt.Errorf("links[%d].pattern: %w", i, err)
+	for _, scope := range []struct {
+		name string
+		list []Binding
+	}{{"pr", cfg.Bindings.PR}, {"issue", cfg.Bindings.Issue}} {
+		for i := range scope.list {
+			b := &scope.list[i]
+			where := fmt.Sprintf("bindings.%s[%d]", scope.name, i)
+			if b.Name == "" {
+				return fmt.Errorf("%s: name is required", where)
 			}
-			l.re = re
-		} else if strings.Contains(l.URL, "{id}") {
-			return fmt.Errorf("links[%d]: url uses {id} but no pattern is set", i)
+			if (b.Prompt == "") == (b.URL == "") {
+				return fmt.Errorf("%s: exactly one of prompt and url", where)
+			}
+			if b.When != "" && b.When != whenConversation {
+				return fmt.Errorf("%s: when must be conversation or absent, got %q", where, b.When)
+			}
+			if b.Pattern != "" {
+				re, err := regexp.Compile(b.Pattern)
+				if err != nil {
+					return fmt.Errorf("%s.pattern: %w", where, err)
+				}
+				b.re = re
+			} else if strings.Contains(b.text(), "{id}") {
+				return fmt.Errorf("%s: {id} needs a pattern", where)
+			}
 		}
 	}
-	return validateBindings(cfg.Keys, cfg.Links)
+	return validateBindings(cfg.Keys, cfg.Bindings)
 }
 
 var colorRe = regexp.MustCompile(`^(#[0-9a-fA-F]{6}|[0-9]{1,3})$`)

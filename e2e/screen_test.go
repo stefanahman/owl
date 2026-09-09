@@ -251,11 +251,11 @@ esac
 
 // hermeticEnv is the child's environment: fake gh first on PATH, no
 // tmux server reachable, empty cache/config/Claude dirs, a config with
-// one link, and a fixed terminal type so colours are stable.
+// one binding, and a fixed terminal type so colours are stable.
 func hermeticEnv(t *testing.T, root string) []string {
 	t.Helper()
 	cfg := filepath.Join(root, "config.yaml")
-	config := "mux: tmux\nagent:\n  cmd: \"true\"\nlinks:\n  - key: l\n    name: Linear\n    pattern: 'PROJ-\\d+'\n    url: https://linear.app/acme/issue/{id}\n"
+	config := "mux: tmux\nagent:\n  cmd: \"true\"\nbindings:\n  pr:\n    - key: l\n      name: Linear\n      pattern: 'PROJ-\\d+'\n      url: https://linear.app/acme/issue/{id}\n"
 	if err := os.WriteFile(cfg, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}

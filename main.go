@@ -19,6 +19,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -117,7 +118,6 @@ type keyMap struct {
 	PageDown key.Binding
 	Enter    key.Binding
 	Start    key.Binding
-	Feedback key.Binding
 	Browser  key.Binding
 	Yank     key.Binding
 	Next     key.Binding
@@ -127,11 +127,12 @@ type keyMap struct {
 	Refresh  key.Binding
 	Help     key.Binding
 	Quit     key.Binding
-	Links    []key.Binding // parallel to Config.Links
+	Bindings []key.Binding // parallel to the list's Config.Bindings
 }
 
-// newKeyMap builds the bindings from the `keys` and `links` config.
-func newKeyMap(k KeysConfig, links []LinkConfig) keyMap {
+// newKeyMap builds the key bindings from `keys` and one list's
+// `bindings`.
+func newKeyMap(k KeysConfig, bindings []Binding) keyMap {
 	bind := func(keys keyNames, desc string) key.Binding {
 		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(keys.label(), desc))
 	}
@@ -144,7 +145,6 @@ func newKeyMap(k KeysConfig, links []LinkConfig) keyMap {
 		PageDown: bind(k.PageDown, "page down"),
 		Enter:    bind(k.Open, "open review"),
 		Start:    bind(k.Start, "start (stay)"),
-		Feedback: bind(k.Feedback, "check feedback"),
 		Browser:  bind(k.Browser, "open PR in browser"),
 		Yank:     bind(k.Yank, "yank PR URL"),
 		Next:     bind(k.Next, "next attention-needed"),
@@ -155,8 +155,8 @@ func newKeyMap(k KeysConfig, links []LinkConfig) keyMap {
 		Help:     bind(k.Help, "help"),
 		Quit:     bind(k.Quit, "quit"),
 	}
-	for _, l := range links {
-		km.Links = append(km.Links, bind(l.Key, l.Name))
+	for _, b := range bindings {
+		km.Bindings = append(km.Bindings, bind(b.Key, b.Name))
 	}
 	return km
 }
@@ -180,15 +180,15 @@ func (k keyNames) label() string {
 	return strings.Join(parts, "/")
 }
 
-// ShortHelp drives the footer legend. FullHelp is rendered inside the
-// `?` modal (helpModalView) via help.FullHelpView. A disabled binding
-// (Feedback on the issue list) is left out by the help view itself.
+// ShortHelp drives the footer legend: the built-in actions. FullHelp
+// is rendered inside the `?` modal (helpModalView) via
+// help.FullHelpView, and lists the user's bindings by name.
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Next, k.Enter, k.Start, k.Feedback, k.Browser, k.Search, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Next, k.Enter, k.Start, k.Browser, k.Search, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	actions := append([]key.Binding{k.Enter, k.Start, k.Feedback, k.Browser, k.Yank, k.Cleanup}, k.Links...)
+	actions := append([]key.Binding{k.Enter, k.Start, k.Browser, k.Yank, k.Cleanup}, k.Bindings...)
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Next, k.Home, k.End, k.PageUp, k.PageDown},
 		actions,
@@ -340,7 +340,7 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	m.kind, m.sc, m.tracker = "issue", features, tracker
 	m.search.Placeholder = "key or title"
 	m.search.CharLimit = 64
-	m.keys.Feedback.SetEnabled(false) // feedback is a review's key
+	m.keys = newKeyMap(cfg.Keys, cfg.Bindings.Issue)
 	// The legend names what the keys do here: features, not reviews.
 	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, "open feature")
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
@@ -378,7 +378,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		kind:     "pr",
 		sc:       reviews,
 		repo:     repo,
-		keys:     newKeyMap(cfg.Keys, cfg.Links),
+		keys:     newKeyMap(cfg.Keys, cfg.Bindings.PR),
 		help:     help.New(),
 		search:   ti,
 		list:     viewport.New(),
@@ -550,16 +550,55 @@ func (m model) openPRInBrowser(pr *PR) tea.Cmd {
 	}
 }
 
-// openLink opens a configured link for the PR; a link whose pattern
-// doesn't match anything is a no-op.
-func (m model) openLink(l LinkConfig, pr *PR) tea.Cmd {
-	return func() tea.Msg {
-		url, ok := l.expand(m.repo, pr)
-		if !ok {
-			return nil
-		}
-		return openURL(m.cfg.OpenCmd, url)
+// bindings is the list's own: the PR list's or the issue list's.
+func (m model) bindings() []Binding {
+	if m.kind == "issue" {
+		return m.cfg.Bindings.Issue
 	}
+	return m.cfg.Bindings.PR
+}
+
+// press does what a binding says on the selected row. A prompt goes
+// through `start --prompt`, like s with words: a fresh workspace
+// starts with it, a running Claude receives it, a blocked one refuses
+// it — and the list stays. With `when: conversation` the key applies
+// only to work that has been started: a workspace, or a conversation
+// Claude kept on disk after the window went. A URL opens. A pattern
+// that matches nothing makes the key a no-op.
+func (m model) press(b Binding) (tea.Model, tea.Cmd) {
+	var id, label, text string
+	var ok bool
+	switch {
+	case m.selectedPR() != nil:
+		pr := m.selectedPR()
+		if b.When == whenConversation {
+			ls := findLocalForPR(m.localState, pr.Number)
+			if ls.Window == "" && !hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
+				return m, nil
+			}
+		}
+		id, label = strconv.Itoa(pr.Number), fmt.Sprintf("#%d", pr.Number)
+		text, ok = b.forPR(m.repo, pr)
+	case m.selectedIssue() != nil:
+		is := m.selectedIssue()
+		if b.When == whenConversation {
+			ls := findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, is.Key) })
+			if ls.Window == "" && ls.Worktree == "" && (m.repoDir == "" || !hasConversationFor(filepath.Join(m.repoDir, m.cfg.WorktreesDir, is.Branch))) {
+				return m, nil
+			}
+		}
+		id, label = is.Key, is.Key
+		text, ok = b.forIssue(m.repo, is)
+	default:
+		return m, nil
+	}
+	if !ok {
+		return m, nil
+	}
+	if b.URL != "" {
+		return m, func() tea.Msg { return openURL(m.cfg.OpenCmd, text) }
+	}
+	return m.launch(id, fmt.Sprintf("%s on %s…", b.Name, label), m.startWorkspace(id, text), false)
 }
 
 // switchClient moves the user's client to the review container, whose
@@ -835,20 +874,6 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if row, ok := m.selectedRow(); ok {
 			return m.launch(row.id(), "starting "+row.label()+"…", m.startWorkspace(row.id(), ""), false)
 		}
-	case key.Matches(msg, m.keys.Feedback):
-		if pr := m.selectedPR(); pr != nil {
-			// `start --prompt` hands the prompt to the running agent, or
-			// resumes the conversation with it when the window is gone
-			// but Claude's state survives on disk — and stays in the list,
-			// like s. Truly fresh (no window, no prior conversation) is a
-			// no-op — f is scoped to "check feedback on what you already
-			// reviewed"; press Enter or s first to open an initial review.
-			ls := findLocalForPR(m.localState, pr.Number)
-			if ls.Window != "" || hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
-				id := strconv.Itoa(pr.Number)
-				return m.launch(id, fmt.Sprintf("sending feedback to #%d…", pr.Number), m.startWorkspace(id, m.cfg.Agent.FeedbackPrompt), false)
-			}
-		}
 	case key.Matches(msg, m.keys.Browser):
 		if pr := m.selectedPR(); pr != nil {
 			return m, m.openPRInBrowser(pr)
@@ -886,12 +911,9 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = true
 	default:
-		for i, b := range m.keys.Links {
+		for i, b := range m.keys.Bindings {
 			if key.Matches(msg, b) {
-				if pr := m.selectedPR(); pr != nil {
-					return m, m.openLink(m.cfg.Links[i], pr)
-				}
-				break
+				return m.press(m.bindings()[i])
 			}
 		}
 	}

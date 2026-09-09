@@ -46,32 +46,88 @@ theme:
 	}
 }
 
-func TestLinks(t *testing.T) {
+func TestBindings(t *testing.T) {
 	cfg, err := parseConfig([]byte(`
-links:
-  - key: l
-    name: Linear
-    pattern: 'PROJ-\d+'
-    url: https://tracker.example/{id}
-  - key: [b, B]
-    name: CI
-    url: https://ci.example/{repo}/{pr}/{branch}?from={url}
+bindings:
+  pr:
+    - key: d
+      name: Dependabot
+      prompt: "/owl:dependabot {pr}"
+    - key: l
+      name: Linear
+      pattern: 'PROJ-\d+'
+      url: https://tracker.example/{id}
+    - key: [b, B]
+      name: CI
+      url: https://ci.example/{repo}/{pr}/{branch}?from={url}
+  issue:
+    - key: p
+      name: Continue
+      prompt: "Continue {key} on {branch}"
+      when: conversation
+    - key: l
+      name: Ticket
+      url: "{url}"
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The shipped f comes first, the user's follow in their order.
+	var names []string
+	for _, b := range cfg.Bindings.PR {
+		names = append(names, b.Name)
+	}
+	if want := []string{"check feedback", "Dependabot", "Linear", "CI"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("pr bindings = %v, want %v", names, want)
+	}
+	if f := cfg.Bindings.PR[0]; f.Key[0] != "f" || f.When != whenConversation || f.Prompt != feedbackPrompt {
+		t.Errorf("shipped f = %+v", f)
+	}
 	pr := &PR{Number: 42, Title: "fix PROJ-7 crash", HeadRefName: "fix/crash", URL: "https://gh/x/pull/42"}
-
-	url, ok := cfg.Links[0].expand("acme/app", pr)
-	if !ok || url != "https://tracker.example/PROJ-7" {
+	if text, ok := cfg.Bindings.PR[1].forPR("acme/app", pr); !ok || text != "/owl:dependabot 42" {
+		t.Errorf("dependabot prompt: %q, %v", text, ok)
+	}
+	if url, ok := cfg.Bindings.PR[2].forPR("acme/app", pr); !ok || url != "https://tracker.example/PROJ-7" {
 		t.Errorf("linear link: got %q, %v", url, ok)
 	}
-	if _, ok := cfg.Links[0].expand("acme/app", &PR{Title: "no ticket"}); ok {
-		t.Error("link with a pattern should be a no-op when nothing matches")
+	if _, ok := cfg.Bindings.PR[2].forPR("acme/app", &PR{Title: "no ticket"}); ok {
+		t.Error("a binding with a pattern should be a no-op when nothing matches")
 	}
-	url, ok = cfg.Links[1].expand("acme/app", pr)
-	if !ok || url != "https://ci.example/acme/app/42/fix/crash?from=https://gh/x/pull/42" {
+	if url, ok := cfg.Bindings.PR[3].forPR("acme/app", pr); !ok || url != "https://ci.example/acme/app/42/fix/crash?from=https://gh/x/pull/42" {
 		t.Errorf("ci link: got %q, %v", url, ok)
+	}
+	is := &Issue{Key: "BAR-9", Title: "Fix the owl", Branch: "bar-9-fix-the-owl", URL: "https://linear.app/x/issue/BAR-9"}
+	if text, ok := cfg.Bindings.Issue[0].forIssue("acme/app", is); !ok || text != "Continue BAR-9 on bar-9-fix-the-owl" {
+		t.Errorf("issue prompt: %q, %v", text, ok)
+	}
+	if url, ok := cfg.Bindings.Issue[1].forIssue("acme/app", is); !ok || url != is.URL {
+		t.Errorf("issue url: %q, %v", url, ok)
+	}
+
+	// A user's f replaces the shipped one, in place.
+	cfg, err = parseConfig([]byte("bindings:\n  pr:\n    - key: f\n      name: mine\n      prompt: again\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Bindings.PR) != 1 || cfg.Bindings.PR[0].Name != "mine" || cfg.Bindings.PR[0].When != "" {
+		t.Errorf("f replaced: %+v", cfg.Bindings.PR)
+	}
+	// The same key may mean different things on the two lists.
+	if _, err := parseConfig([]byte("bindings:\n  pr:\n    - {key: x, name: a, url: https://a}\n  issue:\n    - {key: x, name: b, url: https://b}\n")); err != nil {
+		t.Errorf("one key on both lists: %v", err)
+	}
+}
+
+func TestParseConfigSaysWhereOldKeysMoved(t *testing.T) {
+	for data, want := range map[string]string{
+		"links:\n  - key: l\n    name: x\n    url: https://x\n": "links moved to bindings.pr",
+		"keys:\n  feedback: f\n":                                "keys.feedback moved to bindings.pr",
+		"agent:\n  feedback_prompt: x\n":                        "agent.feedback_prompt moved to bindings.pr",
+	} {
+		_, err := parseConfig([]byte(data))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: got %v, want %q", data, err, want)
+		}
 	}
 }
 
@@ -121,26 +177,29 @@ func TestParseConfigEmptyIsDefaults(t *testing.T) {
 
 func TestParseConfigRejects(t *testing.T) {
 	cases := map[string]string{
-		"unknown key":         "tmux:\n  sesion: x\n",
-		"empty session":       "tmux:\n  session: ''\n",
-		"absolute worktrees":  "worktrees_dir: /tmp/wt\n",
-		"repo root worktrees": "worktrees_dir: .\n",
-		"parent worktrees":    "worktrees_dir: ../wt\n",
-		"hidden parent":       "worktrees_dir: wt/../../x\n",
-		"bad colour":          "theme:\n  done: green\n",
-		"colour out of range": "theme:\n  done: \"256\"\n",
-		"bad on_open":         "on_open: close\n",
-		"not a mapping":       "- a\n- b\n",
-		"unbound action":      "keys:\n  quit: []\n",
-		"empty key name":      "keys:\n  quit: ''\n",
-		"key bound twice":     "keys:\n  quit: r\n",
-		"link without name":   "links:\n  - key: l\n    url: https://x\n",
-		"link without url":    "links:\n  - key: l\n    name: x\n",
-		"link without key":    "links:\n  - name: x\n    url: https://x\n",
-		"link bad regexp":     "links:\n  - key: l\n    name: x\n    pattern: '('\n    url: https://x/{id}\n",
-		"link id no pattern":  "links:\n  - key: l\n    name: x\n    url: https://x/{id}\n",
-		"link key collides":   "links:\n  - key: q\n    name: x\n    url: https://x\n",
-		"links collide":       "links:\n  - {key: l, name: a, url: https://a}\n  - {key: l, name: b, url: https://b}\n",
+		"unknown key":            "tmux:\n  sesion: x\n",
+		"empty session":          "tmux:\n  session: ''\n",
+		"absolute worktrees":     "worktrees_dir: /tmp/wt\n",
+		"repo root worktrees":    "worktrees_dir: .\n",
+		"parent worktrees":       "worktrees_dir: ../wt\n",
+		"hidden parent":          "worktrees_dir: wt/../../x\n",
+		"bad colour":             "theme:\n  done: green\n",
+		"colour out of range":    "theme:\n  done: \"256\"\n",
+		"bad on_open":            "on_open: close\n",
+		"not a mapping":          "- a\n- b\n",
+		"unbound action":         "keys:\n  quit: []\n",
+		"empty key name":         "keys:\n  quit: ''\n",
+		"key bound twice":        "keys:\n  quit: r\n",
+		"binding without name":   "bindings:\n  pr:\n    - key: l\n      url: https://x\n",
+		"binding without action": "bindings:\n  pr:\n    - key: l\n      name: x\n",
+		"binding both actions":   "bindings:\n  pr:\n    - key: l\n      name: x\n      url: https://x\n      prompt: y\n",
+		"binding without key":    "bindings:\n  pr:\n    - name: x\n      url: https://x\n",
+		"binding bad regexp":     "bindings:\n  pr:\n    - key: l\n      name: x\n      pattern: '('\n      url: https://x/{id}\n",
+		"binding id no pattern":  "bindings:\n  pr:\n    - key: l\n      name: x\n      prompt: \"see {id}\"\n",
+		"binding bad when":       "bindings:\n  pr:\n    - key: l\n      name: x\n      prompt: y\n      when: always\n",
+		"binding key collides":   "bindings:\n  pr:\n    - key: q\n      name: x\n      url: https://x\n",
+		"bindings collide":       "bindings:\n  pr:\n    - {key: l, name: a, url: https://a}\n    - {key: l, name: b, url: https://b}\n",
+		"issue binding collides": "bindings:\n  issue:\n    - {key: s, name: a, url: https://a}\n",
 	}
 	for name, data := range cases {
 		if _, err := parseConfig([]byte(data)); err == nil {
