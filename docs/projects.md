@@ -41,6 +41,84 @@ Workspace names: `proj-<slug>` from Linear's project slug, beside
 `pr-<N>` and `<key>-<slug>`. One more branch of `isWorkspaceName`, one
 more `scope` value whose windows live in `project.session`.
 
+## One conversation at the top, forked downward
+
+Branches and contexts are separate axes, and conflating them is what
+makes this design hard to talk about:
+
+| | one branch | many branches |
+| --- | --- | --- |
+| **one context** | the single change: many issues, one PR, one conversation | one conversation moving between worktrees, an issue per branch |
+| **many contexts** | broken — concurrent writes to one tree | what owl does today: parallel, isolated, cold every time |
+
+The branch axis is the `separate`/`shared` mode above. The context axis
+is settled and not per project: **there is exactly one project
+conversation, and issue conversations are forked from it.**
+
+Claude Code has the flags for this, so none of it is a hack:
+
+```
+--session-id <uuid>   use a specific session ID
+--resume <id>         resume a conversation by session ID
+--fork-session        when resuming, create a new session ID
+--add-dir <dirs...>   additional directories to allow tool access
+```
+
+The trick is *where the fork runs*. Claude stores sessions under a slug
+of the working directory, so a session recorded in the project worktree
+is only resumable from the project worktree. The issue window therefore
+keeps the **project worktree as its cwd**, and reaches the issue's
+worktree through `--add-dir`:
+
+```
+owl project open sven-v2
+  claude --session-id <uuid owl generated> -n sven-v2
+
+descend into BAR-2931          # cwd stays the project worktree
+  claude --resume <uuid> --fork-session \
+         --add-dir .worktrees.local/bar-2931-… \
+         "work BAR-2931; its worktree is .worktrees.local/bar-2931-…"
+```
+
+The child opens holding the whole project conversation and then
+diverges; `--fork-session` is what leaves the parent untouched. owl
+generates the project's UUID itself and keeps it in `.owl/projects.json`,
+so it never reads Claude's session files or guesses an id.
+
+A second visit to an issue **resumes that issue's own conversation**,
+not a fresh fork: what was tried and what a reviewer objected to is
+worth more than the project's newer picture, which the state file
+carries anyway. So the file holds a session id per issue as well:
+
+```json
+{ "sven-v2": {
+    "session": "a1b2…",
+    "mode": "separate",
+    "issues": { "BAR-2931": "c3d4…", "BAR-2932": "e5f6…" } } }
+```
+
+### The join is the half that matters
+
+A tree that only forks downward goes stale at the top. Every fork
+carries what the project knew *at the moment of the fork*, and nothing
+a sibling learns afterwards climbs back — after a week the overview
+conversation is the least informed one in the tree while the knowledge
+sits in five leaves.
+
+So the child writes and owl nudges. The issue agent appends what it
+found to the project's state; owl already detects `agentDone` per
+workspace and can type into any window, so when a child finishes the
+parent gets a line:
+
+```
+BAR-2931 finished (PR #4201). Read the project state for what it found.
+```
+
+Written rather than spoken, because compaction eats a conversation and
+not a file. This is the same durable plan named below — it is not a
+convenience next to the fork model, it is what keeps the fork model
+from decaying.
+
 ## The layer is the project, the sections are its milestones
 
 Linear's hierarchy is initiative → project → milestone → issue. The
@@ -100,11 +178,22 @@ failure semantics and stops being a launcher. The line is worth
 defending because the failure modes on the other side of it are
 expensive and invisible.
 
-## Cost
+## Cost, and the one thing that will bite
 
 A project agent plus N issue agents is N+1 concurrent Claude sessions
 on one repository. Worktrees keep them from writing over each other;
 nothing keeps them from costing what they cost.
+
+A forked child holds the project conversation *and* its own work, so it
+starts heavy and compacts sooner than a fresh session would. That is
+the price of arriving warm, and the state file is the hedge.
+
+The mechanical hazard is the branch. A child with `--add-dir` onto a
+sibling worktree can commit to the wrong one, and `git -C <worktree>`
+in a prompt is a convention where an enforcement belongs: a per-worktree
+hook refusing a commit whose branch does not carry that worktree's key
+would make it impossible rather than discouraged. owl already writes
+`.git/info/exclude` per worktree, so it has the hook into that.
 
 ## Open
 
@@ -117,3 +206,10 @@ nothing keeps them from costing what they cost.
   worktrees are per repo, so `.owl/projects.json` is per repo, and a
   project that touches two repos has two files and no link between
   them.
+- **What the child appends, and who writes it.** The agent, told to by
+  its prompt, or owl, from what it can observe (the PR, the branch, the
+  exit state)? The first is richer and unreliable; the second is thin
+  and always happens. Probably both, in different fields.
+- **Whether a fork can be refused.** An issue whose work is unrelated
+  to the project's current thread would be better off cold than
+  carrying twenty thousand tokens of someone else's milestone.
