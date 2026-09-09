@@ -6,13 +6,15 @@
   },
   "metadata": {
     "description": "The Claude Code plugin that ships with owl: review, feature, project and dependabot skills",
-    "version": "0.2.0"
+    "version": "0.6.0"
   },
   "plugins": [
     {
       "name": "owl",
       "source": "./owl",
-      "description": "Four skills with manners: review never posts without you, feature never pushes without you, project plans and dispatches but never writes the code, dependabot fixes on the bot's branch and drafts the review as a file"
+      "description": "Four skills with manners: review never posts without you, feature never pushes without you, project plans and dispatches but never writes the code, dependabot fixes on the bot's branch and drafts the review as a file",
+      "version": "0.6.0",
+      "license": "MIT"
     }
   ]
 }
