@@ -93,7 +93,9 @@ terminal escape for the clipboard), which most terminals support.
    Nothing in it is required; `default_repo` lets you start owl
    from anywhere.
 4. `cd` into a clone whose remote is on GitHub, in a terminal that runs
-   inside tmux, herdr or cmux (or any terminal, with `on_open: stay`).
+   inside tmux, herdr or cmux (or any terminal, with `on_open: stay`;
+   the default quits after an open under tmux, where the list is a
+   popup, and stays under herdr and cmux, where it has a workspace).
 5. `owl pr`, then Enter on a row. That fetches the PR into a worktree
    under `.worktrees.local/`, opens a window for it in your
    multiplexer — under tmux the `reviews` session is created on
@@ -112,9 +114,10 @@ bind r display-popup -E -w 88% -h 84% owl pr
 ```
 
 (tmux runs that with the server's PATH — give the absolute path if
-`owl` isn't on it.) Without a popup, set `on_open` so the TUI doesn't
-quit after opening a review: `switch` in a tmux window (it moves your
-client to the review session), `stay` in a plain terminal.
+`owl` isn't on it.) Under tmux the TUI quits once an open starts, so
+the popup closes; without a popup, set `on_open`: `switch` in a tmux
+window (it moves your client to the review session), `stay` in a
+plain terminal. Under herdr and cmux it stays by itself.
 
 Three companions, each optional:
 
@@ -340,7 +343,7 @@ issue:
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once an open starts: quit (popup closes at once), stay, or switch (move your client to the reviews)
+on_open: auto                    # the TUI once an open starts: auto (quit under tmux, stay under herdr and cmux), quit, stay, or switch (move your client to the reviews)
 
 hooks:
   after_open: ""                 # runs after every open with OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO, _MUX set

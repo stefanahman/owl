@@ -489,6 +489,21 @@ func (m model) closeWorkspace(id string) tea.Cmd {
 	}
 }
 
+// onOpen is what the TUI does once an open starts: the setting, or
+// with auto what fits the multiplexer — quit under tmux, where the
+// list is a popup that closes at once; stay under herdr and cmux,
+// where the list has a workspace of its own and quitting would leave
+// a dead shell there.
+func (m model) onOpen() string {
+	if m.cfg.OnOpen != "auto" {
+		return m.cfg.OnOpen
+	}
+	if newWindows(m.cfg, m.sc).Kind() == "tmux" {
+		return "quit"
+	}
+	return "stay"
+}
+
 // launch starts an open, start or close child for a row in the
 // background. The list stays usable meanwhile; a second key on the
 // same row is refused until the child reports. An open (arrive) with
@@ -500,7 +515,7 @@ func (m model) launch(id, label string, cmd tea.Cmd, arrive bool) (tea.Model, te
 		return m, nil
 	}
 	m.inflight[id] = label
-	if arrive && m.cfg.OnOpen == "quit" {
+	if arrive && m.onOpen() == "quit" {
 		m.farewell = label
 		return m, tea.Batch(cmd, tea.Quit)
 	}
@@ -790,7 +805,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// The workspace is up (with on_open: quit the TUI is already
 		// gone). switch moves the user's client to the windows.
-		if m.cfg.OnOpen == "switch" {
+		if m.onOpen() == "switch" {
 			cmds = append(cmds, switchClient(newWindows(m.cfg, m.sc)))
 		}
 		cmds = append(cmds, m.fetchLocal)

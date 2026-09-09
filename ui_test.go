@@ -40,8 +40,9 @@ func testModel(t *testing.T) model {
 	t.Cleanup(func() { close(done) })
 	m := newModel(defaultConfig(), "acme/example", nil)
 	m.noInit = true
-	m.me = "stefanahman" // stable login for MyReviewStatus derivation
-	m.runSelf = func(args ...string) error {
+	m.me = "stefanahman"  // stable login for MyReviewStatus derivation
+	m.cfg.OnOpen = "quit" // pinned: auto would follow the multiplexer the tests run in
+	m.runSelf = func(string, ...string) error {
 		<-done
 		return errors.New("test ended")
 	}
@@ -980,5 +981,23 @@ func TestStaleFetchIsIgnored(t *testing.T) {
 	fresh, _ := m.Update(prsMsg{gen: 1, prs: fixturePRs()[:1]})
 	if m = fresh.(model); len(m.prs) != 1 || m.refreshing {
 		t.Errorf("the current round's result was not applied: prs=%d refreshing=%v", len(m.prs), m.refreshing)
+	}
+}
+
+// TestOnOpenAutoFollowsTheMultiplexer: the default quits under tmux,
+// where the list is a popup, and stays under herdr and cmux, where it
+// has a workspace of its own; an explicit setting is taken as is.
+func TestOnOpenAutoFollowsTheMultiplexer(t *testing.T) {
+	m := testModel(t)
+	m.cfg.OnOpen = "auto"
+	for mux, want := range map[string]string{"tmux": "quit", "herdr": "stay", "cmux": "stay"} {
+		m.cfg.Mux = mux
+		if got := m.onOpen(); got != want {
+			t.Errorf("auto under %s = %q, want %q", mux, got, want)
+		}
+	}
+	m.cfg.Mux, m.cfg.OnOpen = "cmux", "switch"
+	if got := m.onOpen(); got != "switch" {
+		t.Errorf("explicit switch under cmux = %q", got)
 	}
 }

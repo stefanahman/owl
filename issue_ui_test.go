@@ -21,6 +21,7 @@ func testIssueModel(t *testing.T) (model, *[]string) {
 	var mu sync.Mutex
 	var calls []string
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
+	m.cfg.OnOpen = "quit" // pinned, as in testModel
 	m.noInit = true
 	m.runSelf = func(kind string, args ...string) error {
 		mu.Lock()

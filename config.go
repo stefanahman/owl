@@ -340,7 +340,7 @@ issue:
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (BAR-123)
 
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
-on_open: quit                    # the TUI once an open starts: quit (a popup closes at once; open finishes behind it), stay (keep the list), switch (move your client to the reviews, for owl in a tmux window; under herdr the focus has already moved)
+on_open: auto                    # the TUI once an open starts: auto (quit under tmux, where a popup closes at once and open finishes behind it; stay under herdr and cmux, where the list keeps its own workspace), quit, stay (keep the list), switch (move your client to the reviews, for owl in a tmux window)
 
 hooks:
   after_open: ""                 # command run after an open with OWL_PR (a review) or OWL_ISSUE and OWL_BRANCH (a feature), OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
@@ -408,7 +408,7 @@ func defaultConfig() Config {
 		LinkLocal: []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
 	}
 	c.Bindings = defaultBindings()
-	c.OnOpen = "quit"
+	c.OnOpen = "auto"
 	c.Theme = ThemeConfig{Working: "#dbbc7f", Blocked: "214", Done: "42"}
 	c.Keys = KeysConfig{
 		Up: keyNames{"up", "k"}, Down: keyNames{"down", "j"},
@@ -549,9 +549,9 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("worktrees_dir must be a relative path inside the repo, got %q", cfg.WorktreesDir)
 	}
 	switch cfg.OnOpen {
-	case "quit", "stay", "switch":
+	case "auto", "quit", "stay", "switch":
 	default:
-		return fmt.Errorf("on_open must be quit, stay or switch, got %q", cfg.OnOpen)
+		return fmt.Errorf("on_open must be auto, quit, stay or switch, got %q", cfg.OnOpen)
 	}
 	switch cfg.Mux {
 	case "auto", "tmux", "herdr", "cmux":

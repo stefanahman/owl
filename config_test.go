@@ -297,3 +297,17 @@ func TestRunConfigUsage(t *testing.T) {
 		}
 	}
 }
+
+// TestOnOpenDefaultsToAuto: the default follows the multiplexer (see
+// TestOnOpenAutoFollowsTheMultiplexer); the four words parse, others
+// don't.
+func TestOnOpenDefaultsToAuto(t *testing.T) {
+	if got := defaultConfig().OnOpen; got != "auto" {
+		t.Errorf("default on_open = %q, want auto", got)
+	}
+	for _, word := range []string{"auto", "quit", "stay", "switch"} {
+		if cfg, err := parseConfig([]byte("on_open: " + word + "\n")); err != nil || cfg.OnOpen != word {
+			t.Errorf("on_open: %s: %v", word, err)
+		}
+	}
+}
