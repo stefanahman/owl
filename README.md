@@ -52,9 +52,10 @@ Merged (last 1d)
 - **Enter** opens the review: `owl pr open` fetches the PR into
   `<repo>/.worktrees.local/pr-<N>-<slug>`, creates a window in the
   `reviews` tmux session and starts Claude there with the
-  [review skill](owl/README.md). **f** sends a "check the
-  feedback since your last review" prompt to that session — resuming
-  the conversation first if you had closed the workspace. **c** closes
+  [review skill](owl/README.md). **f** — the one binding owl ships —
+  sends a "check the feedback since your last review" prompt to that
+  session, resuming the conversation first if you had closed the
+  workspace; `bindings` add your own. **c** closes
   the workspace: worktree, branch and window go; the conversation on
   disk stays, so the next Enter resumes it.
 
@@ -197,7 +198,7 @@ that change waits for a backend that needs it.
 | `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
 | `↵` | open (or focus) the review workspace; then `on_open` |
 | `s` | start the review workspace and stay in the list — no `on_open`, no `after_open`; press it on one PR after another |
-| `f` | send the check-feedback prompt to the PR's Claude session and stay in the list, like `s` (refused while Claude is blocked on a question or a permission there) |
+| `f` | the shipped binding: send the check-feedback prompt to the PR's Claude session and stay in the list, like `s`; only on a PR with a conversation (refused while Claude is blocked on a question or a permission there) |
 | `o` | open the PR in the browser |
 | `y` | copy the PR URL |
 | `c` | close the workspace — worktree, branch and window; refused while tracked files have uncommitted changes (`owl pr close --force <N>` discards them) |
@@ -212,7 +213,8 @@ a second press on the same PR is refused until it reports, and a
 failure shows in the action row — or, once a popup has closed, on
 tmux's status line for eight seconds.
 
-Every key is rebindable, and `links` add your own (below).
+Every key is rebindable, and `bindings` add your own — a prompt for
+the row's agent or a URL — per list, PRs and issues (below).
 
 ## Commands
 
@@ -326,7 +328,6 @@ default_repo: ""                 # used when owl starts outside a git repo
 agent:
   cmd: claude --permission-mode auto   # Claude Code, with your flags (e.g. --model claude-opus-5); -c is appended when the worktree has a prior conversation
   prompt: "/owl:review {pr}"  # first prompt of a fresh review
-  feedback_prompt: "Please carefully check the feedback since your last review …"  # what f sends
   link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)
     - .claude/settings.local.json
     - .claude/*.local.md
@@ -351,7 +352,6 @@ theme:                           # the three Claude-state colours (ANSI 0-255 or
 keys:                            # rebind any action: a key name or a list
   open: enter
   start: s
-  feedback: f
   quit: [q, ctrl+c]
 
 linear:                          # the issue tracker behind `owl issue`
@@ -359,18 +359,39 @@ linear:                          # the issue tracker behind `owl issue`
   account: ""                    # the 1Password account the item is in, when several are signed in
   team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues
 
-links:                           # your own keys, each opening a URL built from the PR
-  - key: l
-    name: Linear
-    pattern: 'PROJ-\d+'          # {id} is the first match in title, body and branch
-    url: https://linear.app/my-org/issue/{id}
-  - key: b
-    name: CI
-    url: https://ci.example.com/{repo}/pr/{pr}
+bindings:                        # your own keys on a row: a prompt for its agent, or a URL to open
+  pr:
+    - key: f                     # shipped; listing it again replaces it
+      name: check feedback
+      prompt: "Please carefully check the feedback since your last review …"
+      when: conversation         # only on a PR whose agent has a conversation
+    - key: d
+      name: Dependabot
+      prompt: "/owl:dependabot {pr}"
+    - key: l
+      name: Linear
+      pattern: 'PROJ-\d+'        # {id} is the first match in title, body and branch
+      url: https://linear.app/my-org/issue/{id}
+  issue:
+    - key: p
+      name: Continue
+      prompt: "Continue {key}: pick up where you left off"
+      when: conversation
 ```
 
-Link placeholders: `{pr}`, `{repo}` (owner/name), `{branch}`, `{url}`
-(the PR page) and `{id}`.
+A binding is a key (a name or a list), a `name` for the help view and
+exactly one of `prompt` and `url`. A prompt goes to the row's agent
+the way `s` starts one — `owl pr start <N> --prompt …` — so it starts
+a workspace where there is none and resumes the conversation where
+there is one; the list stays usable meanwhile, as with `s`. A URL
+opens with `open_cmd`. Placeholders: `{pr}` (or `{key}` on the issue
+list), `{repo}` (owner/name), `{branch}`, `{url}` (the PR or issue
+page) and `{id}`, the first match of `pattern` in the title, body and
+branch — a binding with a pattern does nothing on a row it does not
+match. `when: conversation` keeps the key to rows whose agent already
+has one, which is how the shipped `f` behaves. Keys are checked per
+list against `keys`, so `l` may mean one thing on PRs and another on
+issues.
 
 The default `agent.cmd` runs Claude with `--permission-mode auto` inside
 a checkout the PR's author controls, and `link_local` never replaces a
