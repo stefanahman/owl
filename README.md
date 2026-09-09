@@ -284,6 +284,25 @@ fetched — one 90ms lookup per project that is missing.
 `/` filters by name, `o` opens the project in Linear, `y` copies its
 name. Off a terminal, `owl project` prints a table.
 
+`owl issue --project <id|name>` lists a project's open issues —
+**everyone's, not your slice** — grouped by milestone in the project's
+own order, with the unmilestoned last and the assignee column blank
+where the issue is yours, so the gaps are your queue. It takes Linear's
+slug or a fragment of the name, the same as `owl project open`.
+
+```
+$ owl issue --project sequential
+Sequential Capture redesign · 62% · 52 open, 12 yours
+
+M3.5 — Downstream compatibility & activation prerequisites (pre-cutover gate)
+  BAR-4782  !    1d  In Review            Define resolves issuer-scoped business rules…
+  BAR-4785  !!   1d  Backlog              Flag activities whose PII masking failed…
+M5 — Output evaluation
+  BAR-2718  -    9w  Duplicate   Emilio   Confirm currency/unit/region/issuer parity
+No milestone
+  BAR-4160  !!   1d  In Review            Per-tenant captureEngine override…
+```
+
 Enter opens the project's **conversation** — the one above the issues.
 It is a workspace like the others: a worktree under `worktrees_dir`
 named `proj-<slug>`, a window in `project.session`, Claude started in

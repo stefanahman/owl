@@ -32,6 +32,9 @@ type Tracker interface {
 	DoneProjects(since time.Time) ([]Project, error)
 	// Project fetches one by Linear's slug id or UUID.
 	Project(id string) (Project, error)
+	// ProjectIssues lists a project's open issues, whoever they belong
+	// to — the project's own view, not the user's slice of it.
+	ProjectIssues(id string) ([]Issue, error)
 	// Issue fetches one by its identifier (BAR-123).
 	Issue(key string) (Issue, error)
 	// Create files an issue in the configured team, assigned to the
@@ -64,6 +67,23 @@ type Issue struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"project"`
+	// Milestone is the step of the project this issue belongs to, and
+	// what the project's own view groups by. Empty for an issue in no
+	// milestone, which is common: a project's issues are milestoned as
+	// its plan firms up, not when they are filed. SortOrder is the
+	// milestone's own, so the sections come out in the project's order
+	// rather than alphabetically.
+	Milestone struct {
+		ID        string  `json:"id"`
+		Name      string  `json:"name"`
+		SortOrder float64 `json:"sortOrder"`
+	} `json:"projectMilestone"`
+	// Assignee is whose issue it is. IsMe is Linear's own answer, which
+	// beats comparing names: the project's view shows everyone's.
+	Assignee struct {
+		Name string `json:"name"`
+		IsMe bool   `json:"isMe"`
+	} `json:"assignee"`
 	Team struct {
 		Key string `json:"key"` // BAR
 	} `json:"team"`
@@ -108,7 +128,7 @@ type Project struct {
 const projectFields = `id name slugId url progress scope updatedAt completedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
-const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } team { key }`
+const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } projectMilestone { id name sortOrder } assignee { name isMe } team { key }`
 
 // Linear talks to one workspace with one user's key.
 type Linear struct {
@@ -347,6 +367,46 @@ func (l Linear) Project(id string) (Project, error) {
 		return Project{}, err
 	}
 	return r.Project, nil
+}
+
+// projectIssuesQuery walks one project's open issues. Everyone's, not
+// the user's: what a project is waiting on is rarely all on one desk,
+// and the count that matters on a project row is yours over this.
+const projectIssuesQuery = `query($id: String!, $first: Int!, $after: String) {
+  project(id: $id) {
+    issues(first: $first, after: $after, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
+      nodes { ` + issueFields + ` } pageInfo { hasNextPage endCursor }
+    }
+  }
+}`
+
+// ProjectIssues: the project's open issues, newest change first, every
+// page.
+func (l Linear) ProjectIssues(id string) ([]Issue, error) {
+	var all []Issue
+	var after *string
+	for {
+		var r struct {
+			Project struct {
+				Issues struct {
+					Nodes    []Issue `json:"nodes"`
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+				} `json:"issues"`
+			} `json:"project"`
+		}
+		if err := l.query(projectIssuesQuery, map[string]any{"id": id, "first": 100, "after": after}, &r); err != nil {
+			return nil, err
+		}
+		page := r.Project.Issues
+		all = append(all, page.Nodes...)
+		if !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == "" {
+			return all, nil
+		}
+		after = &page.PageInfo.EndCursor
+	}
 }
 
 // Issue looks one up by identifier; Linear's issue(id:) takes the

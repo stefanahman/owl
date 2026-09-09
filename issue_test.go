@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestByIssueKey uses the branch names bardo-system actually has open:
@@ -54,6 +55,62 @@ func TestByIssueKey(t *testing.T) {
 	// issues it is filed under.
 	if flat := flattenPRs(index); len(flat) != 7 || flat[0].Number != 4279 {
 		t.Errorf("flattenPRs = %v", flat)
+	}
+}
+
+func TestMilestoneSections(t *testing.T) {
+	ms := func(key, id, name string, order float64, age time.Duration) Issue {
+		is := mkIssue(key, "a title", "b", "Backlog", "backlog", 2, age)
+		is.Milestone.ID, is.Milestone.Name, is.Milestone.SortOrder = id, name, order
+		return is
+	}
+	// Deliberately out of order, and with the unmilestoned in the
+	// middle: the project's own sortOrder decides, not the input.
+	got := milestoneSections([]Issue{
+		ms("BAR-5", "m5", "M5 — Output evaluation", 4163, 3*time.Hour),
+		ms("BAR-0", "", "", 0, 2*time.Hour),
+		ms("BAR-3", "m3", "M3 — Core parity", 900, time.Hour),
+		ms("BAR-35", "m35", "M3.5 — Downstream", 2603.5, time.Hour),
+		ms("BAR-5b", "m5", "M5 — Output evaluation", 4163, time.Hour),
+	})
+	var titles []string
+	for _, s := range got {
+		titles = append(titles, s.title)
+	}
+	want := []string{"M3 — Core parity", "M3.5 — Downstream", "M5 — Output evaluation", "No milestone"}
+	if strings.Join(titles, " | ") != strings.Join(want, " | ") {
+		t.Errorf("sections = %v, want %v", titles, want)
+	}
+	// One section per milestone, newest change first inside it:
+	// BAR-5b was touched an hour ago, BAR-5 three hours ago.
+	m5 := got[2]
+	if len(m5.issues) != 2 || m5.issues[0].Key != "BAR-5b" || m5.issues[1].Key != "BAR-5" {
+		t.Errorf("M5 = %+v", m5.issues)
+	}
+	// Issues with no milestone are not an error and get a heading.
+	if last := got[3]; len(last.issues) != 1 || last.issues[0].Key != "BAR-0" {
+		t.Errorf("unmilestoned = %+v", last.issues)
+	}
+}
+
+func TestProjectFlag(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		id   string
+		ok   bool
+	}{
+		{[]string{"--project", "sequential"}, "sequential", true},
+		{[]string{"--project=sequential"}, "sequential", true},
+		{[]string{"open", "BAR-1"}, "", false},
+		{nil, "", false},
+	} {
+		id, ok, err := projectFlag(c.args)
+		if err != nil || id != c.id || ok != c.ok {
+			t.Errorf("projectFlag(%v) = %q, %v, %v", c.args, id, ok, err)
+		}
+	}
+	if _, _, err := projectFlag([]string{"--project"}); err == nil {
+		t.Error("--project with no value should fail")
 	}
 }
 

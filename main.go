@@ -1830,6 +1830,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl issue start <KEY> [--prompt TEXT] the same without going there
        owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
        owl issue new <title…>           file an issue in linear.team, assigned to you
+       owl issue --project <id|name>    a project's open issues by milestone, whoever they belong to
        owl project                      the projects you work in, from Linear
        owl project open <id> [--prompt TEXT] open (or focus) the project's conversation
        owl project start <id> [--prompt TEXT] the same without going there
@@ -1878,7 +1879,7 @@ func main() {
 				}
 			}
 		case "issue":
-			if len(args) > 1 {
+			if len(args) > 1 && !strings.HasPrefix(args[1], "--project") {
 				switch args[1] {
 				case "open", "start", "close", "new":
 				default:

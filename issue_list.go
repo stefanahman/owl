@@ -159,6 +159,56 @@ func (m model) visibleIssueRows() []visibleRow {
 	return out
 }
 
+// milestoneSection is a project's issues under one of its milestones.
+type milestoneSection struct {
+	title  string
+	issues []Issue
+}
+
+// milestoneSections groups a project's issues by milestone, in the
+// project's own order — the milestone's sortOrder, not the alphabet —
+// with the unmilestoned last under a heading of their own.
+//
+// That last section is often the biggest and is not a mistake: issues
+// are milestoned as a project's plan firms up, not when they are
+// filed. Sequential Capture redesign has 49 of its 52 open issues on a
+// milestone; Sven v2 has one of eight.
+func milestoneSections(issues []Issue) []milestoneSection {
+	type group struct {
+		name   string
+		order  float64
+		issues []Issue
+	}
+	byID := map[string]*group{}
+	var ids []string
+	for _, is := range issues {
+		g, ok := byID[is.Milestone.ID]
+		if !ok {
+			g = &group{name: is.Milestone.Name, order: is.Milestone.SortOrder}
+			byID[is.Milestone.ID] = g
+			ids = append(ids, is.Milestone.ID)
+		}
+		g.issues = append(g.issues, is)
+	}
+	sort.SliceStable(ids, func(i, j int) bool {
+		if (ids[i] == "") != (ids[j] == "") {
+			return ids[j] == "" // the unmilestoned go last
+		}
+		return byID[ids[i]].order < byID[ids[j]].order
+	})
+	out := make([]milestoneSection, 0, len(ids))
+	for _, id := range ids {
+		g := byID[id]
+		title := g.name
+		if id == "" {
+			title = "No milestone"
+		}
+		sort.SliceStable(g.issues, func(i, j int) bool { return g.issues[i].UpdatedAt.After(g.issues[j].UpdatedAt) })
+		out = append(out, milestoneSection{title: title, issues: g.issues})
+	}
+	return out
+}
+
 func contains(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
