@@ -90,10 +90,12 @@ func TestOpenFromTheTUI(t *testing.T) {
 	})
 }
 
-// waitUntil polls ok for up to ten seconds.
+// waitUntil polls ok for up to thirty seconds: the child fetches a PR
+// into a worktree and opens a window, and a cold CI runner has taken
+// more than ten.
 func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		if ok() {
 			return
 		}
