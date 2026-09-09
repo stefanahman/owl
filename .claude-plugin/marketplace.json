@@ -5,14 +5,14 @@
     "url": "https://github.com/stefanahman"
   },
   "metadata": {
-    "description": "Claude Code plugins that ship with owl",
+    "description": "The Claude Code plugin that ships with owl: review, feature and dependabot skills",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "owl",
       "source": "./owl",
-      "description": "PR review workflow: gather context, read carefully, verify locally, draft a review you approve, post it as one atomic gh review"
+      "description": "Three skills with manners: review never posts without you, feature never pushes without you, dependabot fixes on the bot's branch and drafts the review as a file"
     }
   ]
 }
