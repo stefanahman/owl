@@ -54,15 +54,27 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	if _, ok := windowsByKind(""); ok {
 		t.Error("windowsByKind should know nothing else")
 	}
-	if got := (windows{mux.Tmux{SessionName: "s"}, reviews, mux.GroupStyle{}}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
+	if got := (windows{mux.Tmux{SessionName: "s"}, reviews, nil}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
 		t.Errorf("ChildEnv = %v", got)
 	}
 }
 
 func TestGroupStyle(t *testing.T) {
+	// Off by default, and nil is how Open knows not to group at all —
+	// there is no style for a group that is never made.
 	cfg := defaultConfig()
-	// One group per scope, named after the scope, so the sidebar's
-	// words are the tmux sessions' words.
+	for _, sc := range []scope{reviews, features, projects} {
+		if got := groupStyle(cfg, sc); got != nil {
+			t.Errorf("groupStyle(%s) = %+v with groups off, want nil", sc.name, got)
+		}
+	}
+	if got := newWindows(cfg, features).style; got != nil {
+		t.Errorf("newWindows carried a style with groups off: %+v", got)
+	}
+
+	// Switched on, one group per scope, named after the scope, so the
+	// sidebar's words are the tmux sessions' words.
+	cfg.Groups.Enabled = true
 	for _, c := range []struct {
 		sc          scope
 		color, icon string
@@ -72,7 +84,7 @@ func TestGroupStyle(t *testing.T) {
 		{projects, "#af87ff", "square.stack.3d.up"},
 	} {
 		got := groupStyle(cfg, c.sc)
-		if got.Color != c.color || got.Icon != c.icon {
+		if got == nil || got.Color != c.color || got.Icon != c.icon {
 			t.Errorf("groupStyle(%s) = %+v, want %s %s", c.sc.name, got, c.color, c.icon)
 		}
 	}
@@ -83,7 +95,7 @@ func TestGroupStyle(t *testing.T) {
 		t.Errorf("overridden projects group = %+v", got)
 	}
 	// The windows value carries it, so Open needs no new argument.
-	if got := newWindows(cfg, features).style; got.Icon != "hammer" {
+	if got := newWindows(cfg, features).style; got == nil || got.Icon != "hammer" {
 		t.Errorf("newWindows did not carry the style: %+v", got)
 	}
 }

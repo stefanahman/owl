@@ -11,7 +11,7 @@ owl is the review side of them.
 | | tmux | herdr | cmux |
 |---|---|---|---|
 | a workspace | a window of `tmux.session` (reviews) or `issue.session` (features), cwd the worktree | a workspace labelled after the worktree, cwd the worktree | a workspace named after the worktree, cwd the worktree |
-| grouping | none: the session is the grouping | none | a workspace group per scope, named `reviews`, `features` or `projects` — the same words as the tmux sessions — coloured and iconed from `groups` in the config |
+| grouping | none: the session is the grouping | none | off unless `groups.enabled`; then a workspace group per scope, named `reviews`, `features` or `projects` — the same words as the tmux sessions — coloured and iconed from `groups` in the config |
 | the agent's state | [claude-status](https://github.com/stefanahman/claude-status), from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh | claude-status's sidebar pill when the plugin runs there; without it cmux's own Claude Code hooks, whose `needsInput` also covers Claude's 60-second idle reminder |
 | `done` | finished, not yet looked at; focusing the window acknowledges it | the same, from herdr | the pill's `done` (or cmux's `idle`) while cmux's notification about the turn is unread; Enter in owl marks it read |
 | a prompt while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed | refused from the pill, or from cmux's hook state without it; an agent neither saw gets the text typed |
@@ -62,7 +62,22 @@ whose pill does not mistake an idle Claude for a blocked one. cmux ≥
 
 ## cmux workspace groups
 
-Under cmux each scope's workspaces land in a group of their own, named
+**Off unless you ask for it — `groups.enabled: true`.** Grouping buys a
+folded sidebar and costs its single recency order, and that is the
+whole of the trade. cmux sorts groups by their own most recent
+notification and sorts members below their anchor by theirs, so a
+review that pinged two minutes ago sits under a features group that
+pinged one minute ago, beneath an anchor that never pings at all. With
+a handful of workspaces the folding wins. Past that, the sidebar stops
+being readable top to bottom, which is what it was for.
+
+One switch rather than one per scope: a single group is enough to pull
+its members out of the common order, so the trade does not divide. The
+useful shape, if you want both, is to group the furniture — the
+long-lived workspaces you keep — by hand, and leave the work
+ungrouped.
+
+With it on, each scope's workspaces land in a group of their own, named
 after the scope: `reviews`, `features`, `projects`. No new vocabulary —
 those are the tmux session names and the names of Stefan's spaces, so
 renaming one means renaming all of them.

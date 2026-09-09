@@ -471,6 +471,7 @@ project:
   dim_statuses: [Paused]         # statuses that mean present but not moving; their rows render dim
 
 groups:                          # cmux workspace groups, one per scope; tmux and herdr ignore them
+  enabled: false                 # folds the sidebar, costs its single recency order — see docs/multiplexers.md
   reviews:  { color: "#00afff", icon: eye }
   features: { color: "#00d75f", icon: hammer }
   projects: { color: "#af87ff", icon: square.stack.3d.up }

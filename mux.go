@@ -67,16 +67,22 @@ type windows struct {
 	d  mux.Driver
 	sc scope
 	// style is how the scope's group is drawn where the multiplexer
-	// draws one. It rides here rather than through Open's arguments:
-	// newWindows already has the config, and Open's three strings are
-	// the whole of what a caller needs to know.
-	style mux.GroupStyle
+	// draws one, and nil when grouping is off. It rides here rather
+	// than through Open's arguments: newWindows already has the config,
+	// and Open's three strings are the whole of what a caller needs to
+	// know.
+	style *mux.GroupStyle
 }
 
-// groupStyle is how the scope's group is drawn. The conversion lives
-// here rather than in config.go: the config holds strings, and this is
-// the file that knows the multiplexer.
-func groupStyle(cfg Config, sc scope) mux.GroupStyle {
+// groupStyle is how the scope's group is drawn, or nil when grouping
+// is off — one value carrying both facts, so there is no way to hold a
+// style for a group that is never made. The conversion lives here
+// rather than in config.go: the config holds strings, and this is the
+// file that knows the multiplexer.
+func groupStyle(cfg Config, sc scope) *mux.GroupStyle {
+	if !cfg.Groups.Enabled {
+		return nil
+	}
 	s := cfg.Groups.Reviews
 	switch sc.name {
 	case "features":
@@ -84,7 +90,7 @@ func groupStyle(cfg Config, sc scope) mux.GroupStyle {
 	case "projects":
 		s = cfg.Groups.Projects
 	}
-	return mux.GroupStyle{Color: s.Color, Icon: s.Icon}
+	return &mux.GroupStyle{Color: s.Color, Icon: s.Icon}
 }
 
 // newWindows is the multiplexer for this configuration, seen through
@@ -109,7 +115,7 @@ func newWindows(cfg Config, sc scope) windows {
 // OWL_MUX, enough to notify with; ok is false for none.
 func windowsByKind(kind string) (windows, bool) {
 	d := mux.ByKind(kind)
-	return windows{d, reviews, mux.GroupStyle{}}, d != nil
+	return windows{d, reviews, nil}, d != nil
 }
 
 // Kind names the multiplexer: the value of OWL_MUX.
@@ -196,7 +202,9 @@ func (w windows) Open(name, dir, startLine string) error {
 	// The error is dropped on purpose. Open's job is a workspace with
 	// the agent running in it; a sidebar colour that did not take is
 	// not worth failing that, and there is nowhere here to report it.
-	_ = mux.Group(w.d, w.sc.name, ws, w.style)
+	if w.style != nil {
+		_ = mux.Group(w.d, w.sc.name, ws, *w.style)
+	}
 	pane, err := w.d.AgentPane(ws)
 	if err != nil {
 		return err

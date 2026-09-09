@@ -60,7 +60,16 @@ type GroupStyle struct {
 // the scopes themselves — reviews, features, projects — the same words
 // as the tmux sessions, so there is no fourth vocabulary to keep in
 // step.
+//
+// Off unless asked for, because grouping costs something that is not
+// obvious until you have lived with it: cmux orders groups by their
+// own most recent notification and members below their anchor by
+// theirs, so a sidebar that read top to bottom as recency stops doing
+// that. One switch and not one per scope — a single group is enough to
+// pull its members out of the common order, so the trade does not
+// divide.
 type GroupsConfig struct {
+	Enabled  bool       `yaml:"enabled"`
 	Reviews  GroupStyle `yaml:"reviews"`
 	Features GroupStyle `yaml:"features"`
 	Projects GroupStyle `yaml:"projects"`
@@ -389,6 +398,7 @@ project:
   dim_statuses: [Paused]         # statuses that mean present but not moving: their rows render dim. Linear types Paused as started, the same as In Progress, so only this tells them apart
 
 groups:                          # cmux workspace groups, one per scope, named after the scope itself; tmux and herdr have no such thing and ignore this
+  enabled: false                 # off by default: grouping folds the sidebar but costs its single recency order, since cmux sorts groups by their own latest notification and members below their anchor
   reviews:                       # the group is made from the first workspace that needs it, and cmux removes it when the last member closes
     color: "#00afff"             # "#RRGGBB"; empty leaves cmux's default
     icon: eye                    # an SF Symbol name; empty for none. cmux does not check that the symbol exists
