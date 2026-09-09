@@ -533,9 +533,28 @@ func runChild(env []string, args ...string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("owl %s: %s", strings.Join(args, " "), msg)
+		return fmt.Errorf("owl %s: %s", childCommand(args), msg)
 	}
 	return nil
+}
+
+// childCommand names the child's command line for a message with the
+// prompt text elided: a prompt runs to a paragraph, and the reason for
+// the failure comes after it, off the edge of the notice line.
+func childCommand(args []string) string {
+	shown := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--prompt" && i+1 < len(args):
+			shown = append(shown, "--prompt …")
+			i++
+		case strings.HasPrefix(args[i], "--prompt="):
+			shown = append(shown, "--prompt=…")
+		default:
+			shown = append(shown, args[i])
+		}
+	}
+	return strings.Join(shown, " ")
 }
 
 // openPRInBrowser opens the PR's page. pr.URL comes from the API, so
