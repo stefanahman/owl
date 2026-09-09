@@ -75,17 +75,32 @@ member closes. owl therefore touches groups on exactly one path —
 would not be: it would drag a workspace back that you had pulled out of
 its group by hand.
 
-**As of owl 0.11.0 that is the intent and not the behaviour.** cmux's
-`workspace-group create --from <ws>` does not anchor the group on the
-workspace it is given: it generates an anchor of its own, titled after
-the group, and adds it alongside. So a group is born with two members,
-one of them a workspace nobody asked for, and it outlives its last
-review because the generated anchor is still in it. That is the
-dedicated-anchor shape this design rejected. The repair — `set-anchor`
-onto the real workspace, then close the generated one — belongs in mux
-rather than here, and owl gets it with the next bump. Until then,
-`mux: tmux` in the config avoids it, and a phantom workspace can be
-closed by hand.
+Getting there takes a repair, and owl 0.11.0 shipped without it.
+cmux's `workspace-group create --from <ws>` does not anchor the group
+on the workspace it is given — `--from` takes a list and means
+*capture these*, as its own help says of the opposite case: omitting it
+"creates an anchor-only group without capturing live workspaces". So
+cmux invents an anchor titled after the group and adds it alongside,
+the group is born with two members, and it outlives its last review
+because the invented one is still in it. That is the dedicated-anchor
+shape this design rejected.
+
+mux ≥ 0.6.1 repairs it on the create path: it re-reads the groups and,
+when the anchor is one cmux invented rather than the workspace owl
+passed, moves the anchor across and closes the invented one. Closing a
+workspace is the one irreversible thing here, so it is guarded to the
+exact shape a fresh create leaves — a group of two whose anchor is not
+ours — and a group holding anything else keeps its phantom header
+rather than risk a workspace of yours. A refused move is not an error:
+the workspace is grouped either way.
+
+Two consequences. Anything opened under owl 0.11.0 left a phantom
+workspace per group, named `reviews`, `features` or `projects`; the fix
+stops new ones and does not retire those, because closing a workspace
+is a person's call. And the repair infers "cmux invented this anchor"
+from the shape of the group. cmux's rpc payload on main carries
+`anchor_workspace_is_generated`, which would make it exact; 0.64.22
+does not expose it, so upgrading cmux would let both sides simplify.
 
 Two more things to know when it misbehaves. A group is identified by
 its name, because the id the API carries is not reachable from cmux's
