@@ -242,3 +242,59 @@ func (m model) projectLegend() string {
 		"  misses the project most of your work is in",
 	)
 }
+
+// fetchDrillIssues asks the tracker for every open issue of the
+// project being drilled into, whoever it belongs to.
+func (m model) fetchDrillIssues() tea.Msg {
+	gen := m.fetchGen
+	if m.tracker == nil || m.drill == nil {
+		return drillIssuesMsg{gen, nil}
+	}
+	issues, err := m.tracker.ProjectIssues(m.drill.ID)
+	if err != nil {
+		return errMsg{gen, err}
+	}
+	return drillIssuesMsg{gen, issues}
+}
+
+// visibleDrillRows groups a project's issues by milestone, in the
+// project's own order, with the search filter applied. The section a
+// row sits in is its milestone, so renderIssueRow always prints the
+// state: a milestone name never collides with a status.
+func (m model) visibleDrillRows() []visibleRow {
+	filter := strings.ToLower(m.search.Value())
+	var kept []Issue
+	for _, is := range m.drillIssues {
+		if filter != "" &&
+			!strings.Contains(strings.ToLower(is.Key), filter) &&
+			!strings.Contains(strings.ToLower(is.Title), filter) &&
+			!strings.Contains(strings.ToLower(is.Assignee.Name), filter) {
+			continue
+		}
+		kept = append(kept, is)
+	}
+	var out []visibleRow
+	for _, sec := range milestoneSections(kept) {
+		out = append(out, visibleRow{sectionTitle: sec.title, sectionStyle: styleSectionWait})
+		for i := range sec.issues {
+			out = append(out, visibleRow{issue: &sec.issues[i], sectionTitle: sec.title})
+		}
+	}
+	return out
+}
+
+// drillCountsSummary is the action row while drilled: the project's
+// own numbers, and how much of it is yours.
+func (m model) drillCountsSummary() string {
+	mine := 0
+	for _, is := range m.drillIssues {
+		if is.Assignee.IsMe {
+			mine++
+		}
+	}
+	return styleDim.Render(fmt.Sprintf(
+		"%.0f%% · %d open · %d yours · %d milestones · %s to go back",
+		m.drill.Progress*100, len(m.drillIssues), mine,
+		len(milestoneSections(m.drillIssues)), m.keys.Back.Help().Key,
+	))
+}

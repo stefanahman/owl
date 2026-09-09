@@ -222,13 +222,14 @@ func contains(list []string, s string) bool {
 // eye can run down a column; the title takes whatever the window has
 // left, and the PR chips ride at the end.
 const (
-	projectWidth = 18
-	stateWidth   = 11 // "In Progress", the longest of Linear's defaults
-	titleFloor   = 24
-	titleCeiling = 80
+	projectWidth  = 18
+	stateWidth    = 11 // "In Progress", the longest of Linear's defaults
+	assigneeWidth = 9  // a given name, for the rows that are not yours
+	titleFloor    = 24
+	titleCeiling  = 80
 	// fixedWidth is everything else on the row, chips included: cursor,
 	// key, badges, priority, age, the gaps, and room for two chips.
-	fixedWidth = 2 + 10 + 5 + 4 + 5 + 2 + projectWidth + 2 + stateWidth + 1 + 14
+	fixedWidth = 2 + 10 + 5 + 4 + 5 + 2 + projectWidth + 2 + stateWidth + 1 + assigneeWidth + 14
 )
 
 // titleWidth is what the title gets in this window. Without a size yet
@@ -237,7 +238,17 @@ func (m model) titleWidth() int {
 	if m.width == 0 {
 		return 60
 	}
-	return clampInt(m.width-fixedWidth, titleFloor, titleCeiling)
+	// Drilled, the project column is gone and the title has its width.
+	return clampInt(m.width-fixedWidth+(projectWidth-m.projectColumn()), titleFloor, titleCeiling)
+}
+
+// projectColumn is the width of the project column: none while
+// drilled into a project, since every row would name it.
+func (m model) projectColumn() int {
+	if m.drill != nil {
+		return 0
+	}
+	return projectWidth
 }
 
 // renderIssueRow: cursor, key, the workspace badges, priority, age,
@@ -265,17 +276,31 @@ func (m model) renderIssueRow(row visibleRow, selected bool) string {
 		when = is.CompletedAt
 	}
 	state := stateUnlessSection(is.State.Name, row.sectionTitle)
+	// Whose it is, blank when it is yours — so in a project's list the
+	// gaps down this column are your own queue, and in the assigned
+	// list, where every issue is yours, the column costs nothing.
+	who := ""
+	if !is.Assignee.IsMe {
+		who = firstWord(is.Assignee.Name)
+	}
+	// Not inside a project: every row would name the one you drilled
+	// into, and the title wants those columns more.
+	project := ""
+	if m.drill == nil {
+		project = is.Project.Name
+	}
 	w := m.titleWidth()
 	return strings.TrimRight(fmt.Sprintf(
-		"%s%-9s %s %3s %s  %-*s  %s %s%s",
+		"%s%-9s %s %3s %s  %-*s  %s %s%s%s",
 		cursor,
 		is.Key,
 		workspaceBadges(local, starting),
 		priorityMark(is.Priority),
 		styleDim.Render(fmt.Sprintf("%3s", relativeAge(when.Format(time.RFC3339)))),
 		w, trim(is.Title, w),
-		cell(is.Project.Name, projectWidth, styleDim),
+		cell(project, m.projectColumn(), styleDim),
 		cell(state, stateWidth, styleDim),
+		cell(who, assigneeWidth, styleDim),
 		prChips(m.issuePRs[is.Key]),
 	), " ")
 }

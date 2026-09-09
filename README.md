@@ -284,7 +284,15 @@ fetched — one 90ms lookup per project that is missing.
 `/` filters by name, `o` opens the project in Linear, `y` copies its
 name. Off a terminal, `owl project` prints a table.
 
-`owl issue --project <id|name>` lists a project's open issues —
+**`→` on a project row drills into it**, and `←` comes back to the row
+you left. The drilled list is the project's own issues, everyone's,
+grouped by milestone in the project's order with the unmilestoned last.
+The project column goes — every row would name the project you are
+standing in — and the assignee column fills in for the issues that are
+not yours. Enter still opens a feature workspace, because what the key
+does follows the row and not the list.
+
+`owl issue --project <id|name>` is the same list off a terminal —
 **everyone's, not your slice** — grouped by milestone in the project's
 own order, with the unmilestoned last and the assignee column blank
 where the issue is yours, so the gaps are your queue. It takes Linear's

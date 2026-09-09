@@ -280,6 +280,8 @@ type KeysConfig struct {
 	Yank     keyNames `yaml:"yank"`
 	Next     keyNames `yaml:"next"`
 	Cleanup  keyNames `yaml:"cleanup"`
+	Drill    keyNames `yaml:"drill"`
+	Back     keyNames `yaml:"back"`
 	Search   keyNames `yaml:"search"`
 	Cancel   keyNames `yaml:"cancel"`
 	Refresh  keyNames `yaml:"refresh"`
@@ -301,6 +303,8 @@ func (k KeysConfig) each(fn func(action string, keys keyNames)) {
 	fn("yank", k.Yank)
 	fn("next", k.Next)
 	fn("cleanup", k.Cleanup)
+	fn("drill", k.Drill)
+	fn("back", k.Back)
 	fn("search", k.Search)
 	fn("cancel", k.Cancel)
 	fn("refresh", k.Refresh)
@@ -433,6 +437,8 @@ keys:                            # one key name or a list; names as bubbletea sp
   browser: o
   yank: y
   next: n
+  drill: right                    # on a project row: its issues, grouped by milestone
+  back: left                      # back out of a drilled list
   cleanup: c
   search: /
   cancel: esc
@@ -492,6 +498,7 @@ func defaultConfig() Config {
 		PageUp: keyNames{"pgup", "ctrl+u"}, PageDown: keyNames{"pgdown", "ctrl+d"},
 		Open: keyNames{"enter"}, Start: keyNames{"s"}, Browser: keyNames{"o"},
 		Yank: keyNames{"y"}, Next: keyNames{"n"}, Cleanup: keyNames{"c"},
+		Drill: keyNames{"right"}, Back: keyNames{"left"},
 		Search: keyNames{"/"}, Cancel: keyNames{"esc"}, Refresh: keyNames{"r"}, Help: keyNames{"?"},
 		Quit: keyNames{"q", "ctrl+c"},
 	}

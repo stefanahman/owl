@@ -74,6 +74,12 @@ type doneMsg struct {
 	issues []Issue
 }
 
+// drillIssuesMsg carries the issues of the project being drilled into.
+type drillIssuesMsg struct {
+	gen    int
+	issues []Issue
+}
+
 // projectsMsg is the project list's fetch: the open projects the user
 // works in.
 type projectsMsg struct {
@@ -143,6 +149,8 @@ type keyMap struct {
 	Yank     key.Binding
 	Next     key.Binding
 	Cleanup  key.Binding
+	Drill    key.Binding
+	Back     key.Binding
 	Search   key.Binding
 	Cancel   key.Binding
 	Refresh  key.Binding
@@ -170,6 +178,8 @@ func newKeyMap(k KeysConfig, bindings []Binding) keyMap {
 		Yank:     bind(k.Yank, "yank PR URL"),
 		Next:     bind(k.Next, "next attention-needed"),
 		Cleanup:  bind(k.Cleanup, "clean up worktree"),
+		Drill:    bind(k.Drill, "the project's issues"),
+		Back:     bind(k.Back, "back"),
 		Search:   bind(k.Search, "search"),
 		Cancel:   bind(k.Cancel, "cancel/clear"),
 		Refresh:  bind(k.Refresh, "refresh"),
@@ -209,7 +219,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	actions := append([]key.Binding{k.Enter, k.Start, k.Browser, k.Yank, k.Cleanup}, k.Bindings...)
+	actions := append([]key.Binding{k.Enter, k.Start, k.Browser, k.Yank, k.Cleanup, k.Drill, k.Back}, k.Bindings...)
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Next, k.Home, k.End, k.PageUp, k.PageDown},
 		actions,
@@ -272,6 +282,19 @@ type visibleRow struct {
 // header reports whether the row is a section title.
 func (r visibleRow) header() bool { return r.pr == nil && r.issue == nil && r.project == nil }
 
+// noun is the owl command that acts on this row — `owl <noun> open`.
+// It follows the row and not the list, because a drilled project list
+// shows issue rows, and `owl project open BAR-4079` is not a thing.
+func (r visibleRow) noun() string {
+	switch {
+	case r.issue != nil:
+		return "issue"
+	case r.project != nil:
+		return "project"
+	}
+	return "pr"
+}
+
 // id names what the row is about, for inflight and the children: a
 // PR's number, an issue's key, a project's slug.
 func (r visibleRow) id() string {
@@ -307,11 +330,17 @@ type model struct {
 	prs          []PR
 	merged       []PR
 	issues       []Issue
-	doneIssues   []Issue         // completed inside doneWindow; the Done section
-	projects     []Project       // the project list's rows
-	doneProjects []Project       // completed inside doneProjectWindow; the Done section
-	issuePRs     map[string][]PR // the repo's open PRs by issue key, for the issue rows
-	localState   map[string]LocalState
+	doneIssues   []Issue   // completed inside doneWindow; the Done section
+	projects     []Project // the project list's rows
+	doneProjects []Project // completed inside doneProjectWindow; the Done section
+	// drill is the project whose issues are showing in place of the
+	// project list, and drillIssues are that project's — everyone's, not
+	// only the user's. nil when the project list itself is showing.
+	drill       *Project
+	drillIssues []Issue
+	drillCursor int             // the project row to come back to
+	issuePRs    map[string][]PR // the repo's open PRs by issue key, for the issue rows
+	localState  map[string]LocalState
 
 	// load state
 	ready       bool      // the list has been fetched (or read from the cache)
@@ -531,35 +560,35 @@ func (m model) persistCache() {
 // runs inside a tmux popup, and with on_open: quit the popup closes
 // the moment the child starts — it must finish on its own, and it
 // does (see runChild for where its failure goes then).
-func (m model) openWorkspace(id, prompt string) tea.Cmd {
+func (m model) openWorkspace(noun, id, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"open", id}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{id, m.runSelf(m.kind, args...)}
+		return openedMsg{id, m.runSelf(noun, args...)}
 	}
 }
 
 // startWorkspace runs `owl <kind> start <id> [--prompt TEXT]`: the
 // workspace comes up, or gets the prompt, and the list stays — for
 // starting several one after another, and for f.
-func (m model) startWorkspace(id, prompt string) tea.Cmd {
+func (m model) startWorkspace(noun, id, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"start", id}
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{id, m.runSelf(m.kind, args...)}
+		return openedMsg{id, m.runSelf(noun, args...)}
 	}
 }
 
 // closeWorkspace runs `owl <kind> close <id>`; the TUI refreshes its
 // overlay when it succeeds. The agent's conversation survives on
 // disk, so Enter / f afterwards resume it.
-func (m model) closeWorkspace(id string) tea.Cmd {
+func (m model) closeWorkspace(noun, id string) tea.Cmd {
 	return func() tea.Msg {
-		return closedMsg{id, m.runSelf(m.kind, "close", id)}
+		return closedMsg{id, m.runSelf(noun, "close", id)}
 	}
 }
 
@@ -661,6 +690,13 @@ func (m model) openPRInBrowser(pr *PR) tea.Cmd {
 	}
 }
 
+// pressNoun is the noun a binding's child runs under: the selected
+// row's, since a binding acts on what the cursor is on.
+func (m model) pressNoun() string {
+	row, _ := m.selectedRow()
+	return row.noun()
+}
+
 // bindings is the list's own: the PR list's or the issue list's.
 func (m model) bindings() []Binding {
 	switch m.kind {
@@ -712,7 +748,7 @@ func (m model) press(b Binding) (tea.Model, tea.Cmd) {
 	if b.URL != "" {
 		return m, func() tea.Msg { return openURL(m.cfg.OpenCmd, text) }
 	}
-	return m.launch(id, fmt.Sprintf("%s on %s…", b.Name, label), m.startWorkspace(id, text), false)
+	return m.launch(id, fmt.Sprintf("%s on %s…", b.Name, label), m.startWorkspace(m.pressNoun(), id, text), false)
 }
 
 // switchClient moves the user's client to the review container, whose
@@ -848,6 +884,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()
+
+	case drillIssuesMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.drillIssues = msg.issues
+		m.ready = true
+		m.refreshing = false
+		m.err = nil
+		m.lastFetched = time.Now()
+		m.clampCursor()
+		m.refreshList()
 
 	case doneProjectsMsg:
 		if msg.gen != m.fetchGen {
@@ -1011,12 +1059,32 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
+	case key.Matches(msg, m.keys.Drill):
+		// Only from a project row, and only into a project: the drill is
+		// one level, project to its issues.
+		if p := m.selectedProject(); p != nil {
+			m.drill, m.drillCursor, m.drillIssues = p, m.cursor, nil
+			m.sc = features // the rows are issues now, and so is their overlay
+			m.cursor, m.err = 0, nil
+			m.search.SetValue("")
+			m.refreshList()
+			return m, tea.Batch(m.fetchDrillIssues, m.fetchIssuePRs, m.fetchLocal)
+		}
+	case key.Matches(msg, m.keys.Back):
+		if m.drill != nil {
+			m.drill, m.drillIssues = nil, nil
+			m.sc = projects
+			m.cursor, m.err = m.drillCursor, nil
+			m.search.SetValue("")
+			m.refreshList()
+			return m, m.fetchLocal
+		}
 	case key.Matches(msg, m.keys.Enter), key.Matches(msg, m.keys.Start):
 		if row, ok := m.selectedRow(); ok {
 			if key.Matches(msg, m.keys.Enter) {
-				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.id(), ""), true)
+				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.noun(), row.id(), ""), true)
 			}
-			return m.launch(row.id(), "starting "+row.label()+"…", m.startWorkspace(row.id(), ""), false)
+			return m.launch(row.id(), "starting "+row.label()+"…", m.startWorkspace(row.noun(), row.id(), ""), false)
 		}
 	case key.Matches(msg, m.keys.Browser):
 		if pr := m.selectedPR(); pr != nil {
@@ -1049,7 +1117,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := m.localOf(row); ls.Worktree != "" || ls.Window != "" {
-				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.id()), false)
+				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.noun(), row.id()), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
@@ -1272,6 +1340,9 @@ func (m *model) resizeViewport() {
 // visibleRows builds the section-grouped row list with the search
 // filter applied. Sections with zero visible rows are omitted.
 func (m model) visibleRows() []visibleRow {
+	if m.drill != nil {
+		return m.visibleDrillRows()
+	}
 	switch m.kind {
 	case "issue":
 		return m.visibleIssueRows()
@@ -1464,6 +1535,9 @@ func (m model) actionRowView() string {
 // What just finished counts as data: a week where the only project you
 // touched is one you closed is still a list, not a loading screen.
 func (m model) hasData() bool {
+	if m.drill != nil {
+		return len(m.drillIssues) > 0
+	}
 	switch m.kind {
 	case "issue":
 		return len(m.issues) > 0 || len(m.doneIssues) > 0
@@ -1475,6 +1549,9 @@ func (m model) hasData() bool {
 
 // noun is what the list holds, plural: PRs, issues or projects.
 func (m model) noun() string {
+	if m.drill != nil {
+		return "issues"
+	}
 	switch m.kind {
 	case "issue":
 		return "issues"
@@ -1487,6 +1564,9 @@ func (m model) noun() string {
 // countsSummary is the idle-state action row content: a compact
 // count-per-group line so a glance tells you today's shape.
 func (m model) countsSummary() string {
+	if m.drill != nil {
+		return m.drillCountsSummary()
+	}
 	switch m.kind {
 	case "issue":
 		return m.issueCountsSummary()
@@ -1520,7 +1600,10 @@ func (m model) titleLine(repo string) string {
 	// name themselves, from the same noun the empty-search line uses, so
 	// the two can never disagree.
 	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
-	if m.kind != "pr" {
+	if m.drill != nil {
+		// The project, not the repo: while drilled that is where you are.
+		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
+	} else if m.kind != "pr" {
 		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), repo))
 	}
 	right := ""
