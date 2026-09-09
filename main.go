@@ -1774,17 +1774,19 @@ func versionString() string {
 }
 
 // about is what bare owl says: what it is, before what it takes.
-const about = `owl — the pull requests waiting for your review, and the issues waiting
-for your hands, one keystroke from any terminal.
+const about = `owl — the pull requests waiting for your review, the issues waiting for
+your hands, and the projects they belong to, one keystroke from any
+terminal.
 
-Each becomes a workspace when you want it: a git worktree on its branch,
-a window in your multiplexer — tmux, herdr or cmux — and Claude Code
-inside it, on the review or on the feature. owl stores nothing of its
-own: the branch carries the ticket, the pull request carries the review,
-the window carries the agent, and the lists read all of it back from
-GitHub, Linear and the multiplexer. Two skills give the agent its manners
-— review never posts without you, feature never pushes without you. What
-no ticket names yet, you hoot.
+Each becomes a workspace when you want it: a git worktree, a window in
+your multiplexer — tmux, herdr or cmux — and Claude Code inside it, on
+the review, the feature or the project. owl stores nothing of its own:
+the branch carries the ticket, the pull request carries the review, the
+window carries the agent, and the lists read all of it back from GitHub,
+Linear and the multiplexer. Four skills give the agent its manners —
+review never posts without you, feature never pushes without you,
+project plans and dispatches but writes no code itself, dependabot fixes
+on the bot's branch. What no ticket names yet, you hoot.
 `
 
 const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]

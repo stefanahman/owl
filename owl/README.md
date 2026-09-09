@@ -1,6 +1,15 @@
 # owl — a Claude Code plugin
 
-Three skills. `/owl:dependabot <number>` takes a Dependabot pull
+Four skills. `/owl:project <name>` holds the conversation above the
+issues: it reads a Linear project and its milestones — where the specs
+live — works out what is in flight, what is blocked and on what, and
+what can start now, then dispatches that work into issue workspaces
+with `owl issue start`. It writes no feature code itself, and says why:
+its worktree is detached at the default branch, so a commit there
+belongs to no branch, and the review, the pull request and the ticket
+only line up in the issue's own workspace.
+
+`/owl:dependabot <number>` takes a Dependabot pull
 request to mergeable: it reads the bump and what changed upstream
 between the two versions, checks that against how the repository uses
 the package, verifies with the project's own checks, fixes what the
