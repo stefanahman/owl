@@ -1,15 +1,23 @@
 # owl
 
-*pr-owl became owl: the tool is named after the bird, not the noun.
-The PR list is `owl pr`; the issue list is `owl issue`, with a
-workspace per ticket the way a review has one per PR.*
+owl is the pull requests waiting for your review and the issues waiting
+for your hands, one keystroke from any terminal. Each becomes a
+workspace when you want it: a git worktree (a second checkout of the
+repo, on its branch), a window in your multiplexer (tmux, herdr or
+cmux), and Claude Code inside it, on the review or on the feature. Run
+it in a shell, bind it to a tmux popup, or keep it in a herdr or cmux
+workspace.
 
-A terminal UI of the PRs waiting for your review — and one key to turn
-any of them into a review workspace: a git worktree (a second checkout
-of the repo, on the PR's branch), a window in your terminal multiplexer
-(tmux, herdr or cmux), and Claude Code reviewing inside it. Run it in a
-shell, bind it to a tmux popup, or run it in a herdr or cmux workspace,
-so it's one keystroke away from any session.
+owl stores nothing of its own. The branch carries the ticket, the pull
+request carries the review, the window carries the agent; the lists
+read all of it back from GitHub, Linear and the multiplexer, so nothing
+is written twice and nothing goes stale in a second place. Two skills
+give the agent its manners: `review` never posts without you, `feature`
+never pushes without you. What no ticket names yet, you `hoot`.
+
+It began as pr-owl, a watcher of pull requests. When the issues came,
+the bird kept the name and the noun moved into the command: `owl pr`,
+`owl issue`. Bare `owl` introduces itself and lists the commands.
 
 ```
 owl · acme/app                                              updated just now
@@ -210,7 +218,7 @@ Every key is rebindable, and `links` add your own (below).
 
 ```
 owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]   the options apply to every command, and to what the TUI runs
-owl                              the PR list
+owl                              this introduction and the commands
 owl pr                           the PR list
 owl pr open <N> [--prompt TEXT]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open

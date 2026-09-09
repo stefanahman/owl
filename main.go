@@ -1582,9 +1582,23 @@ func versionString() string {
 	return "dev"
 }
 
+// about is what bare owl says: what it is, before what it takes.
+const about = `owl — the pull requests waiting for your review, and the issues waiting
+for your hands, one keystroke from any terminal.
+
+Each becomes a workspace when you want it: a git worktree on its branch,
+a window in your multiplexer — tmux, herdr or cmux — and Claude Code
+inside it, on the review or on the feature. owl stores nothing of its
+own: the branch carries the ticket, the pull request carries the review,
+the window carries the agent, and the lists read all of it back from
+GitHub, Linear and the multiplexer. Two skills give the agent its manners
+— review never posts without you, feature never pushes without you. What
+no ticket names yet, you hoot.
+`
+
 const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]
-       owl                              the PR list (run inside a git repo, or with default_repo set)
-       owl pr                           the PR list
+       owl                              this introduction
+       owl pr                           the PR list (run inside a git repo, or with default_repo set)
        owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
        owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
@@ -1606,8 +1620,16 @@ func (e usageError) Error() string { return string(e) }
 func main() {
 	args, err := globalOptions(os.Args[1:])
 	exitOn(err)
-	// The noun is the scope: `pr` for now, `issue` to come. A verb
-	// without one is refused with the form it takes.
+	// Bare owl says what it is; the lists are behind their nouns, so a
+	// verb never has to guess which kind of thing an id names.
+	if len(args) == 0 {
+		fmt.Print(about)
+		fmt.Println()
+		fmt.Println(usage)
+		return
+	}
+	// The noun is the scope. A verb without one is refused with the
+	// form it takes.
 	if len(args) > 0 {
 		switch args[0] {
 		case "config":

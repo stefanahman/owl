@@ -128,7 +128,7 @@ func TestMain(m *testing.M) {
 // when the test ends, however the test ends.
 func start(t *testing.T, term *vttest.Terminal, dir string, env []string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(bin)
+	cmd := exec.Command(bin, "pr")
 	cmd.Dir = dir
 	cmd.Env = env
 	if err := term.Start(cmd); err != nil {
@@ -369,4 +369,18 @@ func screenText(term *vttest.Terminal) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// Bare owl introduces itself and lists the commands; the lists live
+// behind their nouns.
+func TestBareOwlIntroducesItself(t *testing.T) {
+	out, err := exec.Command(bin).CombinedOutput()
+	if err != nil {
+		t.Fatalf("bare owl: %v\n%s", err, out)
+	}
+	for _, want := range []string{"owl — the pull requests waiting for your review", "you hoot", "usage: owl", "owl pr ", "owl issue "} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("bare owl lacks %q:\n%s", want, out)
+		}
+	}
 }
