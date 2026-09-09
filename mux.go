@@ -66,6 +66,25 @@ func scopeOf(kind string) scope {
 type windows struct {
 	d  mux.Driver
 	sc scope
+	// style is how the scope's group is drawn where the multiplexer
+	// draws one. It rides here rather than through Open's arguments:
+	// newWindows already has the config, and Open's three strings are
+	// the whole of what a caller needs to know.
+	style mux.GroupStyle
+}
+
+// groupStyle is how the scope's group is drawn. The conversion lives
+// here rather than in config.go: the config holds strings, and this is
+// the file that knows the multiplexer.
+func groupStyle(cfg Config, sc scope) mux.GroupStyle {
+	s := cfg.Groups.Reviews
+	switch sc.name {
+	case "features":
+		s = cfg.Groups.Features
+	case "projects":
+		s = cfg.Groups.Projects
+	}
+	return mux.GroupStyle{Color: s.Color, Icon: s.Icon}
 }
 
 // newWindows is the multiplexer for this configuration, seen through
@@ -74,22 +93,23 @@ type windows struct {
 func newWindows(cfg Config, sc scope) windows {
 	tmux := mux.Tmux{SessionName: sc.session(cfg), Keepalive: cfg.Tmux.KeepaliveWindow}
 	herdr := mux.NewHerdr(cfg.Herdr.Socket)
+	style := groupStyle(cfg, sc)
 	switch cfg.Mux {
 	case "tmux":
-		return windows{tmux, sc}
+		return windows{tmux, sc, style}
 	case "herdr":
-		return windows{herdr, sc}
+		return windows{herdr, sc, style}
 	case "cmux":
-		return windows{mux.NewCmux(), sc}
+		return windows{mux.NewCmux(), sc, style}
 	}
-	return windows{mux.Detect(tmux, herdr, mux.NewCmux()), sc}
+	return windows{mux.Detect(tmux, herdr, mux.NewCmux()), sc, style}
 }
 
 // windowsByKind is the multiplexer a child was told about through
 // OWL_MUX, enough to notify with; ok is false for none.
 func windowsByKind(kind string) (windows, bool) {
 	d := mux.ByKind(kind)
-	return windows{d, reviews}, d != nil
+	return windows{d, reviews, mux.GroupStyle{}}, d != nil
 }
 
 // Kind names the multiplexer: the value of OWL_MUX.
@@ -162,6 +182,21 @@ func (w windows) Open(name, dir, startLine string) error {
 	if err != nil {
 		return err
 	}
+	// Here and nowhere else. This is the one path that creates a
+	// workspace — every other branch of workspace.open finds the window
+	// already there — and grouping on each open would drag back one the
+	// user had pulled out of its group by hand. Nothing on the close
+	// path either: cmux drops a group when its last member goes.
+	//
+	// A group is known by its name, since the id mux carries is not
+	// reachable from cmux's CLI. Rename the group in the sidebar and
+	// owl stops finding it; the next open makes a second one under the
+	// old name.
+	//
+	// The error is dropped on purpose. Open's job is a workspace with
+	// the agent running in it; a sidebar colour that did not take is
+	// not worth failing that, and there is nowhere here to report it.
+	_ = mux.Group(w.d, w.sc.name, ws, w.style)
 	pane, err := w.d.AgentPane(ws)
 	if err != nil {
 		return err

@@ -455,6 +455,15 @@ issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
 
+project:
+  session: projects              # tmux: one window per project — the conversation above the issues
+  prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
+
+groups:                          # cmux workspace groups, one per scope; tmux and herdr ignore them
+  reviews:  { color: "#00afff", icon: eye }
+  features: { color: "#00d75f", icon: hammer }
+  projects: { color: "#af87ff", icon: square.stack.3d.up }
+
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: auto                    # the TUI once an open starts: auto (quit under tmux, stay under herdr and cmux), quit, stay, or switch (move your client to the reviews)
 

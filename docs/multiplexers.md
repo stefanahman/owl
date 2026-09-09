@@ -11,6 +11,7 @@ owl is the review side of them.
 | | tmux | herdr | cmux |
 |---|---|---|---|
 | a workspace | a window of `tmux.session` (reviews) or `issue.session` (features), cwd the worktree | a workspace labelled after the worktree, cwd the worktree | a workspace named after the worktree, cwd the worktree |
+| grouping | none: the session is the grouping | none | a workspace group per scope, named `reviews`, `features` or `projects` — the same words as the tmux sessions — coloured and iconed from `groups` in the config |
 | the agent's state | [claude-status](https://github.com/stefanahman/claude-status), from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh | claude-status's sidebar pill when the plugin runs there; without it cmux's own Claude Code hooks, whose `needsInput` also covers Claude's 60-second idle reminder |
 | `done` | finished, not yet looked at; focusing the window acknowledges it | the same, from herdr | the pill's `done` (or cmux's `idle`) while cmux's notification about the turn is unread; Enter in owl marks it read |
 | a prompt while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed | refused from the pill, or from cmux's hook state without it; an agent neither saw gets the text typed |
@@ -58,6 +59,27 @@ integration (`automation.claudeCodeIntegration` in
 `~/.config/cmux/cmux.json`, on by default) or, better, claude-status,
 whose pill does not mistake an idle Claude for a blocked one. cmux ≥
 0.64, macOS.
+
+## cmux workspace groups
+
+Under cmux each scope's workspaces land in a group of their own, named
+after the scope: `reviews`, `features`, `projects`. No new vocabulary —
+those are the tmux session names and the names of Stefan's spaces, so
+renaming one means renaming all of them.
+
+The group is made from the first workspace that needs it, which becomes
+its anchor, and cmux drops the group when its last member closes. So
+owl touches groups on exactly one path — `windows.Open`, the branch
+that runs when the window does not exist yet — and never on close.
+Grouping on every open would look harmless and would not be: it would
+drag a workspace back that you had pulled out of its group by hand.
+
+Two things to know when it misbehaves. A group is identified by its
+name, because the id the API carries is not reachable from cmux's CLI:
+rename the group in the sidebar and owl stops finding it, and the next
+open makes a second group under the old name. And the style is
+best-effort — cmux does not check that an SF Symbol exists, so a
+misspelt `icon` gives you a group with no icon rather than an error.
 
 ## A clean environment
 

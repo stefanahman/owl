@@ -39,6 +39,7 @@ type Config struct {
 	Linear       LinearConfig   `yaml:"linear"`
 	Issue        IssueConfig    `yaml:"issue"`
 	Project      ProjectConfig  `yaml:"project"`
+	Groups       GroupsConfig   `yaml:"groups"`
 }
 
 // IssueConfig is the feature side: where feature windows live under
@@ -46,6 +47,23 @@ type Config struct {
 type IssueConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
+}
+
+// GroupStyle is how a scope's workspace group is shown. cmux draws
+// them in its sidebar; tmux and herdr have no such thing and ignore it.
+type GroupStyle struct {
+	Color string `yaml:"color"`
+	Icon  string `yaml:"icon"`
+}
+
+// GroupsConfig styles one group per scope. The groups are named after
+// the scopes themselves — reviews, features, projects — the same words
+// as the tmux sessions, so there is no fourth vocabulary to keep in
+// step.
+type GroupsConfig struct {
+	Reviews  GroupStyle `yaml:"reviews"`
+	Features GroupStyle `yaml:"features"`
+	Projects GroupStyle `yaml:"projects"`
 }
 
 // ProjectConfig is the project side: where project windows live under
@@ -352,6 +370,17 @@ project:
   session: projects              # tmux: one window per project lives here — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
 
+groups:                          # cmux workspace groups, one per scope, named after the scope itself; tmux and herdr have no such thing and ignore this
+  reviews:                       # the group is made from the first workspace that needs it, and cmux removes it when the last member closes
+    color: "#00afff"             # "#RRGGBB"; empty leaves cmux's default
+    icon: eye                    # an SF Symbol name; empty for none. cmux does not check that the symbol exists
+  features:
+    color: "#00d75f"
+    icon: hammer
+  projects:
+    color: "#af87ff"
+    icon: square.stack.3d.up
+
 open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: auto                    # the TUI once an open starts: auto (quit under tmux, where a popup closes at once and open finishes behind it; stay under herdr and cmux, where the list keeps its own workspace), quit, stay (keep the list), switch (move your client to the reviews, for owl in a tmux window)
 
@@ -415,6 +444,11 @@ func defaultConfig() Config {
 	c.Remote = "origin"
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
 	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}"}
+	c.Groups = GroupsConfig{
+		Reviews:  GroupStyle{Color: "#00afff", Icon: "eye"},
+		Features: GroupStyle{Color: "#00d75f", Icon: "hammer"},
+		Projects: GroupStyle{Color: "#af87ff", Icon: "square.stack.3d.up"},
+	}
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
 		Cmd:       "claude --permission-mode auto",

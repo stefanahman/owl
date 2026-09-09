@@ -54,8 +54,37 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	if _, ok := windowsByKind(""); ok {
 		t.Error("windowsByKind should know nothing else")
 	}
-	if got := (windows{mux.Tmux{SessionName: "s"}, reviews}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
+	if got := (windows{mux.Tmux{SessionName: "s"}, reviews, mux.GroupStyle{}}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
 		t.Errorf("ChildEnv = %v", got)
+	}
+}
+
+func TestGroupStyle(t *testing.T) {
+	cfg := defaultConfig()
+	// One group per scope, named after the scope, so the sidebar's
+	// words are the tmux sessions' words.
+	for _, c := range []struct {
+		sc          scope
+		color, icon string
+	}{
+		{reviews, "#00afff", "eye"},
+		{features, "#00d75f", "hammer"},
+		{projects, "#af87ff", "square.stack.3d.up"},
+	} {
+		got := groupStyle(cfg, c.sc)
+		if got.Color != c.color || got.Icon != c.icon {
+			t.Errorf("groupStyle(%s) = %+v, want %s %s", c.sc.name, got, c.color, c.icon)
+		}
+	}
+	// The config overrides, and an empty value leaves the multiplexer's
+	// own default rather than blanking it to something.
+	cfg.Groups.Projects = GroupStyle{Color: "#ff0000"}
+	if got := groupStyle(cfg, projects); got.Color != "#ff0000" || got.Icon != "" {
+		t.Errorf("overridden projects group = %+v", got)
+	}
+	// The windows value carries it, so Open needs no new argument.
+	if got := newWindows(cfg, features).style; got.Icon != "hammer" {
+		t.Errorf("newWindows did not carry the style: %+v", got)
 	}
 }
 
