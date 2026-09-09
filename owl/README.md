@@ -1,6 +1,18 @@
 # owl — a Claude Code plugin
 
-Two skills. `/owl:feature <key>` implements a Linear issue in the
+Three skills. `/owl:dependabot <number>` takes a Dependabot pull
+request to mergeable: it reads the bump and what changed upstream
+between the two versions, checks that against how the repository uses
+the package, verifies with the project's own checks, fixes what the
+bump broke in small commits on the bot's branch, and drafts the review
+as a file you approve. It knows the repository's own policy — the
+`ignore` reasons in `dependabot.yml`, an auto-merge workflow where an
+approval is a merge — and what its commits do to a Dependabot PR: no
+more rebasing, no auto-merge, never `@dependabot recreate`. A major
+that needs a migration stops with the plan; the `ignore` command is
+named for you to post, never posted for you.
+
+`/owl:feature <key>` implements a Linear issue in the
 worktree `owl issue open` starts you in: it reads the ticket and its
 documents, agrees the approach with you (and stops when the shape is
 yours to decide), builds in small conventional commits, verifies with
@@ -33,9 +45,15 @@ engineer would and never posts without you:
 
 The skills are the process. Everything specific to a codebase —
 tracker, build commands, house rules, review voice — comes from a file
-in the repository, read by both, so the same plugin serves a Go CLI and
-a TypeScript monorepo. The feature skill also reads a `## Conventions`
-section (commit and branch style, the PR template) when there is one.
+in the repository, read by all three, so the same plugin serves a Go
+CLI and a TypeScript monorepo. The feature skill also reads a
+`## Conventions` section (commit and branch style, the PR template),
+the dependabot skill a `## Dependencies` section (pins and why,
+subtrees with a lockfile of their own, the merge policy).
+
+Prefer a skill of your own? owl names these only in its config —
+`agent.prompt`, `issue.prompt`, the `d` binding — so `/team:review {pr}`
+there replaces one, and this plugin need not be installed at all.
 
 ## Install
 
