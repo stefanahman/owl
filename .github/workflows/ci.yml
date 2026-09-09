@@ -56,3 +56,6 @@ jobs:
       - run: npm install -g @anthropic-ai/claude-code@2.1.263 # the release the plugin was validated with
       - run: claude plugin validate ./owl --strict
       - run: claude plugin validate . --strict
+      # validate checks the shape; this checks that plugin.json and the
+      # marketplace entry carry the same version. --dry-run creates no tag.
+      - run: claude plugin tag --dry-run ./owl

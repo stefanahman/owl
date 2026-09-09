@@ -99,8 +99,22 @@ README's Configuration block: keys and defaults in step
 skill bumps one version in three places: `owl/.claude-plugin/plugin.json`,
 and both `metadata.version` and the `plugins[0]` entry in
 `.claude-plugin/marketplace.json`. `claude plugin validate .` and
-`claude plugin validate ./owl --strict` check the shape, CI runs both,
-and installed copies follow with `claude plugin marketplace update owl`.
+`claude plugin validate ./owl --strict` check the shape but not that the
+versions agree; `claude plugin tag --dry-run ./owl` does, and exits 1
+when they disagree. CI runs all three.
+
+Getting a plugin change onto this machine takes two commands and a
+restart, and each does a different thing:
+
+```sh
+claude plugin marketplace update owl   # the catalogue: pulls the marketplace clone
+claude plugin update owl@owl           # the installed copy, which is what a session loads
+```
+
+Neither alone is enough, and a running session keeps the plugin it
+started with — `claude plugin update` says so. Skip the second and a
+new skill is on disk, listed by the marketplace, and still answers
+`Unknown command`.
 
 Two consumers live outside this repo. A new list wants a workspace of
 its own in Stefan's spaces config, beside prs and issues, and the names
