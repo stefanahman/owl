@@ -41,6 +41,15 @@ var features = scope{
 	owns:    func(w string) bool { return issueKeyOf(w) != "" },
 }
 
+// scopeOf is the scope of a list kind: features for issue, reviews
+// for pr.
+func scopeOf(kind string) scope {
+	if kind == "issue" {
+		return features
+	}
+	return reviews
+}
+
 // windows is one scope's windows in a multiplexer, and nothing else
 // the user keeps there.
 type windows struct {

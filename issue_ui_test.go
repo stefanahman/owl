@@ -22,9 +22,9 @@ func testIssueModel(t *testing.T) (model, *[]string) {
 	var calls []string
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
 	m.noInit = true
-	m.runSelf = func(args ...string) error {
+	m.runSelf = func(kind string, args ...string) error {
 		mu.Lock()
-		calls = append(calls, strings.Join(args, " "))
+		calls = append(calls, kind+" "+strings.Join(args, " "))
 		mu.Unlock()
 		<-done
 		return errors.New("test ended")
@@ -125,8 +125,9 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
-	if len(*calls) != 1 || (*calls)[0] != "open BAR-4160" {
-		t.Errorf("child args %v, want [open BAR-4160]", *calls)
+	// The child runs in the issue scope: `owl issue open`, not `owl pr open`.
+	if len(*calls) != 1 || (*calls)[0] != "issue open BAR-4160" {
+		t.Errorf("child args %v, want [issue open BAR-4160]", *calls)
 	}
 	// Feedback is not an issue key: nothing launches.
 	nm.inflight = map[string]string{}
@@ -217,7 +218,7 @@ func TestIssueBindingHandsThePrompt(t *testing.T) {
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
-	if len(*calls) != 1 || (*calls)[0] != "start BAR-4160 --prompt Continue BAR-4160" {
+	if len(*calls) != 1 || (*calls)[0] != "issue start BAR-4160 --prompt Continue BAR-4160" {
 		t.Errorf("child args %v", *calls)
 	}
 	// f is no issue key unless bound there: nothing launches.

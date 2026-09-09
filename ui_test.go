@@ -735,9 +735,9 @@ func TestBindingsOnThePRList(t *testing.T) {
 	m.keys = newKeyMap(cfg.Keys, cfg.Bindings.PR)
 	var mu sync.Mutex
 	var calls []string
-	m.runSelf = func(args ...string) error {
+	m.runSelf = func(kind string, args ...string) error {
 		mu.Lock()
-		calls = append(calls, strings.Join(args, " "))
+		calls = append(calls, kind+" "+strings.Join(args, " "))
 		mu.Unlock()
 		return nil
 	}
@@ -764,7 +764,7 @@ func TestBindingsOnThePRList(t *testing.T) {
 	mu.Lock()
 	got := append([]string(nil), calls...)
 	mu.Unlock()
-	if len(got) != 1 || got[0] != fmt.Sprintf("start %d --prompt /owl:dependabot %d", pr.Number, pr.Number) {
+	if len(got) != 1 || got[0] != fmt.Sprintf("pr start %d --prompt /owl:dependabot %d", pr.Number, pr.Number) {
 		t.Errorf("child args %v", got)
 	}
 

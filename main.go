@@ -313,7 +313,7 @@ type model struct {
 
 	// runSelf runs this binary with args (`open`, `close`). Tests
 	// replace it — os.Executable() is the test binary there.
-	runSelf func(args ...string) error
+	runSelf func(kind string, args ...string) error
 }
 
 // initialModel gathers what the model needs from the environment —
@@ -385,8 +385,11 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		spinner:  sp,
 		inflight: map[string]string{},
 	}
-	m.runSelf = func(args ...string) error {
-		return runChild(newWindows(cfg, m.sc).ChildEnv(), append(append(globalArgs(), m.kind), args...)...)
+	// kind comes from the caller: the model this closure sees is the
+	// one under construction, a review list, and the issue list is
+	// made from it afterwards.
+	m.runSelf = func(kind string, args ...string) error {
+		return runChild(newWindows(cfg, scopeOf(kind)).ChildEnv(), append(append(globalArgs(), kind), args...)...)
 	}
 	// Cache-first: if a previous session left a cache for this repo,
 	// seed the state so the popup renders instantly. The live fetches
@@ -460,7 +463,7 @@ func (m model) openWorkspace(id, prompt string) tea.Cmd {
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{id, m.runSelf(args...)}
+		return openedMsg{id, m.runSelf(m.kind, args...)}
 	}
 }
 
@@ -473,7 +476,7 @@ func (m model) startWorkspace(id, prompt string) tea.Cmd {
 		if prompt != "" {
 			args = append(args, "--prompt", prompt)
 		}
-		return openedMsg{id, m.runSelf(args...)}
+		return openedMsg{id, m.runSelf(m.kind, args...)}
 	}
 }
 
@@ -482,7 +485,7 @@ func (m model) startWorkspace(id, prompt string) tea.Cmd {
 // disk, so Enter / f afterwards resume it.
 func (m model) closeWorkspace(id string) tea.Cmd {
 	return func() tea.Msg {
-		return closedMsg{id, m.runSelf("close", id)}
+		return closedMsg{id, m.runSelf(m.kind, "close", id)}
 	}
 }
 
