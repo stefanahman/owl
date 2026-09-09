@@ -40,13 +40,17 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 	var data any
 	switch {
 	case strings.Contains(req.Query, "assignedIssues"):
-		if !strings.Contains(req.Query, `nin: ["completed", "canceled"]`) || !strings.Contains(req.Query, "orderBy: updatedAt") {
-			f.t.Errorf("issues query lacks the filter or the order: %s", req.Query)
+		if !strings.Contains(req.Query, `nin: ["completed", "canceled"]`) || !strings.Contains(req.Query, "orderBy: updatedAt") || !strings.Contains(req.Query, "pageInfo { hasNextPage endCursor }") {
+			f.t.Errorf("issues query lacks the filter, the order or the page info: %s", req.Query)
 		}
-		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": []any{
-			issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"),
-			issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted"),
-		}}}}
+		// Two pages of one: the client must follow the cursor.
+		nodes, page := []any{issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
+		if after, _ := req.Variables["after"].(string); after == "cursor-1" {
+			nodes, page = []any{issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
+		} else if after != "" {
+			f.t.Errorf("issues query with an unknown cursor %q", after)
+		}
+		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": nodes, "pageInfo": page}}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
 		switch key, _ := req.Variables["id"].(string); key {
 		case "BAR-4159":
@@ -88,11 +92,14 @@ func newFakeLinear(t *testing.T, key string) (*fakeLinear, *httptest.Server) {
 
 func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	_, srv := newFakeLinear(t, "lin_key")
+	f, srv := newFakeLinear(t, "lin_key")
 	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "BAR", Endpoint: srv.URL}
 	issues, err := l.Issues()
 	if err != nil || len(issues) != 2 || issues[0].Key != "BAR-4159" || issues[0].Branch != "bar-4159-company-fuzzy-match" || issues[0].State.Type != "started" || issues[0].PriorityLabel != "High" || issues[0].UpdatedAt.IsZero() {
 		t.Fatalf("Issues() = %+v, %v", issues, err)
+	}
+	if pages := len(f.queries); pages != 2 || issues[1].Key != "BAR-4160" {
+		t.Errorf("Issues() read %d pages for two; second issue %q", pages, issues[1].Key)
 	}
 	one, err := l.Issue("BAR-4159")
 	if err != nil || one.Title != "Company fuzzy match" || one.Team.Key != "BAR" {

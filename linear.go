@@ -151,20 +151,34 @@ func firstLine(s string) string {
 }
 
 // Issues: the user's open issues — every state but completed and
-// canceled — newest change first, up to 100.
+// canceled — newest change first, all of them: Linear pages the
+// answer, 100 at a time here, and every page is read.
 func (l Linear) Issues() ([]Issue, error) {
-	var r struct {
-		Viewer struct {
-			AssignedIssues struct {
-				Nodes []Issue `json:"nodes"`
-			} `json:"assignedIssues"`
-		} `json:"viewer"`
+	var all []Issue
+	var after *string
+	for {
+		var r struct {
+			Viewer struct {
+				AssignedIssues struct {
+					Nodes    []Issue `json:"nodes"`
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+				} `json:"assignedIssues"`
+			} `json:"viewer"`
+		}
+		q := `query($first: Int!, $after: String) { viewer { assignedIssues(first: $first, after: $after, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { ` + issueFields + ` } pageInfo { hasNextPage endCursor } } } }`
+		if err := l.query(q, map[string]any{"first": 100, "after": after}, &r); err != nil {
+			return nil, err
+		}
+		page := r.Viewer.AssignedIssues
+		all = append(all, page.Nodes...)
+		if !page.PageInfo.HasNextPage || page.PageInfo.EndCursor == "" {
+			return all, nil
+		}
+		after = &page.PageInfo.EndCursor
 	}
-	q := `query($first: Int!) { viewer { assignedIssues(first: $first, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { ` + issueFields + ` } } } }`
-	if err := l.query(q, map[string]any{"first": 100}, &r); err != nil {
-		return nil, err
-	}
-	return r.Viewer.AssignedIssues.Nodes, nil
 }
 
 // Issue looks one up by identifier; Linear's issue(id:) takes the
