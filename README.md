@@ -1,23 +1,16 @@
 # owl
 
-owl is the pull requests waiting for your review and the issues waiting
-for your hands, one keystroke from any terminal. Each becomes a
-workspace when you want it: a git worktree (a second checkout of the
-repo, on its branch), a window in your multiplexer (tmux, herdr or
-cmux), and Claude Code inside it, on the review or on the feature. Run
-it in a shell, bind it to a tmux popup, or keep it in a herdr or cmux
-workspace.
+**The pull requests waiting for your review and the issues waiting for
+your hands, one keystroke from any terminal.** Press Enter on one and it
+becomes a workspace: a git worktree on its branch, a window in your
+multiplexer — tmux, herdr or cmux — and Claude Code inside it, on the
+review or on the feature.
 
-owl stores nothing of its own. The branch carries the ticket, the pull
-request carries the review, the window carries the agent; the lists
-read all of it back from GitHub, Linear and the multiplexer, so nothing
-is written twice and nothing goes stale in a second place. Two skills
-give the agent its manners: `review` never posts without you, `feature`
-never pushes without you. What no ticket names yet, you `hoot`.
+[![ci](https://github.com/stefanahman/owl/actions/workflows/ci.yml/badge.svg)](https://github.com/stefanahman/owl/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/stefanahman/owl)](https://github.com/stefanahman/owl/releases)
+[![license](https://img.shields.io/github/license/stefanahman/owl)](LICENSE)
 
-It began as pr-owl, a watcher of pull requests. When the issues came,
-the bird kept the name and the noun moved into the command: `owl pr`,
-`owl issue`. Bare `owl` introduces itself and lists the commands.
+[Install](#install) · [Quick start](#quick-start) · [Reviews](#reviews-owl-pr) · [Features](#features-owl-issue) · [Keys](#keys) · [Configuration](#configuration) · [Multiplexers](docs/multiplexers.md) · [The plugin](owl/README.md)
 
 ```
 owl · acme/app                                              updated just now
@@ -36,32 +29,32 @@ Merged (last 1d)
   #3488            6h  remove legacy flag (erin)
 ```
 
-- Rows are grouped by **where you sit on the PR** — todo, waiting for
-  you (the author pushed after your last review), waiting for the
-  author, approved — plus what merged in the last day so a PR that
-  merged without your review doesn't vanish unseen.
-- `⎇` a worktree exists for it, `©` a Claude session is running in its
-  tmux window — coloured by what Claude is doing (working / blocked on
-  you / done, with `*` until you look), followed every two seconds —
-  `✓` you approved, `·` you
-  engaged (both amber when the author pushed after that review), `⚠`
-  someone requested changes.
-- The list comes back as you left it: the last fetch from a per-repo
-  cache until the live one lands, with the cursor on the row it was
-  on when you quit (the row, not the PR).
-- **Enter** opens the review: `owl pr open` fetches the PR into
-  `<repo>/.worktrees.local/pr-<N>-<slug>`, creates a window in the
-  `reviews` tmux session and starts Claude there with the
-  [review skill](owl/README.md). **f** — the one binding owl ships —
-  sends a "check the feedback since your last review" prompt to that
-  session, resuming the conversation first if you had closed the
-  workspace; `bindings` add your own. **c** closes
-  the workspace: worktree, branch and window go; the conversation on
-  disk stays, so the next Enter resumes it.
+owl stores nothing of its own. The branch carries the ticket, the pull
+request carries the review, the window carries the agent; the lists
+read all of it back from GitHub, Linear and the multiplexer, so nothing
+is written twice and nothing goes stale in a second place.
 
-Everything goes through `gh`, which must be authenticated for the
-host of the repo's remote. GitHub.com is what it is used with; a
-GitHub Enterprise host should work the same way but is untested.
+- **Two lists, one shape.** `owl pr` groups pull requests by where you
+  sit on them — todo, waiting for you, waiting for the author,
+  approved, merged today. `owl issue` groups the Linear issues assigned
+  to you by state. Same keys, same badges.
+- **Workspaces on demand.** Enter fetches the branch into a worktree,
+  opens a window, starts Claude on a first prompt. `c` removes all
+  three; the conversation stays on disk, so the next Enter resumes it.
+- **The agent's state, in the list.** `©` follows Claude every two
+  seconds: working, blocked on you, done and unread. `n` jumps to the
+  next row that needs you.
+- **Prompts on a key.** `f` sends "check the feedback since your last
+  review" to a review's Claude; `bindings` add your own, a prompt or a
+  URL, per list. A prompt is refused while Claude is waiting on a
+  question or a permission, since the keystrokes would answer it.
+- **Skills with manners.** The bundled [plugin](owl/README.md) gives
+  the agent its process: `review` never posts without you, `feature`
+  never pushes without you, `dependabot` fixes on the bot's branch and
+  drafts the review as a file. Any first prompt works without it.
+- **Three multiplexers, one config.** tmux, [herdr](https://github.com/herdrdev/herdr)
+  and [cmux](https://github.com/manaflow-ai/cmux); owl finds the one
+  it runs in.
 
 ## Install
 
@@ -72,225 +65,143 @@ go install github.com/stefanahman/owl@latest   # anywhere with Go 1.25
 
 Prebuilt binaries for macOS and Linux (amd64, arm64) are on the
 [releases page](https://github.com/stefanahman/owl/releases); from a
-checkout, `make install BIN=~/.local/bin`. Needs git, an authenticated
-`gh`, a multiplexer — tmux (any version for `open` and `close`, ≥ 3.2
-for the popup), [herdr](https://github.com/herdrdev/herdr) ≥ 0.9 or
-[cmux](https://github.com/manaflow-ai/cmux) ≥ 0.64 (macOS) — and
-[Claude Code](https://docs.claude.com/en/docs/claude-code), the agent
-`open` starts and resumes, on the PATH of the shell your multiplexer
-runs (the start line is typed into that shell). Windows is not
-supported. Linux: `xdg-open` for `o`; `y` copies through OSC 52 (the
-terminal escape for the clipboard), which most terminals support.
+checkout, `make install BIN=~/.local/bin`.
 
-## First review
+Then the plugin, inside a `claude` session — it is the default first
+prompt of a review and of a feature:
 
-1. `gh auth login`, and `claude` once, so both are set up.
-2. Inside a `claude` session: `/plugin marketplace add stefanahman/owl`,
-   then `/plugin install owl@owl`. The default first prompt of
-   a review is that plugin's `/owl:review` skill; without the
-   plugin, set `agent.prompt` to the prompt a review should start with.
-3. `owl config init` writes the config with every key explained.
-   Nothing in it is required; `default_repo` lets you start owl
-   from anywhere.
-4. `cd` into a clone whose remote is on GitHub, in a terminal that runs
-   inside tmux, herdr or cmux (or any terminal, with `on_open: stay`;
-   the default quits after an open under tmux, where the list is a
-   popup, and stays under herdr and cmux, where it has a workspace).
-5. `owl pr`, then Enter on a row. That fetches the PR into a worktree
-   under `.worktrees.local/`, opens a window for it in your
-   multiplexer — under tmux the `reviews` session is created on
-   first use — types the Claude Code start line into it, and takes you
-   there. Outside the multiplexer it prints `attach with: …` instead.
-6. Back in the list, the `©` badge follows the agent (legend under
-   `?`): `f` sends the feedback prompt once the author has pushed, `c`
-   removes worktree, branch and window when you are done.
+```
+/plugin marketplace add stefanahman/owl
+/plugin install owl@owl
+```
 
-`owl pr` (or `owl` alone) opens the list for the repo of the current directory; set
-`default_repo` in the config to launch it from anywhere. To have it a
-keystroke away inside tmux, bind a popup in `tmux.conf`:
+| needs | why |
+|---|---|
+| git, and [`gh`](https://cli.github.com) authenticated for the repo's host | every read and fetch goes through `gh`; GitHub.com is what it is used with, a GitHub Enterprise host should work but is untested |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) on the PATH of the shell your multiplexer runs | the start line is typed into that shell |
+| one of tmux (≥ 3.2 for the popup), herdr ≥ 0.9, cmux ≥ 0.64 (macOS) | where the workspaces live |
+| a Linear API key, for `owl issue` only | see [Features](#features-owl-issue) |
+
+macOS and Linux. On Linux `o` opens with `xdg-open`; `y` copies through
+OSC 52, the terminal escape for the clipboard, which most terminals
+support.
+
+## Quick start
+
+```sh
+gh auth login           # once
+owl config init         # optional: the config with every key explained
+cd ~/src/app            # a clone whose remote is on GitHub
+owl pr                  # in a terminal inside tmux, herdr or cmux
+```
+
+Enter on a row fetches the PR into `.worktrees.local/pr-<N>-<slug>`,
+opens a window for it — under tmux the `reviews` session is created on
+first use — starts Claude there with `/owl:review <N>`, and takes you
+to it. Back in the list, the `©` badge follows the agent; `f` sends the
+feedback prompt once the author has pushed; `c` removes worktree,
+branch and window when you are done.
+
+Under tmux, bind the list to a popup so it is a keystroke away:
 
 ```tmux
 bind r display-popup -E -w 88% -h 84% owl pr
 ```
 
-(tmux runs that with the server's PATH — give the absolute path if
-`owl` isn't on it.) Under tmux the TUI quits once an open starts, so
-the popup closes; without a popup, set `on_open`: `switch` in a tmux
-window (it moves your client to the review session), `stay` in a
-plain terminal. Under herdr and cmux it stays by itself.
+Set `default_repo` in the config to start owl from anywhere. Outside a
+multiplexer, `open` prints `attach with: …` instead of taking you
+there.
 
-Three companions, each optional:
+Two companions, each optional:
 
-- [claude-status](https://github.com/stefanahman/claude-status)
-  writes the `©` state owl shows under tmux (and puts the same chips
-  in your status bar) and under cmux (a pill in the sidebar). Without
-  it the badge only says "a window exists" under tmux, and under cmux
-  it comes from cmux's own Claude Code hooks, which also count the
-  60-second idle reminder as waiting for you. herdr reports the state
-  itself.
-- [owl, the plugin](owl/README.md), whose `review`
-  skill is the default `agent.prompt` of a fresh workspace (installed
-  in step 2 above). It is what makes the default prompt do something;
-  any other first prompt works without it.
-- [spaces](https://github.com/stefanahman/spaces) keeps the review
+- [claude-status](https://github.com/stefanahman/claude-status) writes
+  the `©` state under tmux (and puts the same chips in your status
+  bar) and under cmux (a pill in the sidebar). Without it the badge
+  under tmux only says "a window exists", and under cmux it comes from
+  cmux's own hooks, which also count Claude's 60-second idle reminder
+  as waiting for you. herdr reports the state itself.
+- [spaces](https://github.com/stefanahman/spaces) keeps the reviews
   session in one terminal window on its own desktop space and opens
-  the popup from a hotkey anywhere (macOS, with
-  [yabai](https://github.com/koekeishiya/yabai) and
-  [Ghostty](https://ghostty.org)); `hooks.after_open: {tmux: spaces
-  focus pr-reviews}` brings that window to the front after every open
-  under tmux, where it is not already.
+  the popup from a hotkey anywhere (macOS, with yabai and Ghostty);
+  `hooks.after_open: {tmux: spaces focus reviews}` brings that window
+  to the front after every open.
 
-## Multiplexers
+## Reviews (`owl pr`)
 
-Reviews live in a terminal multiplexer: one window per PR, the agent
-typed into it, its state read back for the `©` badge. `mux: auto` picks
-herdr when owl runs inside it (`HERDR_ENV=1`), cmux inside cmux
-(`CMUX_WORKSPACE_ID`) and tmux otherwise; `tmux`, `herdr` or `cmux`
-forces one.
+Rows are grouped by **where you sit on the PR**: todo, waiting for you
+(the author pushed after your last review), waiting for the author,
+approved — plus what merged in the last day, so a PR that merged
+without your review doesn't vanish unseen. Newest change first within
+a section. The list comes back as you left it: the last fetch from a
+per-repo cache until the live one lands, the cursor on the row it was
+on.
 
-| | tmux | herdr | cmux |
-|---|---|---|---|
-| a review | a window of `tmux.session`, cwd the worktree | a workspace labelled `pr-<N>-<slug>`, cwd the worktree | a workspace named `pr-<N>-<slug>`, cwd the worktree |
-| the agent's state | claude-status, from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh. `done` means the same everywhere: finished, not yet looked at | claude-status's sidebar pill when the plugin runs there; without it cmux's own Claude Code hooks, whose `needsInput` also covers the 60-second idle reminder. `done` is the pill's `done` (or cmux's `idle`) with cmux's notification about the turn unread; Enter in owl marks it read |
-| `f` while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed, as under tmux | refused from claude-status's pill, or from cmux's hook state without it; an agent neither saw shows no state and gets the text typed |
-| Enter arrives | `select-window`, then your hook | `workspace focus`; every attached client follows | `workspace select`, and `focus-window` when owl runs outside cmux |
-| a failure after the popup closed | tmux's status line | a herdr notification | a cmux notification, on owl's own workspace |
-| `hooks.after_open` sees | `OWL_SESSION` = the session, `OWL_WINDOW` = the window | `OWL_SESSION` = the herdr session, `OWL_WINDOW` = the label | `OWL_WINDOW` = the name; cmux has no session |
-
-`OWL_MUX` names the one in use, for hooks that only make sense with
-one of them. Under herdr, run `owl` in a pane of the session your
-reviews should join; from outside, `herdr.socket` says which server,
-and `OWL_SESSION` is the session's name as read from that path.
-
-One config serves all three: `mux: auto` picks the multiplexer from
-the environment, `owl --mux cmux` picks one for a run, and
-`hooks.after_open` takes a mapping when a hook only makes sense under
-one of them (`{tmux: spaces focus pr-reviews}`). `--config FILE`
-reads another config; `OWL_CONFIG` does the same for hooks that
-can't pass flags. The multiplexers themselves are
-[mux](https://github.com/stefanahman/mux)'s drivers; owl is the
-review side of them.
-
-Under cmux, run `owl` in a cmux terminal: cmux's socket admits only
-processes started inside it, unless cmux itself was started with
-`CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
-integration (`automation.claudeCodeIntegration` in
-`~/.config/cmux/cmux.json`).
-
-The multiplexer has to come from a clean environment. A tmux server,
-a herdr server or the cmux app started from inside a Claude Code
-session keeps its `CLAUDECODE` marker, and every agent started in it
-is a child session that saves no transcript; cmux started from a
-shell inside tmux keeps `TMUX`, and its shell integration then hands
-`CMUX_SURFACE_ID` to tmux before every command, so the hooks the
-states come from never engage. owl reads the server's or app's
-environment before it lists anything (mux's `Ping`) and refuses with
-the fix in the message: restart it from a hotkey or a plain shell.
-
-**Not every agent tool is a backend.** The interface asks for a window
-to type into, a state to read back, a way to focus that window and a
-way to notify. [Paseo](https://paseo.sh) has terminals but exposes
-none of the last three for them, and its agents are headless sessions
-with no terminal to type into. It would fit as a different kind of
-backend, one handed the agent and the prompt rather than a shell line;
-that change waits for a backend that needs it.
-
-## Keys
-
-| key | action |
+| badge | meaning |
 |---|---|
-| `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped |
-| `n` | jump to the next PR that needs you (Todo, or Claude blocked or done) |
-| `↵` | open (or focus) the review workspace; then `on_open` |
-| `s` | start the review workspace and stay in the list — no `on_open`, no `after_open`; press it on one PR after another |
-| `f` | the shipped binding: send the check-feedback prompt to the PR's Claude session and stay in the list, like `s`; only on a PR with a conversation (refused while Claude is blocked on a question or a permission there) |
-| `o` | open the PR in the browser |
-| `y` | copy the PR URL |
-| `c` | close the workspace — worktree, branch and window; refused while tracked files have uncommitted changes (`owl pr close --force <N>` discards them) |
-| `/` | filter by PR number; `esc` clears |
-| `r` | refresh |
-| `?` | help, with the full badge legend |
-| `q` | quit |
-
-`↵`, `s`, `f` and `c` run in the background: the list stays usable
-while the child works, the row shows a spinner in the worktree slot,
-a second press on the same PR is refused until it reports, and a
-failure shows in the action row — or, once a popup has closed, on
-tmux's status line for eight seconds.
-
-Every key is rebindable, and `bindings` add your own — a prompt for
-the row's agent or a URL — per list, PRs and issues (below).
-
-## Commands
-
-```
-owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]   the options apply to every command, and to what the TUI runs
-owl                              this introduction and the commands
-owl pr                           the PR list
-owl pr open <N> [--prompt TEXT]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
-owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
-owl pr close [--force] [<N>]     remove the worktree, branch and window of the current repo; N is inferred from inside a workspace; --force discards uncommitted changes
-owl issue                        the open issues assigned to you, from Linear; a table when stdout is not a terminal
-owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY; with --prompt, hand the prompt to the agent
-owl issue start <KEY> [--prompt TEXT] the same without going there
-owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window; KEY is inferred from inside a workspace
-owl issue new <title…>           file an issue in linear.team, assigned to you
-owl hoot <title…>                the same, from the owl
-owl config init | path
-owl --version
-```
-
-The noun is the scope, `pr` or `issue`, so that a verb never has to
-guess from the shape of an id which kind of thing it acts on.
+| `⎇` | a worktree exists for the PR |
+| `©` | Claude runs in its window — yellow working, amber blocked on you, green done, `*` until you look |
+| `✓` | you approved |
+| `·` | you engaged: commented or requested changes |
+| amber `✓` / `·` | the author pushed after that review; it no longer covers the head |
+| `⚠` | someone requested changes |
+| `[draft]` | a draft PR |
 
 `open` is idempotent: it creates what is missing and selects the
-window. A workspace is named once, from the PR title at first open, and
-found by number afterwards — after `close`, by the name Claude's
-conversation is stored under — so the path stays stable even if the PR
-is retitled, and with it Claude's per-directory conversation, which is
-what lets `close` be cheap and `open` resume. The first `open` in a clone also adds the
-worktrees directory to `.git/info/exclude`, so `git status` stays clean
-without touching the project's `.gitignore`.
+window. A workspace is named once, from the PR title at first open,
+and found by number afterwards — after `close`, by the name Claude's
+conversation is stored under — so the path stays stable if the PR is
+retitled, and with it Claude's per-directory conversation, which is
+what lets `close` be cheap and `open` resume. Re-running `open` never
+re-fetches: the worktree is yours once it exists; when the author
+pushes, `git pull origin pull/<N>/head` inside it. The first `open` in
+a clone adds the worktrees directory to `.git/info/exclude`, so `git
+status` stays clean without touching the project's `.gitignore`.
 
-`close` exits 2 when there was nothing to remove.
-
-Fork-based workflow (`origin` is your fork, `upstream` the repo the PRs
-are on)? Set `remote: upstream`: PRs are listed for, and fetched from,
+Fork-based workflow — `origin` your fork, `upstream` the repo the PRs
+are on? Set `remote: upstream`: PRs are listed for, and fetched from,
 that remote.
 
-## Issues
+## Features (`owl issue`)
 
-`owl issue` is the PR list's twin for the issues Linear assigns to
-you: three sections by state — in progress, todo, backlog — newest
-change first, each row with its key, the workspace badges (`⎇` a
-worktree on the issue's branch, `©` what Claude is doing in it),
-priority (`!!!` urgent to `-` low), age of the last change, title,
-state, and the open PR on the issue's branch when there is one —
-`#N✓` approved by someone, `#N⚠` changes requested, `#N draft`. The
-keys are the PR list's: Enter opens the feature workspace, `s` starts
-it and stays, `c` removes it, `o` opens the issue in Linear, `y` copies
-its key, `n` jumps to the next issue whose Claude needs you, `/`
-filters by key or title. `f` is a review's key and does nothing here.
-Off a terminal, `owl issue` prints a table.
+```
+owl · issues · acme/app                                     updated just now
+4 open · 2 in progress · 1 todo · 1 backlog
+────────────────────────────────────────────────────────────────────────────
+In progress
+▸ BAR-4160  ⎇ ©  !!   2h  Per-tenant captureEngine override  In Progress
+  BAR-4159       !!   8h  Company fuzzy match                In Review  #3543✓
+Todo
+  BAR-4578       !!!  1d  Rate-limit the ingest worker       Todo  #3550 draft
+Backlog
+  BAR-4404            9d  Shadow output validation           Backlog
+```
+
+The issues Linear assigns to you, in three sections by state — in
+progress, todo, backlog — newest change first. A row shows the key,
+the workspace badges, the priority (`!!!` urgent to `-` low), the age
+of the last change, the title, the state, and the open PR on the
+issue's branch when there is one: `#N✓` approved by someone, `#N⚠`
+changes requested, `#N draft`. Enter opens the feature workspace, `o`
+opens the issue in Linear, `y` copies its key, `/` filters by key or
+title. Off a terminal, `owl issue` prints a table.
 
 A feature workspace is a worktree on the branch Linear names for the
 issue (`bar-4159-company-fuzzy-match`): tracking the remote's branch
-when it is already there, started from the remote's default branch
-otherwise, with no upstream set, so a `git push` cannot land it on
-main by accident. The window, in the tmux session `issue.session` or
-as a herdr/cmux workspace, carries the branch's name, and Claude is
-started in it on `issue.prompt` — `/owl:feature BAR-4159` — resuming a
-prior conversation with `-c`. The issue's key is read back from the
-name, which is how the row finds its workspace and how `close` works
-from inside it. `close` removes the worktree, the local branch and the
-window; the remote branch is never touched, and a branch with commits
-that exist nowhere else is refused unless `--force`.
+when it is already there, started from the default branch otherwise,
+with no upstream set, so a `git push` cannot land it on main by
+accident. Claude starts in it on `/owl:feature <KEY>`, resuming a prior
+conversation with `-c`. The issue's key is read back from the
+workspace's name — which is how the row finds a worktree made by hand
+or by Claude Code's own worktree tool, as long as the name starts with
+the key. `close` removes the worktree, the local branch and the window;
+the remote branch is never touched, and a branch with commits that
+exist nowhere else is refused unless `--force`.
 
-`owl hoot "what needs doing"` files an issue in `linear.team`,
-assigned to you, and prints its key and URL.
+`owl hoot "what needs doing"` files an issue in `linear.team`, assigned
+to you, and prints its key and URL.
 
 Linear is reached with a personal API key (Settings → Security &
-access), which the config holds as a *reference*, never as a value:
+access), which the config holds as a **reference**, never as a value:
 
 ```yaml
 linear:
@@ -303,18 +214,117 @@ An `op://` reference is read from 1Password the first time it is
 needed — owl says why before the prompt appears — and kept in
 `~/.local/state/owl/linear.token`, mode 600, the way `gh` keeps a
 token on a machine without a keyring: one approval per machine, none
-per start. A key Linear refuses is forgotten and read again, once.
-Delete the file to force that by hand. owl refuses a cache file that
-others can read. The other forms: `file://~/.config/owl/linear.token`
-reads a file of yours (mode 600, or it is refused), `$VAR` reads the
-environment, and anything else is taken as the key itself — fine for a
-throwaway key, and the one form that puts a secret in the config.
+per start. A key Linear refuses is forgotten and read again, once;
+delete the file to force that by hand. A cache file others can read is
+refused. The other forms: `file://~/.config/owl/linear.token` reads a
+file of yours (mode 600, or it is refused), `$VAR` reads the
+environment, and anything else is taken as the key itself — the one
+form that puts a secret in the config.
+
+## Keys
+
+| key | on a PR | on an issue |
+|---|---|---|
+| `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped | the same |
+| `n` | next PR that needs you: todo, or Claude blocked or done | next issue whose Claude needs you |
+| `↵` | open (or focus) the review workspace, then `on_open` | open (or focus) the feature workspace |
+| `s` | start the workspace and stay in the list — no `on_open`, no `after_open`; press it on one row after another | the same |
+| `f` | send the check-feedback prompt to the PR's Claude and stay; only on a PR with a conversation | — |
+| `o` | open the PR in the browser | open the issue in Linear |
+| `y` | copy the PR URL | copy the issue key |
+| `c` | close the workspace: worktree, branch and window; refused while tracked files have uncommitted changes (`owl pr close --force <N>` discards them) | the same, for the feature |
+| `/` | filter by number; `esc` clears | filter by key or title |
+| `r` `?` `q` | refresh, help with the full legend, quit | the same |
+
+`↵`, `s`, `f` and `c` run in the background: the list stays usable
+while the child works, the row shows a spinner in the worktree slot, a
+second press on the same row is refused until it reports, and a
+failure shows in the action row — or, once a popup has closed, as a
+notification from the multiplexer. Every key is rebindable (`keys`),
+and `bindings` add your own.
+
+### Prompts and links on a key
+
+```yaml
+bindings:
+  pr:
+    - key: d
+      name: Dependabot
+      prompt: "/owl:dependabot {pr}"
+    - key: l
+      name: Linear
+      pattern: 'PROJ-\d+'        # {id} is the first match in title, body and branch
+      url: https://linear.app/my-org/issue/{id}
+  issue:
+    - key: p
+      name: Continue
+      prompt: "Continue {key}: pick up where you left off"
+      when: conversation         # only on a row whose agent has a conversation
+```
+
+A binding is a key, a `name` for the help view and exactly one of
+`prompt` and `url`. A prompt goes to the row's agent the way `s`
+starts one — `owl pr start <N> --prompt …` — so it starts a workspace
+where there is none and resumes the conversation where there is one.
+A URL opens with `open_cmd`. Placeholders: `{pr}` (or `{key}` on the
+issue list), `{repo}`, `{branch}`, `{url}` and `{id}`, the first match
+of `pattern`; a binding with a pattern does nothing on a row it does
+not match. `when: conversation` keeps the key to rows whose agent
+already has one, which is how the shipped `f` behaves; listing `f`
+again replaces it. Keys are checked per list, so `l` may mean one thing
+on PRs and another on issues. Prefer a skill of your own? Bind it:
+`/team:review {pr}`.
+
+## Commands
+
+```
+owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]   the options apply to every command, and to what the TUI runs
+owl                                   this introduction and the commands
+owl pr                                the PR list
+owl pr open <N> [--prompt TEXT]       open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
+owl pr start <N> [--prompt TEXT]      the same without going there: no window selection, no after_open
+owl pr close [--force] [<N>]          remove the worktree, branch and window; N is inferred from inside a workspace
+owl issue                             the open issues assigned to you; a table when stdout is not a terminal
+owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
+owl issue start <KEY> [--prompt TEXT] the same without going there
+owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
+owl issue new <title…>                file an issue in linear.team, assigned to you
+owl hoot <title…>                     the same, from the owl
+owl config init | path
+owl --version
+```
+
+The noun is the scope, `pr` or `issue`, so a verb never has to guess
+from the shape of an id which kind of thing it acts on. `close` exits 2
+when there was nothing to remove.
+
+## How it works
+
+| layer | what | owner |
+|---|---|---|
+| git worktree | `<repo>/.worktrees.local/<name>` on a branch of the same name: `pr-<N>-<slug>` fetched from `pull/N/head`, or the issue's branch | `open` creates, `close` removes |
+| window | same name, in the multiplexer, cwd the worktree, running `agent.cmd` | `open` creates, `close` kills |
+| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c` |
+
+A prompt (`f`, a binding, `open --prompt`) is typed into the window as
+one line of keystrokes. If the agent has exited — the window is back at
+a shell — it is started again with `-c` and the prompt; while Claude is
+blocked on a question or a permission, the prompt is refused. owl works
+on one repo at a time — the working directory's, or `default_repo` —
+and window names carry the PR number or issue key, not the repo, so
+keep one repo per session.
+
+The multiplexers differ in how a window is made, how the state is
+read and what happens after Enter: [docs/multiplexers.md](docs/multiplexers.md)
+has the table, the per-multiplexer notes and the one environment rule
+that matters (start the multiplexer from a clean shell, not from
+inside Claude).
 
 ## Configuration
 
 `~/.config/owl/config.yaml` (`$XDG_CONFIG_HOME` and `$OWL_CONFIG`
-respected). `owl config init` writes the annotated template; every
-key is optional.
+respected). `owl config init` writes this, with longer comments; every key is
+optional, and these are the defaults.
 
 ```yaml
 mux: auto                        # tmux, herdr, cmux, or auto: herdr or cmux when owl runs inside one, else tmux
@@ -332,7 +342,7 @@ default_repo: ""                 # used when owl starts outside a git repo
 
 agent:
   cmd: claude --permission-mode auto   # Claude Code, with your flags (e.g. --model claude-opus-5); -c is appended when the worktree has a prior conversation
-  prompt: "/owl:review {pr}"  # first prompt of a fresh review
+  prompt: "/owl:review {pr}"           # first prompt of a fresh review
   link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)
     - .claude/settings.local.json
     - .claude/*.local.md
@@ -346,8 +356,8 @@ open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: auto                    # the TUI once an open starts: auto (quit under tmux, stay under herdr and cmux), quit, stay, or switch (move your client to the reviews)
 
 hooks:
-  after_open: ""                 # runs after every open with OWL_PR, _SESSION, _WINDOW, _WORKTREE, _REPO, _MUX set
-                                 # or one per multiplexer: {tmux: spaces focus pr-reviews}
+  after_open: ""                 # runs after every open with OWL_PR/OWL_ISSUE, _SESSION, _WINDOW, _WORKTREE, _REPO, _MUX set
+                                 # or one per multiplexer: {tmux: spaces focus reviews}
 
 theme:                           # the three Claude-state colours (ANSI 0-255 or #rrggbb)
   working: "#dbbc7f"
@@ -360,7 +370,7 @@ keys:                            # rebind any action: a key name or a list
   quit: [q, ctrl+c]
 
 linear:                          # the issue tracker behind `owl issue`
-  token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key; see Issues
+  token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key
   account: ""                    # the 1Password account the item is in, when several are signed in
   team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues
 
@@ -369,68 +379,18 @@ bindings:                        # your own keys on a row: a prompt for its agen
     - key: f                     # shipped; listing it again replaces it
       name: check feedback
       prompt: "Please carefully check the feedback since your last review …"
-      when: conversation         # only on a PR whose agent has a conversation
-    - key: d
-      name: Dependabot
-      prompt: "/owl:dependabot {pr}"
-    - key: l
-      name: Linear
-      pattern: 'PROJ-\d+'        # {id} is the first match in title, body and branch
-      url: https://linear.app/my-org/issue/{id}
-  issue:
-    - key: p
-      name: Continue
-      prompt: "Continue {key}: pick up where you left off"
       when: conversation
 ```
 
-A binding is a key (a name or a list), a `name` for the help view and
-exactly one of `prompt` and `url`. A prompt goes to the row's agent
-the way `s` starts one — `owl pr start <N> --prompt …` — so it starts
-a workspace where there is none and resumes the conversation where
-there is one; the list stays usable meanwhile, as with `s`. A URL
-opens with `open_cmd`. Placeholders: `{pr}` (or `{key}` on the issue
-list), `{repo}` (owner/name), `{branch}`, `{url}` (the PR or issue
-page) and `{id}`, the first match of `pattern` in the title, body and
-branch — a binding with a pattern does nothing on a row it does not
-match. `when: conversation` keeps the key to rows whose agent already
-has one, which is how the shipped `f` behaves. Keys are checked per
-list against `keys`, so `l` may mean one thing on PRs and another on
-issues.
+The default `agent.cmd` runs Claude with `--permission-mode auto`
+inside a checkout the PR's author controls, and `link_local` never
+replaces a file the PR ships under the same name — so a PR's own
+`.claude/` is what the agent starts with. Read that part of the diff
+first when it matters.
 
-The default `agent.cmd` runs Claude with `--permission-mode auto` inside
-a checkout the PR's author controls, and `link_local` never replaces a
-file the PR ships under the same name — so a PR's own `.claude/` is
-what the agent starts with. Read that part of the diff first when it
-matters.
-
-Two hooks, two layers: `on_open` is what the TUI itself does;
-`hooks.after_open` is a shell command run after *every* `open` (TUI or
-CLI), where window-manager glue goes — `spaces focus pr-reviews`,
-for one. The review session is a normal tmux session you can attach to
-or switch to from anywhere.
-
-## The workspace model
-
-| layer | what | owner |
-|---|---|---|
-| git worktree | `<repo>/<worktrees_dir>/pr-<N>-<slug>` on branch `pr-<N>-<slug>`, fetched from `pull/N/head` | `open` creates, `close` removes |
-| tmux window | same name, in `tmux.session`, cwd = the worktree, running `agent.cmd` | `open` creates, `close` kills |
-| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c` |
-
-A prompt (`f`, `open --prompt`) is typed into the window as one line
-of keystrokes. If the agent has exited — the window is back at sh,
-bash, zsh, fish, dash, ksh or nu — the agent is started again with `-c`
-and the prompt instead; while Claude is blocked on a question or a
-permission there, the prompt is refused, since the keystrokes would
-answer that dialog.
-
-Re-running `open` never re-fetches: the worktree is yours once it
-exists. When the author pushes, `git pull origin pull/<N>/head` inside
-it (`origin`, or the `remote` you configured). owl works on one repo
-at a time — the working directory's, or `default_repo` — and the review
-session is one per machine; window names carry the PR number, not the
-repo, so keep one repo per review session.
+Two hooks, two layers: `on_open` is what the TUI itself does once an
+open starts; `hooks.after_open` is a shell command run after *every*
+`open` (TUI or CLI), where window-manager glue goes.
 
 ## Hacking
 
@@ -441,9 +401,9 @@ make update-snapshots   # after a deliberate UI change: the screen snapshots
 OWL_SMOKE=1 go test -run TestFetchSmoke .   # against your real gh, from a repo checkout
 ```
 
-Three test layers, all hermetic (throwaway git origin, fake `gh`, a
-private tmux server, empty `CLAUDE_CONFIG_DIR` — nothing touches your
-sessions or config):
+Three test layers, all hermetic — throwaway git origin, fake `gh`, a
+private tmux server, empty `CLAUDE_CONFIG_DIR`; nothing touches your
+sessions or config:
 
 - `ui_test.go` drives the Bubble Tea model with teatest and asserts on
   what the frames say.
@@ -451,6 +411,19 @@ sessions or config):
 - `e2e/` runs the built binary in a virtual terminal (`x/vttest`) and
   snapshots the screen as JSON — plus a PNG next to it, so a UI change
   shows up as a picture in the PR.
+
+## Related
+
+[gh-dash](https://github.com/dlvhdr/gh-dash) is the dashboard: every
+PR and issue you care about, in one TUI. owl is the launcher: the rows
+that are yours to act on, each one keystroke from a worktree with an
+agent in it. [lazygit](https://github.com/jesseduffield/lazygit) is
+where the worktree's git work happens once you are there. Claude
+Code's own `--worktree` makes a worktree for a session; owl's are
+found by name, so the two meet.
+
+owl began as pr-owl, a watcher of pull requests. When the issues came,
+the bird kept the name and the noun moved into the command.
 
 ## License
 
