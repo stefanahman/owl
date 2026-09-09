@@ -169,10 +169,7 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 	if _, ok := m.inflight[row.id()]; ok {
 		starting = m.spinner.View()
 	}
-	state := ""
-	if !strings.EqualFold(p.State.Name, row.sectionTitle) {
-		state = p.State.Name
-	}
+	state := stateUnlessSection(p.State.Name, row.sectionTitle)
 	milestones := ""
 	if n := len(p.Milestones.Nodes); n > 0 {
 		milestones = fmt.Sprintf("%d ms", n)

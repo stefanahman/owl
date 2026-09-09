@@ -214,10 +214,7 @@ func (m model) renderIssueRow(row visibleRow, selected bool) string {
 	if is.State.Type == "completed" && !is.CompletedAt.IsZero() {
 		when = is.CompletedAt
 	}
-	state := ""
-	if !strings.EqualFold(is.State.Name, row.sectionTitle) {
-		state = is.State.Name
-	}
+	state := stateUnlessSection(is.State.Name, row.sectionTitle)
 	w := m.titleWidth()
 	return strings.TrimRight(fmt.Sprintf(
 		"%s%-9s %s %3s %s  %-*s  %s %s%s",

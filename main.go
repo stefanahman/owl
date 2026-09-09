@@ -1156,6 +1156,16 @@ func (r visibleRow) label() string {
 	return r.id()
 }
 
+// stateUnlessSection is the state name a row shows: none when the
+// section it sits in already says it. "Backlog" inside Backlog is
+// noise; "In Review" inside In progress is the point.
+func stateUnlessSection(name, section string) string {
+	if strings.EqualFold(name, section) {
+		return ""
+	}
+	return name
+}
+
 // localOf is the row's overlay: the worktree, window and agent state
 // of its workspace.
 func (m model) localOf(r visibleRow) LocalState {
@@ -1451,12 +1461,14 @@ func (m model) actionRowView() string {
 
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
+// What just finished counts as data: a week where the only project you
+// touched is one you closed is still a list, not a loading screen.
 func (m model) hasData() bool {
 	switch m.kind {
 	case "issue":
-		return len(m.issues) > 0
+		return len(m.issues) > 0 || len(m.doneIssues) > 0
 	case "project":
-		return len(m.projects) > 0
+		return len(m.projects) > 0 || len(m.doneProjects) > 0
 	}
 	return len(m.prs) > 0 || len(m.merged) > 0
 }
@@ -1504,12 +1516,12 @@ func (m model) countsSummary() string {
 // `updated Xm ago` right-aligned, padded to fill m.width. Timestamp
 // is omitted before the first fetch completes (lastFetched is zero).
 func (m model) titleLine(repo string) string {
+	// The PR list is owl's front door and says only the repo; the others
+	// name themselves, from the same noun the empty-search line uses, so
+	// the two can never disagree.
 	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
-	switch m.kind {
-	case "issue":
-		left = styleHeader.Render(fmt.Sprintf("owl · issues · %s", repo))
-	case "project":
-		left = styleHeader.Render(fmt.Sprintf("owl · projects · %s", repo))
+	if m.kind != "pr" {
+		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), repo))
 	}
 	right := ""
 	if !m.lastFetched.IsZero() {
