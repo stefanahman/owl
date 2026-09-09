@@ -33,19 +33,37 @@ func testIssueModel(t *testing.T) (model, *[]string) {
 	return m, &calls
 }
 
+func mkIssue(key, title, branch, state, stype string, prio int, age time.Duration) Issue {
+	is := Issue{Key: key, Title: title, Branch: branch, Priority: prio, UpdatedAt: time.Now().Add(-age)}
+	is.State.Name, is.State.Type = state, stype
+	is.Team.Key = "BAR"
+	return is
+}
+
+// withProject is the fixture's issue inside a project; BAR-4159 stays
+// outside one, as issues filed straight into the team do.
+func withProject(is Issue, name string) Issue {
+	is.Project.Name = name
+	return is
+}
+
 func fixtureIssues() []Issue {
-	mk := func(key, title, branch, state, stype string, prio int, age time.Duration) Issue {
-		is := Issue{Key: key, Title: title, Branch: branch, Priority: prio, UpdatedAt: time.Now().Add(-age)}
-		is.State.Name, is.State.Type = state, stype
-		is.Team.Key = "BAR"
-		return is
-	}
 	return []Issue{
-		mk("BAR-4159", "Company fuzzy match accepts particle-only overlap", "bar-4159-company-fuzzy-match", "In Review", "started", 2, 8*time.Hour),
-		mk("BAR-4160", "Per-tenant captureEngine override", "bar-4160-per-tenant-override", "In Progress", "started", 2, 2*time.Hour),
-		mk("BAR-4578", "Step A — deterministic validator", "bar-4578-step-a", "Todo", "unstarted", 1, 6*24*time.Hour),
-		mk("BAR-4404", "Shadow output validation", "bar-4404-shadow", "Backlog", "backlog", 0, 9*24*time.Hour),
+		mkIssue("BAR-4159", "Company fuzzy match accepts particle-only overlap", "bar-4159-company-fuzzy-match", "In Review", "started", 2, 8*time.Hour),
+		withProject(mkIssue("BAR-4160", "Per-tenant captureEngine override", "bar-4160-per-tenant-override", "In Progress", "started", 2, 2*time.Hour), "Sequential Capture"),
+		withProject(mkIssue("BAR-4578", "Step A — deterministic validator", "bar-4578-step-a", "Todo", "unstarted", 1, 6*24*time.Hour), "Sequential Capture"),
+		withProject(mkIssue("BAR-4404", "Shadow output validation", "bar-4404-shadow", "Backlog", "backlog", 0, 9*24*time.Hour), "Endpoint Validation"),
 	}
+}
+
+// fixtureDone is an issue completed inside doneWindow and one closed
+// two days ago — the second must not reach the list.
+func fixtureDone() []Issue {
+	fresh := withProject(mkIssue("BAR-4286", "Open update-activity fields", "bar-4286-open-update", "Done", "completed", 0, 3*time.Hour), "Endpoint Validation")
+	fresh.CompletedAt = time.Now().Add(-3 * time.Hour)
+	stale := mkIssue("BAR-4109", "Direct assignment strands calculation", "bar-4109-direct-assignment", "Done", "completed", 0, 48*time.Hour)
+	stale.CompletedAt = time.Now().Add(-48 * time.Hour)
+	return []Issue{fresh, stale}
 }
 
 func TestIssueListRendersSectionsAndBadges(t *testing.T) {
@@ -62,6 +80,7 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	second := PR{Number: 3561, HeadRefName: "fix/bar-4159-particle-guard"}
 	tm.Send(issuesMsg{issues: fixtureIssues()})
 	tm.Send(issuePRsMsg{prs: []PR{approved, draft, second}})
+	tm.Send(doneMsg{issues: fixtureDone()})
 	tm.Send(localMsg{"bar-4160-per-tenant-override": {Worktree: "/wt/bar-4160-per-tenant-override", Window: "bar-4160-per-tenant-override", ClaudeState: agentBlocked}})
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
@@ -70,15 +89,28 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	for _, want := range []string{
 		"owl · issues · acme/example",
 		"In progress", "Todo", "Backlog",
+		"Done", "· 1d", // the window the Done section reaches back
 		"BAR-4160", "⎇", "©", // the workspace and the blocked agent
 		"BAR-4159", "!!", "8h", "In Review", "#3561  #3543✓",
 		"BAR-4578", "!!!", "#3550 draft",
 		"BAR-4404", "Shadow output validation",
+		"Sequential Capture", "Endpoint Validati", // the project column, trimmed
+		"BAR-4286", // completed three hours ago
 		"4 open · 2 in progress · 1 todo · 1 backlog",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("issue list lacks %q:\n%s", want, out)
 		}
+	}
+	// Closed two days ago: past doneWindow, so it stays out however the
+	// tracker (or a stale cache) answered.
+	if strings.Contains(out, "BAR-4109") {
+		t.Errorf("an issue done 48h ago is in the list:\n%s", out)
+	}
+	// The state name only where it adds something: "In Review" inside In
+	// progress yes, "Backlog" inside Backlog no.
+	if strings.Count(out, "Backlog") != 1 || strings.Count(out, "Todo") != 1 {
+		t.Errorf("a row repeats its section's state name:\n%s", out)
 	}
 	// Newest change first within a section: BAR-4160 (2h) above BAR-4159 (8h).
 	if strings.Index(out, "BAR-4160") > strings.Index(out, "BAR-4159") {
@@ -110,6 +142,17 @@ func TestIssueListFiltersByKeyOrTitle(t *testing.T) {
 	}
 	if strings.Join(keys, " ") != "BAR-4160 BAR-4159" {
 		t.Errorf("filter by key: %v", keys)
+	}
+	// A project fragment narrows to that project, across sections.
+	m.search.SetValue("sequential")
+	keys = nil
+	for _, r := range m.visibleRows() {
+		if r.issue != nil {
+			keys = append(keys, r.issue.Key)
+		}
+	}
+	if strings.Join(keys, " ") != "BAR-4160 BAR-4578" {
+		t.Errorf("filter by project: %v", keys)
 	}
 }
 
@@ -153,13 +196,28 @@ func TestIssueCacheRoundTrip(t *testing.T) {
 		t.Fatal("a cache from nowhere")
 	}
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
-	m.issues, m.ready, m.cursor = fixtureIssues(), true, 2
+	m.issues, m.doneIssues, m.ready, m.cursor = fixtureIssues(), fixtureDone(), true, 2
 	m.issuePRs = byIssueKey([]PR{{Number: 7, HeadRefName: "bar-4159-company-fuzzy-match"}})
 	m.lastFetched = time.Now()
 	m.persistCache()
 	resumed := newIssueModel(defaultConfig(), "acme/example", nil, loadIssueCache())
 	if len(resumed.issues) != 4 || len(resumed.issuePRs["BAR-4159"]) != 1 || resumed.issuePRs["BAR-4159"][0].Number != 7 || !resumed.ready || resumed.cursor != 2 {
 		t.Errorf("resumed = %d issues, prs %v, ready %v, cursor %d", len(resumed.issues), resumed.issuePRs, resumed.ready, resumed.cursor)
+	}
+	// The done ones survive the round trip with their completedAt, and
+	// the window still keeps the stale one off the list.
+	if len(resumed.doneIssues) != 2 || resumed.doneIssues[0].CompletedAt.IsZero() {
+		t.Errorf("resumed done = %+v", resumed.doneIssues)
+	}
+	resumed.width, resumed.height = 140, 30
+	var keys []string
+	for _, r := range resumed.visibleIssueRows() {
+		if r.issue != nil {
+			keys = append(keys, r.issue.Key)
+		}
+	}
+	if strings.Contains(strings.Join(keys, " "), "BAR-4109") {
+		t.Errorf("a cached issue done 48h ago reached the rows: %v", keys)
 	}
 }
 

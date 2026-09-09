@@ -9,15 +9,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeLinear serves Linear's GraphQL shapes: the queries the tracker
 // sends, answered from canned data, with the key checked.
 type fakeLinear struct {
-	t       *testing.T
-	key     string
-	queries []string
-	created []string
+	t         *testing.T
+	key       string
+	queries   []string
+	created   []string
+	doneSince string // the completedAt bound the last Done() sent
 }
 
 func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
@@ -35,20 +37,45 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	f.queries = append(f.queries, req.Query)
 	issue := func(key, title, branch, state, stype string) map[string]any {
-		return map[string]any{"id": "uuid-" + key, "identifier": key, "title": title, "branchName": branch, "priority": 2, "priorityLabel": "High", "url": "https://linear.app/x/issue/" + key, "updatedAt": "2026-09-08T13:55:43.474Z", "state": map[string]string{"name": state, "type": stype}, "team": map[string]string{"key": "BAR"}}
+		return map[string]any{"id": "uuid-" + key, "identifier": key, "title": title, "branchName": branch, "priority": 2, "priorityLabel": "High", "url": "https://linear.app/x/issue/" + key, "updatedAt": "2026-09-08T13:55:43.474Z", "state": map[string]string{"name": state, "type": stype}, "project": nil, "team": map[string]string{"key": "BAR"}}
+	}
+	// A project, as Linear sends it on the issues that belong to one.
+	inProject := func(n map[string]any, name string) map[string]any {
+		n["project"] = map[string]string{"name": name}
+		return n
 	}
 	var data any
 	switch {
 	case strings.Contains(req.Query, "assignedIssues"):
-		if !strings.Contains(req.Query, `nin: ["completed", "canceled"]`) || !strings.Contains(req.Query, "orderBy: updatedAt") || !strings.Contains(req.Query, "pageInfo { hasNextPage endCursor }") {
-			f.t.Errorf("issues query lacks the filter, the order or the page info: %s", req.Query)
+		if !strings.Contains(req.Query, "orderBy: updatedAt") || !strings.Contains(req.Query, "pageInfo { hasNextPage endCursor }") {
+			f.t.Errorf("issues query lacks the order or the page info: %s", req.Query)
 		}
-		// Two pages of one: the client must follow the cursor.
-		nodes, page := []any{issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
-		if after, _ := req.Variables["after"].(string); after == "cursor-1" {
-			nodes, page = []any{issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
-		} else if after != "" {
-			f.t.Errorf("issues query with an unknown cursor %q", after)
+		// The filter travels as a variable; which one says whether this
+		// is the open list or the done window.
+		filter, _ := req.Variables["filter"].(map[string]any)
+		state, _ := filter["state"].(map[string]any)
+		stype, _ := state["type"].(map[string]any)
+		var nodes []any
+		page := map[string]any{"hasNextPage": false, "endCursor": nil}
+		switch {
+		case stype["eq"] == "completed":
+			f.doneSince, _ = filter["completedAt"].(map[string]any)["gte"].(string)
+			if f.doneSince == "" {
+				f.t.Errorf("the done query carries no completedAt bound: %v", filter)
+			}
+			n := issue("BAR-4286", "Open update-activity fields", "bar-4286-open-update-activity", "Done", "completed")
+			n["completedAt"] = "2026-09-09T09:00:00.000Z"
+			nodes = []any{inProject(n, "Endpoint Validation")}
+		case len(stype["nin"].([]any)) == 2:
+			// Two pages of one: the client must follow the cursor.
+			nodes, page = []any{inProject(issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"), "Sequential Capture")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
+			if after, _ := req.Variables["after"].(string); after == "cursor-1" {
+				nodes, page = []any{issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
+			} else if after != "" {
+				f.t.Errorf("issues query with an unknown cursor %q", after)
+			}
+		default:
+			f.t.Errorf("assignedIssues with an unexpected filter: %v", filter)
 		}
 		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": nodes, "pageInfo": page}}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
@@ -100,6 +127,23 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	}
 	if pages := len(f.queries); pages != 2 || issues[1].Key != "BAR-4160" {
 		t.Errorf("Issues() read %d pages for two; second issue %q", pages, issues[1].Key)
+	}
+	// The project comes back where there is one, and an issue outside a
+	// project reads as empty rather than failing to parse.
+	if issues[0].Project.Name != "Sequential Capture" || issues[1].Project.Name != "" {
+		t.Errorf("projects = %q, %q", issues[0].Project.Name, issues[1].Project.Name)
+	}
+	// An open issue has no completedAt: Linear sends null.
+	if !issues[0].CompletedAt.IsZero() {
+		t.Errorf("an open issue completed at %v", issues[0].CompletedAt)
+	}
+	since := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	done, err := l.Done(since)
+	if err != nil || len(done) != 1 || done[0].Key != "BAR-4286" || done[0].State.Type != "completed" || done[0].CompletedAt.IsZero() {
+		t.Fatalf("Done() = %+v, %v", done, err)
+	}
+	if f.doneSince != "2026-09-08T12:00:00Z" {
+		t.Errorf("Done() asked for completedAt >= %q", f.doneSince)
 	}
 	one, err := l.Issue("BAR-4159")
 	if err != nil || one.Title != "Company fuzzy match" || one.Team.Key != "BAR" {

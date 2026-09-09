@@ -34,7 +34,9 @@ func runIssue(cfg Config, args []string, out io.Writer) error {
 	return usageError("issue: unknown command " + args[0])
 }
 
-// listIssues prints the user's open issues, newest change first.
+// listIssues prints the user's open issues, newest change first. Only
+// the open ones: the TUI's Done section is a glance at what just
+// closed, a table piped into something else wants one answer.
 func listIssues(tracker Tracker, out io.Writer) error {
 	issues, err := tracker.Issues()
 	if err != nil {
@@ -45,9 +47,9 @@ func listIssues(tracker Tracker, out io.Writer) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "KEY\tPRIO\tAGE\tSTATE\tTITLE")
+	fmt.Fprintln(w, "KEY\tPRIO\tAGE\tSTATE\tPROJECT\tTITLE")
 	for _, is := range issues {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", is.Key, priorityMark(is.Priority), relativeAge(is.UpdatedAt.Format(time.RFC3339)), is.State.Name, trim(is.Title, 70))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", is.Key, priorityMark(is.Priority), relativeAge(is.UpdatedAt.Format(time.RFC3339)), is.State.Name, trim(is.Project.Name, 24), trim(is.Title, 70))
 	}
 	return w.Flush()
 }

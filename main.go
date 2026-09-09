@@ -67,6 +67,13 @@ type issuePRsMsg struct {
 	prs []PR
 }
 
+// doneMsg carries the issues completed inside doneWindow — the issue
+// list's answer to mergedMsg.
+type doneMsg struct {
+	gen    int
+	issues []Issue
+}
+
 // localTickMsg asks for the local overlay again. Claude's state is
 // whatever the multiplexer reports as Claude works; following it every
 // two seconds — a status bar's cadence — lets a © change colour as
@@ -233,9 +240,13 @@ func applyTheme(t ThemeConfig) {
 // Row model
 // ------------------------------------------------------------
 
-// visibleRow is a section header, a PR row or an issue row.
+// visibleRow is a section header, a PR row or an issue row. On a
+// header sectionTitle is what it says; on an issue row it is the
+// section the row sits in, which decides whether the row repeats its
+// state name (renderIssueRow).
 type visibleRow struct {
 	sectionTitle string
+	sectionNote  string // dim, after the title: the Done section's window
 	sectionStyle lipgloss.Style
 	pr           *PR
 	status       ReviewStatus
@@ -278,6 +289,7 @@ type model struct {
 	prs        []PR
 	merged     []PR
 	issues     []Issue
+	doneIssues []Issue         // completed inside doneWindow; the Done section
 	issuePRs   map[string][]PR // the repo's open PRs by issue key, for the issue rows
 	localState map[string]LocalState
 
@@ -346,6 +358,7 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
 	if cache != nil {
 		m.issues = cache.Issues
+		m.doneIssues = cache.DoneIssues
 		m.issuePRs = byIssueKey(cache.IssuePRs)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -426,7 +439,7 @@ func (m model) Init() tea.Cmd {
 // fetches are the list's remote fetches, for Init, refresh and focus.
 func (m model) fetches() []tea.Cmd {
 	if m.kind == "issue" {
-		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs}
+		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs, m.fetchDone}
 	}
 	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
 }
@@ -440,7 +453,7 @@ func fetchUser() tea.Msg { return userMsg(currentUser()) }
 // best-effort.
 func (m model) persistCache() {
 	if m.kind == "issue" {
-		saveIssueCache(issueCacheFile{Issues: m.issues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
 	}
 	saveCache(m.repo, cacheFile{
@@ -760,6 +773,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.issuePRs = byIssueKey(msg.prs)
+		m.refreshList()
+		m.persistCache()
+
+	case doneMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.doneIssues = msg.issues
+		m.clampCursor()
 		m.refreshList()
 		m.persistCache()
 
@@ -1236,6 +1258,9 @@ func (m *model) refreshList() {
 
 func (m model) renderRow(row visibleRow, selected bool) string {
 	if row.header() {
+		if row.sectionNote != "" {
+			return row.sectionStyle.Render(row.sectionTitle) + styleDim.Render(" · "+row.sectionNote)
+		}
 		return row.sectionStyle.Render(row.sectionTitle)
 	}
 	if row.issue != nil {

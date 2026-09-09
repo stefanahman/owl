@@ -26,6 +26,21 @@ func (m model) fetchIssues() tea.Msg {
 	return issuesMsg{gen, issues}
 }
 
+// fetchDone asks the tracker for what the user finished inside
+// doneWindow. A failure here leaves the Done section empty rather than
+// failing the list: the open issues are the point, this is the tail.
+func (m model) fetchDone() tea.Msg {
+	gen := m.fetchGen
+	if m.tracker == nil {
+		return doneMsg{gen, nil}
+	}
+	issues, err := m.tracker.Done(time.Now().Add(-doneWindow))
+	if err != nil {
+		return doneMsg{gen, nil}
+	}
+	return doneMsg{gen, issues}
+}
+
 // fetchIssuePRs lists the repo's open PRs, mine included: an issue's
 // row shows the PRs opened for it.
 func (m model) fetchIssuePRs() tea.Msg {
@@ -80,31 +95,54 @@ func flattenPRs(index map[string][]PR) []PR {
 	return out
 }
 
+// doneWindow is how far back the Done section reaches: an issue you
+// closed stays in view for a day, the way a merged PR does on the PR
+// list, so finishing something does not make it vanish.
+const (
+	doneWindow      = 24 * time.Hour
+	doneWindowLabel = "1d" // doneWindow, as the UI says it
+)
+
 // issueSections are the issue list's groups, in order: what is being
-// worked on, what is next, what waits.
+// worked on, what is next, what waits, what just finished.
 var issueSections = []struct {
 	title string
+	note  string // dim, after the title
 	style lipgloss.Style
 	types []string // Linear's state types
 }{
-	{"In progress", styleSectionOK, []string{"started"}},
-	{"Todo", styleSectionTodo, []string{"unstarted", "triage"}},
-	{"Backlog", styleSectionWait, []string{"backlog"}},
+	{"In progress", "", styleSectionOK, []string{"started"}},
+	{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}},
+	{"Backlog", "", styleSectionWait, []string{"backlog"}},
+	{"Done", doneWindowLabel, styleSectionMerged, []string{"completed"}},
 }
 
 // visibleIssueRows groups the issues by state type, newest change
-// first within a group, with the search filter — a key or a title
-// fragment, case-insensitively — applied.
+// first within a group, with the search filter — a key, a title or a
+// project fragment, case-insensitively — applied.
 func (m model) visibleIssueRows() []visibleRow {
 	filter := strings.ToLower(m.search.Value())
 	matches := func(is Issue) bool {
-		return filter == "" || strings.Contains(strings.ToLower(is.Key), filter) || strings.Contains(strings.ToLower(is.Title), filter)
+		return filter == "" ||
+			strings.Contains(strings.ToLower(is.Key), filter) ||
+			strings.Contains(strings.ToLower(is.Title), filter) ||
+			strings.Contains(strings.ToLower(is.Project.Name), filter)
 	}
+	// The open list and the done one are fetched apart; the sections
+	// split them again by state type, and Issues() excludes what Done()
+	// returns, so nothing lands twice.
+	all := make([]Issue, 0, len(m.issues)+len(m.doneIssues))
+	all = append(append(all, m.issues...), m.doneIssues...)
 	var out []visibleRow
 	for _, sec := range issueSections {
 		var members []Issue
-		for _, is := range m.issues {
+		for _, is := range all {
 			if !contains(sec.types, is.State.Type) || !matches(is) {
+				continue
+			}
+			// The window is the query's, but a cache read from an earlier
+			// day would smuggle older ones in: hold the line here too.
+			if is.State.Type == "completed" && time.Since(is.CompletedAt) > doneWindow {
 				continue
 			}
 			members = append(members, is)
@@ -113,9 +151,9 @@ func (m model) visibleIssueRows() []visibleRow {
 			continue
 		}
 		sort.SliceStable(members, func(i, j int) bool { return members[i].UpdatedAt.After(members[j].UpdatedAt) })
-		out = append(out, visibleRow{sectionTitle: sec.title, sectionStyle: sec.style})
+		out = append(out, visibleRow{sectionTitle: sec.title, sectionNote: sec.note, sectionStyle: sec.style})
 		for i := range members {
-			out = append(out, visibleRow{issue: &members[i]})
+			out = append(out, visibleRow{issue: &members[i], sectionTitle: sec.title})
 		}
 	}
 	return out
@@ -130,8 +168,34 @@ func contains(list []string, s string) bool {
 	return false
 }
 
+// The row's columns. Everything but the title is fixed width, so the
+// eye can run down a column; the title takes whatever the window has
+// left, and the PR chips ride at the end.
+const (
+	projectWidth = 18
+	stateWidth   = 11 // "In Progress", the longest of Linear's defaults
+	titleFloor   = 24
+	titleCeiling = 80
+	// fixedWidth is everything else on the row, chips included: cursor,
+	// key, badges, priority, age, the gaps, and room for two chips.
+	fixedWidth = 2 + 10 + 5 + 4 + 5 + 2 + projectWidth + 2 + stateWidth + 1 + 14
+)
+
+// titleWidth is what the title gets in this window. Without a size yet
+// (a test that never sent one), the old fixed 60.
+func (m model) titleWidth() int {
+	if m.width == 0 {
+		return 60
+	}
+	return clampInt(m.width-fixedWidth, titleFloor, titleCeiling)
+}
+
 // renderIssueRow: cursor, key, the workspace badges, priority, age,
-// title, state, and the issue's open PRs when there are any.
+// title, project, state, and the issue's open PRs when there are any.
+//
+// The state name only when it says something the section does not: in
+// Backlog every row would read "Backlog", while inside In progress the
+// difference between "In Progress" and "In Review" is the point.
 func (m model) renderIssueRow(row visibleRow, selected bool) string {
 	is := row.issue
 	cursor := "  "
@@ -143,18 +207,42 @@ func (m model) renderIssueRow(row visibleRow, selected bool) string {
 	if _, ok := m.inflight[row.id()]; ok {
 		starting = m.spinner.View()
 	}
-	age := relativeAge(is.UpdatedAt.Format(time.RFC3339))
-	return fmt.Sprintf(
-		"%s%-9s %s %3s %s  %s  %s%s",
+	// A done row shows the age of the closing, not of the last edit —
+	// the section already says it is done, as the PR list's merged rows
+	// show the merge age.
+	when := is.UpdatedAt
+	if is.State.Type == "completed" && !is.CompletedAt.IsZero() {
+		when = is.CompletedAt
+	}
+	state := ""
+	if !strings.EqualFold(is.State.Name, row.sectionTitle) {
+		state = is.State.Name
+	}
+	w := m.titleWidth()
+	return strings.TrimRight(fmt.Sprintf(
+		"%s%-9s %s %3s %s  %-*s  %s %s%s",
 		cursor,
 		is.Key,
 		workspaceBadges(local, starting),
 		priorityMark(is.Priority),
-		styleDim.Render(fmt.Sprintf("%3s", age)),
-		trim(is.Title, 60),
-		styleDim.Render(is.State.Name),
+		styleDim.Render(fmt.Sprintf("%3s", relativeAge(when.Format(time.RFC3339)))),
+		w, trim(is.Title, w),
+		cell(is.Project.Name, projectWidth, styleDim),
+		cell(state, stateWidth, styleDim),
 		prChips(m.issuePRs[is.Key]),
-	)
+	), " ")
+}
+
+// cell is a fixed-width column with the text styled and the padding
+// left plain, so a row whose last columns are empty ends in spaces the
+// caller can trim rather than in a run of dimmed blanks.
+func cell(s string, w int, style lipgloss.Style) string {
+	s = trim(s, w)
+	pad := strings.Repeat(" ", w-len([]rune(s)))
+	if s == "" {
+		return pad
+	}
+	return style.Render(s) + pad
 }
 
 // workspaceBadges is the issue row's two-slot block: the worktree (or

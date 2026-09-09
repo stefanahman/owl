@@ -22,6 +22,9 @@ type Tracker interface {
 	// Issues lists the open issues assigned to the user, most recently
 	// updated first.
 	Issues() ([]Issue, error)
+	// Done lists the issues assigned to the user completed since the
+	// given time — what just left the open list, still worth seeing.
+	Done(since time.Time) ([]Issue, error)
 	// Issue fetches one by its identifier (BAR-123).
 	Issue(key string) (Issue, error)
 	// Create files an issue in the configured team, assigned to the
@@ -39,17 +42,26 @@ type Issue struct {
 	PriorityLabel string    `json:"priorityLabel"` // as Linear names it
 	URL           string    `json:"url"`
 	UpdatedAt     time.Time `json:"updatedAt"`
-	State         struct {
+	// CompletedAt is when the issue was closed; the zero time while it
+	// is open. Linear sends null for an open issue, which unmarshals to
+	// the zero value.
+	CompletedAt time.Time `json:"completedAt"`
+	State       struct {
 		Name string `json:"name"` // In Review
 		Type string `json:"type"` // triage, backlog, unstarted, started, completed, canceled
 	} `json:"state"`
+	// Project is the piece of work the issue belongs to; empty for an
+	// issue filed outside one.
+	Project struct {
+		Name string `json:"name"`
+	} `json:"project"`
 	Team struct {
 		Key string `json:"key"` // BAR
 	} `json:"team"`
 }
 
 // issueFields is what every issue query selects.
-const issueFields = `id identifier title branchName priority priorityLabel url updatedAt state { name type } team { key }`
+const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { name } team { key }`
 
 // Linear talks to one workspace with one user's key.
 type Linear struct {
@@ -150,10 +162,16 @@ func firstLine(s string) string {
 	return s
 }
 
-// Issues: the user's open issues — every state but completed and
-// canceled — newest change first, all of them: Linear pages the
-// answer, 100 at a time here, and every page is read.
-func (l Linear) Issues() ([]Issue, error) {
+// assignedQuery walks the issues assigned to the user under a filter,
+// newest change first. The filter travels as a variable rather than
+// baked into the string: one query serves both the open list and the
+// recently done, and Linear type-checks the shape.
+const assignedQuery = `query($first: Int!, $after: String, $filter: IssueFilter) { viewer { assignedIssues(first: $first, after: $after, orderBy: updatedAt, filter: $filter) { nodes { ` + issueFields + ` } pageInfo { hasNextPage endCursor } } } }`
+
+// assigned reads every page of the filter's answer, 100 at a time.
+// There is no cap: the list shows the user's work, and a cap would
+// silently hide the tail of it.
+func (l Linear) assigned(filter map[string]any) ([]Issue, error) {
 	var all []Issue
 	var after *string
 	for {
@@ -168,8 +186,7 @@ func (l Linear) Issues() ([]Issue, error) {
 				} `json:"assignedIssues"`
 			} `json:"viewer"`
 		}
-		q := `query($first: Int!, $after: String) { viewer { assignedIssues(first: $first, after: $after, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) { nodes { ` + issueFields + ` } pageInfo { hasNextPage endCursor } } } }`
-		if err := l.query(q, map[string]any{"first": 100, "after": after}, &r); err != nil {
+		if err := l.query(assignedQuery, map[string]any{"first": 100, "after": after, "filter": filter}, &r); err != nil {
 			return nil, err
 		}
 		page := r.Viewer.AssignedIssues
@@ -179,6 +196,23 @@ func (l Linear) Issues() ([]Issue, error) {
 		}
 		after = &page.PageInfo.EndCursor
 	}
+}
+
+// Issues: the user's open issues — every state but completed and
+// canceled — newest change first.
+func (l Linear) Issues() ([]Issue, error) {
+	return l.assigned(map[string]any{
+		"state": map[string]any{"type": map[string]any{"nin": []string{"completed", "canceled"}}},
+	})
+}
+
+// Done: the issues completed since the given time. Canceled ones stay
+// out — cancelling is not finishing, and seeing it again is noise.
+func (l Linear) Done(since time.Time) ([]Issue, error) {
+	return l.assigned(map[string]any{
+		"state":       map[string]any{"type": map[string]any{"eq": "completed"}},
+		"completedAt": map[string]any{"gte": since.UTC().Format(time.RFC3339)},
+	})
 }
 
 // Issue looks one up by identifier; Linear's issue(id:) takes the

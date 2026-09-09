@@ -168,25 +168,36 @@ owl · issues · acme/app                                     updated just now
 4 open · 2 in progress · 1 todo · 1 backlog
 ────────────────────────────────────────────────────────────────────────────
 In progress
-▸ BAR-4160  ⎇ ©  !!   2h  Per-tenant captureEngine override  In Progress
-  BAR-4159       !!   8h  Company fuzzy match                In Review  #3543✓
+▸ BAR-4160  ⎇ ©  !!   2h  Per-tenant captureEngine override  Sequential Capture
+  BAR-4159       !!   8h  Company fuzzy match                                    In Review  #3543✓
 Todo
-  BAR-4578       !!!  1d  Rate-limit the ingest worker       Todo  #3550 draft
+  BAR-4578       !!!  1d  Rate-limit the ingest worker       Sequential Capture             #3550 draft
 Backlog
-  BAR-4404            9d  Shadow output validation           Backlog
+  BAR-4404            9d  Shadow output validation           Endpoint Validation
+Done · 1d
+  BAR-4286             3h  Open update-activity fields       Endpoint Validation
 ```
 
-The issues Linear assigns to you, in three sections by state — in
-progress, todo, backlog — newest change first. A row shows the key,
-the workspace badges, the priority (`!!!` urgent to `-` low), the age
-of the last change, the title, the state, and every open PR whose head
-branch carries the issue's key, newest first: `#N✓` approved by
-someone, `#N⚠` changes requested, `#N draft`. The key and not the whole
-branch name, since a PR is as often pushed from
-`fix/bar-4159-particle-guard` as from the slug Linear names.
-Enter opens the feature workspace, `o`
-opens the issue in Linear, `y` copies its key, `/` filters by key or
-title. Off a terminal, `owl issue` prints a table.
+Every issue Linear assigns to you — all of them, paged 100 at a time
+until Linear runs out — in four sections by state: in progress, todo,
+backlog, and what you finished in the last day, newest change first.
+
+A row shows the key, the workspace badges, the priority (`!!!` urgent
+to `-` low), the age of the last change (of the closing, in Done), the
+title, the project, the state, and every open PR whose head branch
+carries the issue's key, newest first: `#N✓` approved by someone, `#N⚠`
+changes requested, `#N draft`. The key and not the whole branch name,
+since a PR is as often pushed from `fix/bar-4159-particle-guard` as
+from the slug Linear names.
+
+The state name appears only where it says something the section does
+not: inside Backlog every row would read "Backlog", while inside In
+progress the difference between "In Progress" and "In Review" is the
+point. The title takes whatever width the window leaves.
+
+Enter opens the feature workspace, `o` opens the issue in Linear, `y`
+copies its key, `/` filters by key, title or project. Off a terminal,
+`owl issue` prints a table of the open ones.
 
 A feature workspace is a worktree on the branch Linear names for the
 issue (`bar-4159-company-fuzzy-match`): tracking the remote's branch
