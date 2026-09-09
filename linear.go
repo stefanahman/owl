@@ -25,6 +25,8 @@ type Tracker interface {
 	// Done lists the issues assigned to the user completed since the
 	// given time — what just left the open list, still worth seeing.
 	Done(since time.Time) ([]Issue, error)
+	// Projects lists the open projects the user works in.
+	Projects() ([]Project, error)
 	// Issue fetches one by its identifier (BAR-123).
 	Issue(key string) (Issue, error)
 	// Create files an issue in the configured team, assigned to the
@@ -59,6 +61,41 @@ type Issue struct {
 		Key string `json:"key"` // BAR
 	} `json:"team"`
 }
+
+// Milestone is a step inside a project. In a Linear workspace this is
+// where the specs and the progress actually live, so it is what the
+// project view groups by.
+type Milestone struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Progress float64 `json:"progress"` // 0..1
+}
+
+// Project is the piece of work an issue belongs to.
+type Project struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	SlugID    string    `json:"slugId"` // Linear's short id, the tail of its URL
+	URL       string    `json:"url"`
+	Progress  float64   `json:"progress"` // 0..1, Linear's own
+	Scope     int       `json:"scope"`    // issues in it, whoever they belong to
+	UpdatedAt time.Time `json:"updatedAt"`
+	State     struct {
+		Name string `json:"name"` // In Progress
+		Type string `json:"type"` // backlog, planned, started, paused, completed, canceled
+	} `json:"status"`
+	Lead struct {
+		Name string `json:"name"`
+	} `json:"lead"`
+	Milestones struct {
+		Nodes []Milestone `json:"nodes"`
+	} `json:"projectMilestones"`
+}
+
+// projectFields is what the project query selects. `scope` is the
+// issue count: the issues connection caps at fifty, so counting its
+// nodes would report 50 for a project of 915.
+const projectFields = `id name slugId url progress scope updatedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
 const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { name } team { key }`
@@ -213,6 +250,52 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 		"state":       map[string]any{"type": map[string]any{"eq": "completed"}},
 		"completedAt": map[string]any{"gte": since.UTC().Format(time.RFC3339)},
 	})
+}
+
+// projectsQuery walks the open projects the user works in.
+//
+// "Works in" is a union, not membership. Filtering by lead or member
+// alone drops the project holding most of the work: Sequential Capture
+// redesign has twelve of the user's sixteen open issues and lists
+// neither. An issue assigned to you in a project nobody added you to
+// is still a project you are working in, so the third clause asks for
+// exactly that. `isMe` keeps it to one round trip — no viewer lookup
+// to feed an id into the filter.
+const projectsQuery = `query($first: Int!, $after: String) {
+  projects(first: $first, after: $after, orderBy: updatedAt, filter: {
+    status: { type: { nin: ["completed", "canceled"] } },
+    or: [
+      { lead: { isMe: { eq: true } } },
+      { members: { isMe: { eq: true } } },
+      { issues: { some: { assignee: { isMe: { eq: true } }, state: { type: { nin: ["completed", "canceled"] } } } } }
+    ]
+  }) { nodes { ` + projectFields + ` } pageInfo { hasNextPage endCursor } }
+}`
+
+// Projects: the open projects the user works in, newest change first,
+// every page of them.
+func (l Linear) Projects() ([]Project, error) {
+	var all []Project
+	var after *string
+	for {
+		var r struct {
+			Projects struct {
+				Nodes    []Project `json:"nodes"`
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+			} `json:"projects"`
+		}
+		if err := l.query(projectsQuery, map[string]any{"first": 50, "after": after}, &r); err != nil {
+			return nil, err
+		}
+		all = append(all, r.Projects.Nodes...)
+		if !r.Projects.PageInfo.HasNextPage || r.Projects.PageInfo.EndCursor == "" {
+			return all, nil
+		}
+		after = &r.Projects.PageInfo.EndCursor
+	}
 }
 
 // Issue looks one up by identifier; Linear's issue(id:) takes the

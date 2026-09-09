@@ -78,6 +78,37 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			f.t.Errorf("assignedIssues with an unexpected filter: %v", filter)
 		}
 		data = map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": nodes, "pageInfo": page}}}
+	case strings.Contains(req.Query, "projects(first:"):
+		// The union is the whole point: a project the user neither leads
+		// nor belongs to, but has an open issue in, must be in the answer.
+		for _, want := range []string{"lead: { isMe: { eq: true } }", "members: { isMe: { eq: true } }", "assignee: { isMe: { eq: true } }"} {
+			if !strings.Contains(req.Query, want) {
+				f.t.Errorf("projects query lacks %q: %s", want, req.Query)
+			}
+		}
+		project := func(name, slug, state, stype string, progress float64, scope int, milestones []any) map[string]any {
+			return map[string]any{
+				"id": "uuid-" + slug, "name": name, "slugId": slug,
+				"url":      "https://linear.app/x/project/" + slug,
+				"progress": progress, "scope": scope, "updatedAt": "2026-09-08T13:55:43.474Z",
+				"status":            map[string]string{"name": state, "type": stype},
+				"lead":              map[string]string{"name": "Stefan Åhman"},
+				"projectMilestones": map[string]any{"nodes": milestones},
+			}
+		}
+		milestone := func(name string, progress float64) map[string]any {
+			return map[string]any{"id": "ms-" + name, "name": name, "progress": progress}
+		}
+		nodes, page := []any{project("Sequential Capture redesign", "a76d38ca8527", "In Progress", "started", 0.62, 127,
+			[]any{milestone("M3.5 — Downstream compatibility", 0.8), milestone("M5 — Output evaluation", 0.1)})},
+			map[string]any{"hasNextPage": true, "endCursor": "proj-1"}
+		if after, _ := req.Variables["after"].(string); after == "proj-1" {
+			nodes, page = []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
+				map[string]any{"hasNextPage": false, "endCursor": nil}
+		} else if after != "" {
+			f.t.Errorf("projects query with an unknown cursor %q", after)
+		}
+		data = map[string]any{"projects": map[string]any{"nodes": nodes, "pageInfo": page}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
 		switch key, _ := req.Variables["id"].(string); key {
 		case "BAR-4159":
@@ -145,6 +176,23 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	if f.doneSince != "2026-09-08T12:00:00Z" {
 		t.Errorf("Done() asked for completedAt >= %q", f.doneSince)
 	}
+	projects, err := l.Projects()
+	if err != nil || len(projects) != 2 {
+		t.Fatalf("Projects() = %+v, %v", projects, err)
+	}
+	p := projects[0]
+	if p.Name != "Sequential Capture redesign" || p.SlugID != "a76d38ca8527" || p.State.Type != "started" || p.Lead.Name != "Stefan Åhman" {
+		t.Errorf("first project = %+v", p)
+	}
+	// scope is the project's issue count, not the length of a capped
+	// connection; progress is Linear's own fraction.
+	if p.Scope != 127 || p.Progress != 0.62 || len(p.Milestones.Nodes) != 2 || p.Milestones.Nodes[0].Progress != 0.8 {
+		t.Errorf("project numbers = scope %d, progress %v, milestones %+v", p.Scope, p.Progress, p.Milestones.Nodes)
+	}
+	if projects[1].Name != "Raw-data JSON ingest" || len(projects[1].Milestones.Nodes) != 0 {
+		t.Errorf("second project = %+v", projects[1])
+	}
+
 	one, err := l.Issue("BAR-4159")
 	if err != nil || one.Title != "Company fuzzy match" || one.Team.Key != "BAR" {
 		t.Errorf("Issue() = %+v, %v", one, err)
