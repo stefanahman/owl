@@ -366,11 +366,27 @@ Backlog
   BAR-4404            9d  Shadow output validation           Endpoint Validation
 Done · 1d
   BAR-4286             3h  Open update-activity fields       Endpoint Validation
+Canceled · 3d
+  BAR-4287            12h  Drop the shadow validation        Endpoint Validation
 ```
 
 Every issue Linear assigns to you — all of them, paged 100 at a time
-until Linear runs out — in four sections by state: in progress, todo,
-backlog, and what you finished in the last day, newest change first.
+until Linear runs out — in five sections by state: in progress, todo,
+backlog, what you finished in the last day, and what was cancelled in
+the last three, newest change first.
+
+**Cancelling is not finishing**, so it is a section of its own rather
+than a row in Done, and it reaches back three days where Done reaches
+back one: you were there when you finished something, while a
+cancellation is usually someone else's decision about your work and
+should survive a weekend. The section renders grey — on the list so you
+notice it happened, not so it competes with work that is still alive.
+
+Its own request, too, and not by choice. Linear accepts an `or:` of two
+windowed branches and then answers by state type alone, applying
+neither branch's date bound — verified against the live API, where one
+query returned issues cancelled two months back. Two queries, one bound
+each.
 
 A row shows the key, the workspace badges, the priority (`!!!` urgent
 to `-` low), the age of the last change (of the closing, in Done), the

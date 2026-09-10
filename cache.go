@@ -33,11 +33,12 @@ type cacheFile struct {
 
 // issueCacheFile is the issue list's on-disk shape.
 type issueCacheFile struct {
-	Issues     []Issue   `json:"issues"`
-	DoneIssues []Issue   `json:"doneIssues"`
-	IssuePRs   []PR      `json:"issuePrs"`
-	FetchedAt  time.Time `json:"fetchedAt"`
-	Cursor     int       `json:"cursor"`
+	Issues          []Issue   `json:"issues"`
+	DoneIssues      []Issue   `json:"doneIssues"`
+	CancelledIssues []Issue   `json:"cancelledIssues"`
+	IssuePRs        []PR      `json:"issuePrs"`
+	FetchedAt       time.Time `json:"fetchedAt"`
+	Cursor          int       `json:"cursor"`
 }
 
 // projectCacheFile is the project list's on-disk shape. The issues

@@ -78,6 +78,12 @@ type doneMsg struct {
 	issues []Issue
 }
 
+// cancelledMsg carries the issues cancelled inside cancelledWindow.
+type cancelledMsg struct {
+	gen    int
+	issues []Issue
+}
+
 // drillIssuesMsg carries the issues of the project being drilled into.
 type drillIssuesMsg struct {
 	gen    int
@@ -262,8 +268,11 @@ var (
 	styleSectionWait   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))  // blue
 	styleSectionOK     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))  // green
 	styleSectionMerged = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("141")) // purple (GitHub's merged color)
-	styleDraft         = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))            // dim for [draft]
-	styleSearchLabel   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	// Cancelled recedes: it is on the list so you notice it happened,
+	// not so it competes with the work that is still alive.
+	styleSectionCancelled = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("244"))
+	styleDraft            = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // dim for [draft]
+	styleSearchLabel      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
 
 func applyTheme(t ThemeConfig) {
@@ -358,10 +367,13 @@ type model struct {
 	// beneath; both come from this one number.
 	contentHeight int
 
-	issues       []Issue
-	doneIssues   []Issue   // completed inside doneWindow; the Done section
-	projects     []Project // the project list's rows
-	doneProjects []Project // completed inside doneProjectWindow; the Done section
+	issues     []Issue
+	doneIssues []Issue // completed inside doneWindow; the Done section
+	// cancelledIssues are the ones cancelled inside cancelledWindow, in
+	// a section of their own — cancelling is not finishing.
+	cancelledIssues []Issue
+	projects        []Project // the project list's rows
+	doneProjects    []Project // completed inside doneProjectWindow; the Done section
 	// drill is the project whose issues are showing in place of the
 	// project list, and drillIssues are that project's — everyone's, not
 	// only the user's. nil when the project list itself is showing.
@@ -470,6 +482,7 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	if cache != nil {
 		m.issues = cache.Issues
 		m.doneIssues = cache.DoneIssues
+		m.cancelledIssues = cache.CancelledIssues
 		m.issuePRs = byIssueKey(cache.IssuePRs)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -552,7 +565,7 @@ func (m model) Init() tea.Cmd {
 func (m model) fetches() []tea.Cmd {
 	switch m.kind {
 	case "issue":
-		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs, m.fetchDone}
+		return []tea.Cmd{m.fetchIssues, m.fetchIssuePRs, m.fetchDone, m.fetchCancelled}
 	case "project":
 		// The issues too: a row says how much of the project is yours.
 		return []tea.Cmd{m.fetchProjects, m.fetchIssues, m.fetchDoneProjects}
@@ -575,7 +588,7 @@ func (m model) persistCache() {
 		return
 	}
 	if m.kind == "issue" {
-		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, CancelledIssues: m.cancelledIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
 	}
 	saveCache(m.repo, cacheFile{
@@ -923,6 +936,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.doneIssues = msg.issues
+		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
+	case cancelledMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.cancelledIssues = msg.issues
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()
@@ -1692,7 +1714,7 @@ func (m model) hasData() bool {
 	}
 	switch m.kind {
 	case "issue":
-		return len(m.issues) > 0 || len(m.doneIssues) > 0
+		return len(m.issues) > 0 || len(m.doneIssues) > 0 || len(m.cancelledIssues) > 0
 	case "project":
 		return len(m.projects) > 0 || len(m.doneProjects) > 0
 	}

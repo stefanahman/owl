@@ -41,6 +41,21 @@ func (m model) fetchDone() tea.Msg {
 	return doneMsg{gen, issues}
 }
 
+// fetchCancelled asks the tracker for what was cancelled inside
+// cancelledWindow. Like the done fetch, a failure leaves the section
+// empty rather than failing the list.
+func (m model) fetchCancelled() tea.Msg {
+	gen := m.fetchGen
+	if m.tracker == nil {
+		return cancelledMsg{gen, nil}
+	}
+	issues, err := m.tracker.Cancelled(time.Now().Add(-cancelledWindow))
+	if err != nil {
+		return cancelledMsg{gen, nil}
+	}
+	return cancelledMsg{gen, issues}
+}
+
 // fetchIssuePRs lists the repo's open PRs, mine included: an issue's
 // row shows the PRs opened for it.
 func (m model) fetchIssuePRs() tea.Msg {
@@ -101,6 +116,12 @@ func flattenPRs(index map[string][]PR) []PR {
 const (
 	doneWindow      = 24 * time.Hour
 	doneWindowLabel = "1d" // doneWindow, as the UI says it
+	// Cancelled reaches further back than done. Finishing something is
+	// your own act and you saw it happen; cancelling is often someone
+	// else's decision about your work, and three days is long enough
+	// not to miss one over a weekend.
+	cancelledWindow      = 3 * 24 * time.Hour
+	cancelledWindowLabel = "3d"
 )
 
 // issueSections are the issue list's groups, in order: what is being
@@ -115,6 +136,14 @@ var issueSections = []struct {
 	{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}},
 	{"Backlog", "", styleSectionWait, []string{"backlog"}},
 	{"Done", doneWindowLabel, styleSectionMerged, []string{"completed"}},
+	// Last, and its own section rather than part of Done: cancelling is
+	// not finishing, and a row that reads as either would be worse than
+	// not showing it.
+	//
+	// "Canceled" with one l, which is Linear's spelling and not owl's:
+	// each section is named what the tracker calls that state, and that
+	// is also what keeps the row from repeating it in the state column.
+	{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}},
 }
 
 // visibleIssueRows groups the issues by state type, newest change
@@ -131,8 +160,8 @@ func (m model) visibleIssueRows() []visibleRow {
 	// The open list and the done one are fetched apart; the sections
 	// split them again by state type, and Issues() excludes what Done()
 	// returns, so nothing lands twice.
-	all := make([]Issue, 0, len(m.issues)+len(m.doneIssues))
-	all = append(append(all, m.issues...), m.doneIssues...)
+	all := make([]Issue, 0, len(m.issues)+len(m.doneIssues)+len(m.cancelledIssues))
+	all = append(append(append(all, m.issues...), m.doneIssues...), m.cancelledIssues...)
 	var out []visibleRow
 	for _, sec := range issueSections {
 		var members []Issue
@@ -143,6 +172,9 @@ func (m model) visibleIssueRows() []visibleRow {
 			// The window is the query's, but a cache read from an earlier
 			// day would smuggle older ones in: hold the line here too.
 			if is.State.Type == "completed" && time.Since(is.CompletedAt) > doneWindow {
+				continue
+			}
+			if is.State.Type == "canceled" && time.Since(is.CanceledAt) > cancelledWindow {
 				continue
 			}
 			members = append(members, is)

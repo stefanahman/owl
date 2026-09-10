@@ -25,6 +25,12 @@ type Tracker interface {
 	// Done lists the issues assigned to the user completed since the
 	// given time — what just left the open list, still worth seeing.
 	Done(since time.Time) ([]Issue, error)
+	// Cancelled lists the issues assigned to the user cancelled since
+	// the given time. A separate call rather than one `or:` beside Done:
+	// Linear accepts an `or:` of two branches and then applies neither
+	// branch's date bound, so one query would have returned every issue
+	// ever cancelled.
+	Cancelled(since time.Time) ([]Issue, error)
 	// Projects lists the open projects the user works in.
 	Projects() ([]Project, error)
 	// DoneProjects lists the user's projects completed since the given
@@ -56,7 +62,10 @@ type Issue struct {
 	// is open. Linear sends null for an open issue, which unmarshals to
 	// the zero value.
 	CompletedAt time.Time `json:"completedAt"`
-	State       struct {
+	// CanceledAt is when the issue was cancelled — Linear's spelling,
+	// one l — and the zero time otherwise.
+	CanceledAt time.Time `json:"canceledAt"`
+	State      struct {
 		Name string `json:"name"` // In Review
 		Type string `json:"type"` // triage, backlog, unstarted, started, completed, canceled
 	} `json:"state"`
@@ -148,7 +157,7 @@ func (p Project) Initiative() string {
 const projectFields = `id name slugId url progress scope priority targetDate updatedAt completedAt status { name type } lead { name } initiatives(first: 1) { nodes { name } } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
-const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } projectMilestone { id name sortOrder } assignee { name isMe } team { key }`
+const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt canceledAt state { name type } project { id name } projectMilestone { id name sortOrder } assignee { name isMe } team { key }`
 
 // Linear talks to one workspace with one user's key.
 type Linear struct {
@@ -304,6 +313,22 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 	return l.assigned(map[string]any{
 		"state":       map[string]any{"type": map[string]any{"eq": "completed"}},
 		"completedAt": map[string]any{"gte": since.UTC().Format(time.RFC3339)},
+	})
+}
+
+// Cancelled: the issues cancelled since the given time. Cancelling is
+// not finishing — which is why these have a section of their own
+// rather than joining the Done one — but it is still something that
+// happened to your work, and often not by your hand.
+//
+// Its own request, and deliberately. `or: [{completed, completedAt},
+// {canceled, canceledAt}]` is a filter Linear accepts and then answers
+// by state type alone, ignoring both date bounds: verified against the
+// live API, where it returned issues cancelled two months back.
+func (l Linear) Cancelled(since time.Time) ([]Issue, error) {
+	return l.assigned(map[string]any{
+		"state":      map[string]any{"type": map[string]any{"eq": "canceled"}},
+		"canceledAt": map[string]any{"gte": since.UTC().Format(time.RFC3339)},
 	})
 }
 

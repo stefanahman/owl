@@ -15,11 +15,12 @@ import (
 // fakeLinear serves Linear's GraphQL shapes: the queries the tracker
 // sends, answered from canned data, with the key checked.
 type fakeLinear struct {
-	t         *testing.T
-	key       string
-	queries   []string
-	created   []string
-	doneSince string // the completedAt bound the last Done() sent
+	t              *testing.T
+	key            string
+	queries        []string
+	created        []string
+	doneSince      string // the completedAt bound the last Done() sent
+	cancelledSince string // the canceledAt bound the last Cancelled() sent
 
 	projectLookups    int    // project(id:) calls, to prove open takes the cheap path
 	doneProjectsSince string // the completedAt bound the last DoneProjects() sent
@@ -69,6 +70,18 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			n := issue("BAR-4286", "Open update-activity fields", "bar-4286-open-update-activity", "Done", "completed")
 			n["completedAt"] = "2026-09-09T09:00:00.000Z"
 			nodes = []any{inProject(n, "5b16b5f4", "Endpoint Validation")}
+		case stype["eq"] == "canceled":
+			// The bound matters more here than anywhere: Linear takes an
+			// `or:` of two windowed branches and then applies neither, so
+			// a query without its own canceledAt would quietly return
+			// everything ever cancelled.
+			f.cancelledSince, _ = filter["canceledAt"].(map[string]any)["gte"].(string)
+			if f.cancelledSince == "" {
+				f.t.Errorf("the cancelled query carries no canceledAt bound: %v", filter)
+			}
+			n := issue("BAR-4287", "Drop the shadow validation", "bar-4287-drop-shadow-validation", "Cancelled", "canceled")
+			n["canceledAt"] = "2026-09-09T12:00:00.000Z"
+			nodes = []any{n}
 		case len(stype["nin"].([]any)) == 2:
 			// Two pages of one: the client must follow the cursor.
 			nodes, page = []any{inProject(issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"), "a76d38ca8527", "Sequential Capture redesign")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
@@ -211,6 +224,17 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	if !issues[0].CompletedAt.IsZero() {
 		t.Errorf("an open issue completed at %v", issues[0].CompletedAt)
 	}
+	// Cancelled is its own request with its own bound. One `or:` beside
+	// the done filter is a query Linear accepts and then answers by
+	// state type alone, ignoring both windows.
+	cancelled, err := l.Cancelled(time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
+	if err != nil || len(cancelled) != 1 || cancelled[0].Key != "BAR-4287" || cancelled[0].State.Type != "canceled" || cancelled[0].CanceledAt.IsZero() {
+		t.Fatalf("Cancelled() = %+v, %v", cancelled, err)
+	}
+	if f.cancelledSince != "2026-09-07T12:00:00Z" {
+		t.Errorf("cancelled bound = %q", f.cancelledSince)
+	}
+
 	since := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	done, err := l.Done(since)
 	if err != nil || len(done) != 1 || done[0].Key != "BAR-4286" || done[0].State.Type != "completed" || done[0].CompletedAt.IsZero() {

@@ -306,3 +306,64 @@ func TestIssueBindingHandsThePrompt(t *testing.T) {
 		t.Error("f launched something on the issue list")
 	}
 }
+
+// TestIssueListShowsWhatWasCancelled: cancelling is not finishing, so
+// it gets a section of its own rather than a row in Done — and a
+// window of its own, wider than Done's, because a cancellation is
+// usually someone else's decision about your work.
+func TestIssueListShowsWhatWasCancelled(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dropped := func(key, title string, ago time.Duration) Issue {
+		is := mkIssue(key, title, "bar-x", "Canceled", "canceled", 2, ago)
+		is.CanceledAt = time.Now().Add(-ago)
+		return is
+	}
+	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
+	m.issues, m.ready = fixtureIssues(), true
+	m.cancelledIssues = []Issue{
+		dropped("BAR-4287", "drop the shadow validation", 12*time.Hour),
+		// Past the window: the query bounds it, and a cache written days
+		// ago would otherwise smuggle this one back in.
+		dropped("BAR-1724", "the one from last week", 8*24*time.Hour),
+	}
+	m.width, m.height = 160, 40
+	m.resizeViewport()
+
+	var b strings.Builder
+	for _, row := range m.visibleIssueRows() {
+		b.WriteString(m.renderRow(row, false) + "\n")
+	}
+	out := stripANSI(b.String())
+
+	if !strings.Contains(out, "Canceled") || !strings.Contains(out, "3d") {
+		t.Errorf("no Cancelled section:\n%s", out)
+	}
+	if !strings.Contains(out, "BAR-4287") {
+		t.Errorf("an issue cancelled 12h ago is missing:\n%s", out)
+	}
+	if strings.Contains(out, "BAR-1724") {
+		t.Errorf("an issue cancelled eight days ago is in the list:\n%s", out)
+	}
+	// The section is named what Linear calls the state, so the row does
+	// not say it a second time in the state column.
+	if strings.Count(out, "Canceled") != 1 {
+		t.Errorf("the cancelled row repeats its section's state name:\n%s", out)
+	}
+	// Its own section, below Done rather than mixed into it.
+	lines := strings.Split(out, "\n")
+	done, cancelled := -1, -1
+	for i, l := range lines {
+		switch {
+		case strings.HasPrefix(l, "Done"):
+			done = i
+		case strings.HasPrefix(l, "Canceled"):
+			cancelled = i
+		}
+	}
+	if cancelled == -1 {
+		t.Fatalf("no Canceled heading:\n%s", out)
+	}
+	if done != -1 && cancelled < done {
+		t.Errorf("Canceled sits above Done: %d, %d", cancelled, done)
+	}
+}
