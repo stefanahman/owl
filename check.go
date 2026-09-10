@@ -66,13 +66,12 @@ func runCheck(cfg Config, out io.Writer) error {
 	if repo == "" {
 		return fmt.Errorf("no GitHub repo: the working directory has no %q remote", cfg.Remote)
 	}
-	me := currentUser()
-	if me == "" {
-		return fmt.Errorf("gh could not say who you are; `gh auth status` will")
-	}
-	prs, err := openPRs(repo)
+	prs, me, err := openPRs(repo)
 	if err != nil {
 		return err
+	}
+	if me == "" {
+		return fmt.Errorf("gh could not say who you are; `gh auth status` will")
 	}
 
 	// No cache at all is a first run, not a morning's worth of news:

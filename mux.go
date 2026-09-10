@@ -5,7 +5,11 @@
 // mux's; this is owl's side of them.
 package main
 
-import "github.com/stefanahman/mux"
+import (
+	"maps"
+
+	"github.com/stefanahman/mux"
+)
 
 // What the agent in a window is doing, as the multiplexer reports it;
 // "" is unknown.
@@ -78,6 +82,40 @@ func scopeForName(name string) scope {
 		return features
 	}
 	return reviews
+}
+
+// statesIn is the agent state of every window the scopes own.
+//
+// Only tmux keeps the scopes apart — a session each — so only there
+// does the multiplexer have to be asked once per scope. cmux and herdr
+// hold one flat list of workspaces, and asking a second time fetches
+// the same answer to filter differently: three subprocesses on cmux,
+// on a two-second refresh.
+func statesIn(cfg Config, scopes ...scope) map[string]string {
+	out := map[string]string{}
+	if len(scopes) == 0 {
+		return out
+	}
+	first := newWindows(cfg, scopes[0])
+	if len(scopes) == 1 || first.Kind() == "tmux" {
+		for _, sc := range scopes {
+			maps.Copy(out, newWindows(cfg, sc).States())
+		}
+		return out
+	}
+	states, err := first.d.States()
+	if err != nil {
+		return out
+	}
+	for name, state := range states {
+		for _, sc := range scopes {
+			if sc.owns(name) {
+				out[name] = state
+				break
+			}
+		}
+	}
+	return out
 }
 
 // windows is one scope's windows in a multiplexer, and nothing else

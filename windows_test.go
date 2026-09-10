@@ -283,3 +283,37 @@ func TestHookByMux(t *testing.T) {
 		t.Errorf("~ not expanded: %q", cfg.Hooks.AfterOpen["tmux"])
 	}
 }
+
+// TestStatesInAsksAFlatMultiplexerOnce: the PR list reads two scopes
+// now — a PR of yours opens into a feature's window — and the states of
+// both used to mean two calls into the multiplexer. Only tmux keeps the
+// scopes in separate sessions; cmux holds one flat list, where the
+// second call fetched the same answer to filter differently. On cmux
+// that is three subprocesses, every two seconds.
+func TestStatesInAsksAFlatMultiplexerOnce(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(bin, "calls")
+	script := "#!/bin/sh\necho x >> " + calls + "\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "cmux"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cfg := defaultConfig()
+	cfg.Mux = "cmux"
+	statesIn(cfg, reviews, features)
+	one, _ := os.ReadFile(calls)
+
+	if err := os.Remove(calls); err != nil {
+		t.Fatal(err)
+	}
+	statesIn(cfg, reviews)
+	alone, _ := os.ReadFile(calls)
+
+	if got, want := len(strings.Split(string(one), "\n")), len(strings.Split(string(alone), "\n")); got != want {
+		t.Errorf("two scopes cost %d calls into cmux, one scope %d — the flat list should be read once", got, want)
+	}
+}

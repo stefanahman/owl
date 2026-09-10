@@ -49,12 +49,15 @@ import (
 type prsMsg struct {
 	gen int
 	prs []PR
+	// me is the authenticated login, which the same query answers: the
+	// PR rows need it to say which verdict is yours, and a second `gh
+	// api user` for one string is a whole round trip on every refresh.
+	me string
 }
 type mergedMsg struct {
 	gen int
 	prs []PR
 }
-type userMsg string // authenticated user login
 
 // issuesMsg and issuePRsMsg are the issue list's fetches: the open
 // issues assigned to the user, and the repo's open PRs, which the rows
@@ -554,10 +557,12 @@ func (m model) fetches() []tea.Cmd {
 		// The issues too: a row says how much of the project is yours.
 		return []tea.Cmd{m.fetchProjects, m.fetchIssues, m.fetchDoneProjects}
 	}
-	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine, fetchUser}
+	// No fetch for the login: the PR search answers `viewer { login }`
+	// in the same request, and a `gh api user` of its own was half a
+	// second of round trip on every refresh for one string that never
+	// changes.
+	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine}
 }
-
-func fetchUser() tea.Msg { return userMsg(currentUser()) }
 
 // persistCache writes the list's snapshot and the cursor row to its
 // cache file. Called after a fetch lands, and once more on exit for
@@ -881,6 +886,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break // an older round; a newer one has landed or is coming
 		}
 		m.prs = msg.prs
+		if msg.me != "" {
+			m.me = msg.me
+		}
 		m.ready = true
 		m.refreshing = false
 		m.err = nil
@@ -979,12 +987,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case localTickMsg:
 		cmds = append(cmds, m.fetchLocal, localTick())
-
-	case userMsg:
-		m.me = string(msg)
-		m.clampCursor()
-		m.refreshList()
-		m.persistCache()
 
 	case errMsg:
 		if msg.gen != m.fetchGen {

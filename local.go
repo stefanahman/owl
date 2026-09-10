@@ -9,8 +9,6 @@
 package main
 
 import (
-	"maps"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -52,10 +50,7 @@ func (m model) fetchLocal() tea.Msg {
 // disjoint by shape between them, so the merge cannot collide.
 func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
 	worktrees := readWorktrees()
-	windows := map[string]string{}
-	for _, sc := range scopes {
-		maps.Copy(windows, newWindows(m.cfg, sc).States())
-	}
+	windows := statesIn(m.cfg, scopes...)
 
 	out := make(map[string]LocalState)
 	for handle, wt := range worktrees {

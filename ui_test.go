@@ -1,6 +1,6 @@
 // UI tests via charmbracelet/x/exp/teatest/v2 — exercise the bubbletea
 // program without a real TTY. Init is a no-op (noInit); tests Send
-// synthetic msgs (prsMsg, mergedMsg, localMsg, userMsg) and assert on
+// synthetic msgs (prsMsg, mergedMsg, localMsg) and assert on
 // the rendered View output.
 //
 // These tests complement smoke_test.go, which exercises the data

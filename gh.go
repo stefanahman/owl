@@ -299,19 +299,20 @@ func (m model) fetchPRs() tea.Msg {
 	if m.repo == "" {
 		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
 	}
-	prs, err := openPRs(m.repo)
+	prs, me, err := openPRs(m.repo)
 	if err != nil {
 		return errMsg{gen, err}
 	}
-	return prsMsg{gen, prs}
+	return prsMsg{gen, prs, me}
 }
 
 // openPRs is the fetch itself, without the TUI around it: `owl pr
 // --check` runs the same query from a scheduler, where there is no
 // model and no fetch round.
-func openPRs(repo string) ([]PR, error) {
+func openPRs(repo string) ([]PR, string, error) {
 	query := `
 query($q: String!) {
+  viewer { login }
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
@@ -331,9 +332,9 @@ query($q: String!) {
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("gh api graphql: %s", ee.Stderr)
+			return nil, "", fmt.Errorf("gh api graphql: %s", ee.Stderr)
 		}
-		return nil, fmt.Errorf("gh api graphql: %w", err)
+		return nil, "", fmt.Errorf("gh api graphql: %w", err)
 	}
 
 	type prNode struct {
@@ -354,13 +355,16 @@ query($q: String!) {
 	}
 	var resp struct {
 		Data struct {
+			Viewer struct {
+				Login string `json:"login"`
+			} `json:"viewer"`
 			Search struct {
 				Nodes []prNode `json:"nodes"`
 			} `json:"search"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &resp); err != nil {
-		return nil, fmt.Errorf("parse graphql: %w", err)
+		return nil, "", fmt.Errorf("parse graphql: %w", err)
 	}
 
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
@@ -379,7 +383,7 @@ query($q: String!) {
 		pr.Author.Login = n.Author.Login
 		prs = append(prs, pr)
 	}
-	return prs, nil
+	return prs, resp.Data.Viewer.Login, nil
 }
 
 // mineQuery asks what is blocking your own pull requests, which is a

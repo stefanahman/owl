@@ -232,6 +232,9 @@ func fakeGH(t *testing.T, root string) {
 		}
 	}
 	graphql := map[string]any{"data": map[string]any{
+		// The same request answers who you are: the rows need it to say
+		// which verdict is yours.
+		"viewer": map[string]string{"login": "stefanahman"},
 		"search": map[string]any{"nodes": []any{
 			pr(3543, "add billing migration", "alice", "aaa", 2*time.Hour),
 			pr(3550, "fix retry ordering", "bob", "bbb", 5*time.Hour),
