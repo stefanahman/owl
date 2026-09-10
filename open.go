@@ -7,11 +7,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -31,24 +33,32 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err != nil {
 		return err
 	}
-	label := "pr-" + strconv.Itoa(n)
-	unlock, err := lockWorkspace(repo, label)
+	// Planning reads and creates nothing, so the lock can be taken on
+	// the workspace the PR actually resolves to: `owl pr open 4290` and
+	// `owl issue open BAR-4157` then take the same lock and cannot both
+	// build it.
+	plan := planPRWorkspace(cfg, repo, currentRepo(cfg.Remote), n)
+	unlock, err := lockWorkspace(repo, plan.label(n))
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	name, wt, err := ensureWorktree(cfg, repo, currentRepo(cfg.Remote), n, out)
+	name, wt, err := ensureWorktree(cfg, repo, n, plan, out)
 	if err != nil {
 		return err
 	}
+	env := map[string]string{"OWL_PR": strconv.Itoa(n)}
+	if plan.key != "" {
+		env["OWL_ISSUE"], env["OWL_BRANCH"] = plan.key, plan.branch
+	}
 	ws := workspace{
-		label: label,
+		label: plan.label(n),
 		name:  name,
 		dir:   wt,
 		first: strings.ReplaceAll(cfg.Agent.Prompt, "{pr}", strconv.Itoa(n)),
-		env:   map[string]string{"OWL_PR": strconv.Itoa(n)},
+		env:   env,
 	}
-	return ws.open(cfg, newWindows(cfg, reviews), repo, prompt, arrive, out)
+	return ws.open(cfg, newWindows(cfg, scopeForName(name)), repo, prompt, arrive, out)
 }
 
 // workspace is what open and start act on once its worktree exists —
@@ -160,44 +170,167 @@ func parseOpenArgs(noun, what string, args []string) (id, prompt string, err err
 	return id, prompt, nil
 }
 
-// ensureWorktree returns the workspace name and worktree path for PR n,
-// creating the branch and worktree when no worktree exists yet. slug
-// is the GitHub owner/name the PR lives in ("" when unknown).
+// prWorkspace is the workspace a PR gets, decided before any of it is
+// created.
+type prWorkspace struct {
+	name   string // the worktree's directory, and the window
+	branch string // the branch checked out in it
+	key    string // the issue it is filed under, or ""
+	// own says the branch is yours and is checked out as itself.
+	// Otherwise it is a copy of the PR's head fetched under name, which
+	// is what a review of someone else's work wants.
+	own bool
+}
+
+// label is how messages and the lock name the workspace: the issue
+// when there is one, so this and `owl issue open` take the same lock.
+func (p prWorkspace) label(n int) string {
+	if p.key != "" {
+		return p.key
+	}
+	return "pr-" + strconv.Itoa(n)
+}
+
+// planPRWorkspace decides what PR n's workspace is. slug is the GitHub
+// owner/name the PR lives in ("" when unknown).
 //
-// The name is decided once, on first open, from the PR title at that
-// time: later opens find the worktree by number and, after `close`, the
-// name Claude's conversation is stored under — so a retitled PR keeps
-// its path, and with it the agent's per-cwd conversation.
-func ensureWorktree(cfg Config, repo, slug string, n int, out io.Writer) (name, path string, err error) {
+// A PR of yours is your branch, and owl gives you the branch rather
+// than a copy of it. The copy was right when every PR in the list was
+// someone else's: it reviews the pushed head, and `close` deletes it
+// with `branch -D`, which is what a copy is for. On your own work both
+// are wrong — the review reads a snapshot while you edit the real tree
+// beside it, and the delete takes commits with it.
+//
+// When the branch carries an issue key, that workspace is the
+// feature's, under the name `owl issue open` gives it, so the two
+// lists open one window on one worktree with one conversation. When it
+// carries none, the workspace keeps the `pr-<N>` name and the reviews
+// container — only the branch inside it is real.
+//
+// Someone else's PR, and your own from a fork, keep the copy: their
+// branch is not yours to sit on, and a fork's head is not on your
+// remote at all.
+func planPRWorkspace(cfg Config, repo, slug string, n int) prWorkspace {
+	facts, ok := lookupPR(repo, slug, n)
+	named := func() string {
+		// The name is decided once, on first open, from the PR title at
+		// that time: later opens find the worktree by number and, after
+		// `close`, the name Claude's conversation is stored under — so a
+		// retitled PR keeps its path, and with it the conversation.
+		if prior := priorWorkspaceName(repo, cfg.WorktreesDir, n); prior != "" {
+			return prior
+		}
+		name := "pr-" + strconv.Itoa(n)
+		if s := slugify(facts.Title); s != "" {
+			name += "-" + s
+		}
+		return name
+	}
+	// gh is missing, or offline, or the PR is not visible: nothing is
+	// known about the head, and a copy is the only workspace owl can
+	// build without it.
+	if !ok || facts.HeadRefName == "" {
+		name := named()
+		return prWorkspace{name: name, branch: name}
+	}
+	if facts.CrossRepo || facts.Author.Login == "" || facts.Author.Login != currentUser() {
+		name := named()
+		return prWorkspace{name: name, branch: name}
+	}
+	key := issueKeyFor(facts.HeadRefName, cfg.Linear.Team)
+	if key == "" {
+		return prWorkspace{name: named(), branch: facts.HeadRefName, own: true}
+	}
+	// The branch's own last segment when it already leads with an issue
+	// key — everything else finds this workspace by the branch, and a
+	// branch leading with BAR-4157 while the PR is filed under the newer
+	// BAR-4160 would otherwise be given a name that says one of them
+	// twice.
+	name := path.Base(facts.HeadRefName)
+	if issueKeyOf(name) == "" {
+		name = strings.ToLower(key) + "-" + name
+	}
+	return prWorkspace{name: name, branch: facts.HeadRefName, key: key, own: true}
+}
+
+// ensureWorktree makes sure the planned workspace exists and returns
+// its name and path. It runs under the lock and looks again before it
+// creates: another owl may have built it between the plan and the lock.
+func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer) (name, path string, err error) {
 	list, err := listWorktrees(repo)
 	if err != nil {
 		return "", "", err
 	}
+	// The branch decides, and it is asked first — in a pass of its own,
+	// so that a `pr-<N>` copy left over from before does not win by
+	// coming earlier in git's list. Your PR's workspace is its branch's,
+	// whatever the directory ended up called: the feature the issue list
+	// opened, or one you made by hand. Matching on the key instead would
+	// land a PR on `bar-4157-part-2` in the worktree holding
+	// `bar-4157-part-1`.
+	if p.own && p.branch != "" {
+		for _, wt := range list {
+			if wt.Prunable || wt.Branch != p.branch {
+				continue
+			}
+			if filepath.Dir(wt.Path) != filepath.Join(repo, cfg.WorktreesDir) {
+				fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", p.branch, cfg.WorktreesDir, wt.Path)
+			}
+			return filepath.Base(wt.Path), wt.Path, nil
+		}
+	}
 	for _, wt := range list {
+		if wt.Prunable {
+			continue
+		}
 		if h := wt.handle(); h != "" && matchesPR(h, n) {
 			return h, wt.Path, nil
 		}
 	}
-	if name = priorWorkspaceName(repo, cfg.WorktreesDir, n); name == "" {
-		name = "pr-" + strconv.Itoa(n)
-		if s := slugify(prTitle(repo, slug, n)); s != "" {
-			name += "-" + s
-		}
-	}
-	path = filepath.Join(repo, cfg.WorktreesDir, name)
-	fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)
-	// `+`: the branch is owl's own, and one left behind by a
-	// hand-removed worktree may not fast-forward to today's head.
-	if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, name)); err != nil {
-		return "", "", err
-	}
+	path = filepath.Join(repo, cfg.WorktreesDir, p.name)
 	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {
 		return "", "", err
 	}
-	if _, err := git(repo, "worktree", "add", path, name); err != nil {
+	// A worktree whose directory is gone keeps its registration, and
+	// that registration still holds its branch: `worktree add` would
+	// refuse the very branch the work is on.
+	_, _ = git(repo, "worktree", "prune")
+	if !p.own {
+		fmt.Fprintf(out, "fetching PR #%d into %s\n", n, path)
+		// `+`: the branch is owl's own, and one left behind by a
+		// hand-removed worktree may not fast-forward to today's head.
+		if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, p.branch)); err != nil {
+			return "", "", err
+		}
+		if _, err := git(repo, "worktree", "add", path, p.branch); err != nil {
+			return "", "", err
+		}
+		return p.name, path, nil
+	}
+	if _, err := git(repo, "fetch", "--quiet", cfg.Remote); err != nil {
 		return "", "", err
 	}
-	return name, path, nil
+	switch {
+	case refExists(repo, "refs/heads/"+p.branch):
+		fmt.Fprintf(out, "checking out %s into %s\n", p.branch, path)
+		_, err = git(repo, "worktree", "add", path, p.branch)
+	case refExists(repo, "refs/remotes/"+cfg.Remote+"/"+p.branch):
+		fmt.Fprintf(out, "fetching %s/%s into %s\n", cfg.Remote, p.branch, path)
+		_, err = git(repo, "worktree", "add", "--track", "-b", p.branch, path, cfg.Remote+"/"+p.branch)
+	default:
+		// The branch is gone from the remote — deleted after the PR was
+		// opened, or never pushed under that name. The PR's head is still
+		// a ref, and under the branch's own name it is still the work.
+		fmt.Fprintf(out, "fetching PR #%d into %s as %s\n", n, path, p.branch)
+		if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, p.branch)); err != nil {
+			return "", "", err
+		}
+		_, err = git(repo, "worktree", "add", path, p.branch)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return p.name, path, nil
 }
 
 // excludeFromStatus adds the worktrees directory to the repo's
@@ -234,23 +367,40 @@ func excludeFromStatus(repo, dir string) error {
 	return err
 }
 
-// prTitle asks gh for the PR title; "" when gh is missing or fails
-// (offline, unauthenticated) — the workspace is then named `pr-<N>`.
+// prFacts is what GitHub says about a PR that decides which workspace
+// it gets: whose branch it is, whether that branch is even on this
+// remote, and what to call the directory when it is a copy.
+type prFacts struct {
+	Title       string `json:"title"`
+	HeadRefName string `json:"headRefName"`
+	CrossRepo   bool   `json:"isCrossRepository"`
+	Author      struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+// lookupPR asks gh about the PR; ok is false when gh is missing or
+// fails (offline, unauthenticated), and open then falls back to the
+// workspace it can build without knowing anything: a copy at `pr-<N>`.
 // The repo is passed explicitly when known: gh's own guess fails in a
 // clone with several remotes, and with `remote: upstream` it would
 // answer for the fork.
-func prTitle(repo, slug string, n int) string {
+func lookupPR(repo, slug string, n int) (prFacts, bool) {
 	args := []string{"pr", "view", strconv.Itoa(n)}
 	if slug != "" {
 		args = append(args, "--repo", slug)
 	}
-	cmd := exec.Command("gh", append(args, "--json", "title", "--jq", ".title")...)
+	cmd := exec.Command("gh", append(args, "--json", "title,headRefName,isCrossRepository,author")...)
 	cmd.Dir = repo
 	out, err := cmd.Output()
 	if err != nil {
-		return ""
+		return prFacts{}, false
 	}
-	return strings.TrimSpace(string(out))
+	var f prFacts
+	if err := json.Unmarshal(out, &f); err != nil {
+		return prFacts{}, false
+	}
+	return f, true
 }
 
 // slugify turns a title into a directory-safe suffix: lowercase ASCII

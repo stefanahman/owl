@@ -1312,6 +1312,13 @@ func stateUnlessSection(name, section string) string {
 // of its workspace.
 func (m model) localOf(r visibleRow) LocalState {
 	if r.pr != nil {
+		// One of your own opens into its branch's workspace, whose name
+		// carries the issue key and not the PR number.
+		if r.mine {
+			if ls := findLocalBranch(m.localState, r.pr.HeadRefName); ls.Worktree != "" {
+				return ls
+			}
+		}
 		return findLocalForPR(m.localState, r.pr.Number)
 	}
 	if r.issue != nil {
@@ -1556,7 +1563,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	if selected {
 		cursor = "▸ "
 	}
-	local := findLocalForPR(m.localState, row.pr.Number)
+	local := m.localOf(row)
 	starting := "" // the spinner takes the worktree slot while a child works on this PR
 	if _, ok := m.inflight[row.id()]; ok {
 		starting = m.spinner.View()

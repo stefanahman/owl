@@ -275,7 +275,8 @@ case "$1 $2" in
     esac ;;
   "pr list") echo '[]' ;;
   "api user") echo stefanahman ;;
-  "pr view") echo "Add Billing Migration" ;;
+  # alice's PR, so open keeps fetching it into a copy of its own.
+  "pr view") echo '{"title":"Add Billing Migration","headRefName":"alice/billing","isCrossRepository":false,"author":{"login":"alice"}}' ;;
   *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
 esac
 `

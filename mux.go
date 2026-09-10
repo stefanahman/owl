@@ -61,6 +61,25 @@ func scopeOf(kind string) scope {
 	return reviews
 }
 
+// scopeForName is the scope a workspace belongs to, read from its own
+// name.
+//
+// The container has to follow the workspace rather than the command
+// that opened it. `owl pr open` on a PR of yours resolves to its
+// branch's workspace, which is a feature's when the branch carries an
+// issue key; a window for it among the reviews would be a second
+// window — with a second agent — on the one worktree the issue list is
+// already using.
+func scopeForName(name string) scope {
+	switch {
+	case projectSlugOf(name) != "":
+		return projects
+	case issueKeyOf(name) != "":
+		return features
+	}
+	return reviews
+}
+
 // windows is one scope's windows in a multiplexer, and nothing else
 // the user keeps there.
 type windows struct {

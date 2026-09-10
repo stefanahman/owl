@@ -9,6 +9,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -59,7 +60,42 @@ func runClose(cfg Config, args []string, out io.Writer) error {
 		return err
 	}
 	isPR := func(name string) bool { return matchesPR(name, n) }
-	return closeWorkspace(cfg, mx, "pr-"+strconv.Itoa(n), isPR, force, out)
+	err = closeWorkspace(cfg, mx, "pr-"+strconv.Itoa(n), isPR, force, out)
+	// Nothing named pr-<N> is the ordinary answer for a PR of yours: its
+	// workspace is its branch's, filed under the issue. Say so rather
+	// than "already closed", and do not close it here — a feature's
+	// branch holds commits that exist nowhere else, and `issue close` is
+	// the one that checks for them before deleting it.
+	var nothing nothingToCloseError
+	if errors.As(err, &nothing) {
+		if key := featureWorkspaceOf(cfg, n); key != "" {
+			return fmt.Errorf("pr-%d: this PR's workspace is the feature %s — close it with `owl issue close %s`", n, key, key)
+		}
+	}
+	return err
+}
+
+// featureWorkspaceOf is the issue whose workspace holds PR n, when the
+// PR resolved to its branch's feature rather than to a copy — and ""
+// when it did not, or when gh cannot say. Only the nothing-to-close
+// path asks, so the lookup costs nothing in the ordinary case.
+func featureWorkspaceOf(cfg Config, n int) string {
+	repo, err := mainRepo(".")
+	if err != nil {
+		return ""
+	}
+	facts, ok := lookupPR(repo, currentRepo(cfg.Remote), n)
+	if !ok {
+		return ""
+	}
+	key := issueKeyFor(facts.HeadRefName, cfg.Linear.Team)
+	if key == "" {
+		return ""
+	}
+	if _, _, found := findIssueWorktree(repo, cfg.WorktreesDir, key); !found {
+		return ""
+	}
+	return key
 }
 
 // closeWorkspace removes the workspace the match names in the

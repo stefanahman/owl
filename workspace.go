@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -84,6 +85,54 @@ func issueKeysIn(name string) []string {
 		}
 	}
 	return keys
+}
+
+// issueKeysFor is every issue of your team that a branch carries,
+// newest first.
+//
+// This is the link between a pull request and the work it does, and it
+// is structured rather than guessed at: Linear's own GitHub
+// integration generates `bar-4157-<slug>` from the key, so the key
+// travels in the one name both sides can see. The team is what keeps
+// it honest — issueKeysIn is deliberately permissive and reads
+// `deps/sharp-0.35.4` as SHARP-0, so without the gate a dependency
+// bump would be filed as a feature.
+//
+// A branch may close several issues at once. Newest first because that
+// is the one being worked on, the same rule issueBranches applies when
+// several branches carry one key.
+func issueKeysFor(branch, team string) []string {
+	if branch == "" || team == "" {
+		return nil
+	}
+	prefix := strings.ToUpper(team) + "-"
+	var keys []string
+	for _, key := range issueKeysIn(branch) {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.SliceStable(keys, func(i, j int) bool { return issueNumberOf(keys[i]) > issueNumberOf(keys[j]) })
+	return keys
+}
+
+// issueKeyFor is the issue a branch's workspace is filed under: the
+// newest it carries, or "" when it carries none of your team's.
+func issueKeyFor(branch, team string) string {
+	if keys := issueKeysFor(branch, team); len(keys) > 0 {
+		return keys[0]
+	}
+	return ""
+}
+
+// issueNumberOf is the number of an issue key, or 0.
+func issueNumberOf(key string) int {
+	i := strings.LastIndexByte(key, '-')
+	if i < 0 {
+		return 0
+	}
+	n, _ := strconv.Atoi(key[i+1:])
+	return n
 }
 
 // issueKeyRe is the shape of an issue key: a team's letters, a dash,

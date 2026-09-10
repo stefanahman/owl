@@ -491,7 +491,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
   token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in
-  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues
+  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues, and which keys in a branch name count as issues — unset, a PR of yours never resolves to its feature's workspace
 
 bindings:                        # your own keys on a row: a prompt handed to the agent, or a URL opened; ` + "`?`" + ` lists them by name
   pr:                            # on a PR; placeholders {pr}, {repo}, {branch}, {url}, and {id} — the first match of ` + "`pattern`" + ` in the title, body and branch (no match → the key does nothing)

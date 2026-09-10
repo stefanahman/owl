@@ -9,13 +9,19 @@
 package main
 
 import (
+	"maps"
+
 	tea "charm.land/bubbletea/v2"
 )
 
 // LocalState is the per-PR overlay: does a worktree exist? A review
 // window with a Claude conversation? What is the agent in it doing?
 type LocalState struct {
-	Worktree    string // absolute path to the worktree; "" if none
+	Worktree string // absolute path to the worktree; "" if none
+	// Branch is what is checked out there, "" when detached. It is how
+	// one of your own PRs finds its workspace: that workspace is named
+	// for the issue, so the PR number is nowhere in it.
+	Branch      string
 	Window      string // the review window's name when one exists; "" if none
 	ClaudeState string // agentWorking | agentBlocked | agentDone | agentIdle | "" (unknown)
 }
@@ -32,17 +38,28 @@ func (m model) fetchLocal() tea.Msg {
 	if sc.owns == nil {
 		sc = reviews
 	}
+	// The PR list shows your own PRs beside the reviews, and one of
+	// those opens into its branch's workspace — a feature's window, in
+	// the other container. Reading only the reviews would leave every
+	// mine row looking unopened while an agent works in it.
+	if m.panes() {
+		return m.fetchLocalIn(sc, features)
+	}
 	return m.fetchLocalIn(sc)
 }
 
-// fetchLocalIn is fetchLocal for one scope.
-func (m model) fetchLocalIn(sc scope) tea.Msg {
+// fetchLocalIn is fetchLocal for the given scopes. Window names are
+// disjoint by shape between them, so the merge cannot collide.
+func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
 	worktrees := readWorktrees()
-	windows := newWindows(m.cfg, sc).States()
+	windows := map[string]string{}
+	for _, sc := range scopes {
+		maps.Copy(windows, newWindows(m.cfg, sc).States())
+	}
 
 	out := make(map[string]LocalState)
-	for handle, wtPath := range worktrees {
-		s := LocalState{Worktree: wtPath}
+	for handle, wt := range worktrees {
+		s := LocalState{Worktree: wt.Path, Branch: wt.Branch}
 		if state, ok := windows[handle]; ok {
 			s.Window = handle
 			s.ClaudeState = state
@@ -71,18 +88,33 @@ func (m model) fetchLocalIn(sc scope) tea.Msg {
 // review vanished from the overlay that way once.
 //
 // Failure returns nil — the TUI still renders without wt badges.
-func readWorktrees() map[string]string {
+func readWorktrees() map[string]worktree {
 	list, err := listWorktrees(".")
 	if err != nil {
 		return nil
 	}
-	result := make(map[string]string)
+	result := make(map[string]worktree)
 	for _, wt := range list {
 		if h := wt.handle(); h != "" {
-			result[h] = wt.Path
+			result[h] = wt
 		}
 	}
 	return result
+}
+
+// findLocalBranch looks up the workspace holding a branch. This is how
+// one of your own PRs finds its own: the workspace is named for the
+// issue the branch carries, so nothing in the name mentions the PR.
+func findLocalBranch(state map[string]LocalState, branch string) LocalState {
+	if branch == "" {
+		return LocalState{}
+	}
+	for _, ls := range state {
+		if ls.Branch == branch {
+			return ls
+		}
+	}
+	return LocalState{}
 }
 
 // findLocalForPR looks up the LocalState of PR n: the entry named

@@ -100,7 +100,7 @@ cd ~/src/app            # a clone whose remote is on GitHub
 owl pr                  # in a terminal inside tmux, herdr or cmux
 ```
 
-Enter on a row fetches the PR into `.worktrees.local/pr-<N>-<slug>`,
+Enter on someone else's PR fetches it into `.worktrees.local/pr-<N>-<slug>`,
 opens a window for it — under tmux the `reviews` session is created on
 first use — starts Claude there with `/owl:review <N>`, and takes you
 to it. Back in the list, the `©` badge follows the agent; `f` sends the
@@ -283,6 +283,44 @@ Keys follow the pane. `bindings.mine` is its own list, shipping `f` —
 the same key as the issue list's, and the same job: go through the
 review you were **given**, checking each comment rather than complying
 with it.
+
+## Your own PR opens the workspace you already have
+
+A review of someone else's work gets a copy: `pull/<N>/head` fetched
+into a branch of owl's own, which `close` deletes without asking
+because a copy is all it ever was. On your own PR both halves are
+wrong — the copy reviews the pushed head while you edit the real tree
+in the worktree next door, and the delete takes your commits with it.
+
+So **a PR of yours resolves to its branch**, and the branch decides
+everything else:
+
+| the PR | the workspace |
+|---|---|
+| yours, branch carries an issue key | the feature's — `bar-4157-<slug>`, in `features` |
+| yours, no issue key | `pr-<N>-<slug>` in `reviews`, holding the real branch |
+| someone else's, or yours from a fork | `pr-<N>-<slug>`, a fetched copy |
+
+When the feature is already open — you started it from `owl issue` —
+Enter in the mine pane goes **there**: same worktree, same window, same
+conversation, whatever the directory ended up called. The match is on
+the branch and is exact, so a PR on `bar-4157-part-2` never lands in
+the worktree holding `bar-4157-part-1`. Opening the other way round
+finds it too, because the branch inside still carries the key.
+
+The link between a PR and its issue is the key in the branch name —
+what Linear's own GitHub integration puts there — filtered by
+`linear.team`, so `deps/sharp-0.35.4` is a dependency bump and not
+SHARP-0. A branch closing several issues opens into the newest one's
+workspace: one branch is one piece of work and gets one workspace.
+
+Two consequences worth knowing. The window's container follows the
+**workspace name**, not the command that opened it, so one worktree can
+never end up with a window among the reviews and another among the
+features, each with its own agent. And `owl pr close <N>` on a PR that
+resolved to a feature refuses and says so: closing a feature deletes a
+branch whose commits exist nowhere else, and `owl issue close` is the
+one that checks for them first.
 
 `open` is idempotent: it creates what is missing and selects the
 window. A workspace is named once, from the PR title at first open,
@@ -480,6 +518,11 @@ linear:
   account: work.1password.com   # when more than one account is signed in
   team: BAR
 ```
+
+`team` earns its place twice: it is where `owl hoot` files an issue,
+and it is what makes a key in a branch name mean something. Leave it
+unset and `bar-4157-<slug>` is just a branch — a PR of yours will open
+a workspace of its own rather than the feature's.
 
 An `op://` reference is read from 1Password the first time it is
 needed — owl says why before the prompt appears — and kept in

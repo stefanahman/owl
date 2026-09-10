@@ -29,6 +29,30 @@ type fixture struct {
 	cfg    Config
 }
 
+// fakeGH writes the fake gh: `api user` answers "you", and `pr view
+// 42` answers the facts planPRWorkspace reads. author and head are
+// what decide whether PR 42 is one of yours, and so whether open
+// fetches a copy or checks the branch out.
+func (f *fixture) fakeGH(author, head string) {
+	f.t.Helper()
+	script := fmt.Sprintf(`#!/bin/sh
+if [ "$1 $2" = "api user" ]; then echo you; exit 0; fi
+case "$3" in
+42) printf '%%s' '{"title":"Fix: Crash on Startup!!","headRefName":"%s","isCrossRepository":false,"author":{"login":"%s"}}' ;;
+*) echo 'no such PR' >&2; exit 1;;
+esac
+`, head, author)
+	if err := os.WriteFile(filepath.Join(f.root, "bin", "gh"), []byte(script), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// prIsYours makes PR 42 one of your own, pushed to head.
+func (f *fixture) prIsYours(head string) {
+	f.t.Helper()
+	f.fakeGH("you", head)
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -51,16 +75,15 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
 
-	// Fake gh: title for PR 42, failure for anything else.
+	// Fake gh: facts for PR 42, failure for anything else. PR 42 is
+	// someone else's by default, which is the review the fixture was
+	// written for; prIsYours makes it one of your own.
 	bin := filepath.Join(root, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gh := "#!/bin/sh\ncase \"$3\" in 42) echo 'Fix: Crash on Startup!!';; *) echo 'no such PR' >&2; exit 1;; esac\n"
-	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(gh), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f.fakeGH("someone-else", "their-fix")
 
 	// Origin with two "pull requests", then the clone open works in.
 	f.git(f.root, "init", "-q", "-b", "main", f.origin)
