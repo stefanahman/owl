@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -55,6 +56,59 @@ func TestScopeForName(t *testing.T) {
 	}
 }
 
+// TestLookupPRTakesBothRoads covers the two ways owl can learn whose
+// PR it is. With an owner/name it asks GraphQL, which answers
+// viewerDidAuthor and so needs no second call to ask who you are;
+// without one there is nothing to query with and it falls back to `pr
+// view` plus `gh api user`.
+func TestLookupPRTakesBothRoads(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+case "$1 $2" in
+  "api graphql") printf '%s' '{"data":{"repository":{"pullRequest":{"title":"A Title","headRefName":"bar-4157-x","isCrossRepository":false,"viewerDidAuthor":true}}}}' ;;
+  "api user") echo you ;;
+  "pr view") printf '%s' '{"title":"A Title","headRefName":"bar-4157-x","isCrossRepository":false,"author":{"login":"you"}}' ;;
+  *) echo "unexpected $*" >&2; exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	for _, slug := range []string{"acme/app", ""} {
+		f, ok := lookupPR(dir, slug, 42)
+		if !ok {
+			t.Fatalf("slug %q: lookup failed", slug)
+		}
+		if f.Title != "A Title" || f.HeadRefName != "bar-4157-x" || f.CrossRepo {
+			t.Errorf("slug %q: facts = %+v", slug, f)
+		}
+		if !f.Mine {
+			t.Errorf("slug %q: the PR is yours and lookupPR says it is not", slug)
+		}
+	}
+
+	// A PR that is not there answers nothing rather than a zero value
+	// that would read as someone else's.
+	empty := `#!/bin/sh
+case "$1 $2" in
+  "api graphql") printf '%s' '{"data":{"repository":{"pullRequest":null}}}' ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(empty), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := lookupPR(dir, "acme/app", 42); ok {
+		t.Error("a missing PR looked up fine")
+	}
+}
+
 func TestFirstPromptFollowsTheWorkspace(t *testing.T) {
 	cfg := defaultConfig()
 
@@ -85,6 +139,29 @@ func TestFirstPromptFollowsTheWorkspace(t *testing.T) {
 	// prompt at all. The first prompt is for arriving somewhere new.
 	if line := startLine(cfg.Agent.Cmd, firstPrompt(cfg, 4290, yours), true, ""); line != cfg.Agent.Cmd+" -c" {
 		t.Errorf("resuming sent a prompt: %q", line)
+	}
+}
+
+// TestReopeningAsksGitHubNothing proves the fast path by taking gh
+// away: a workspace owl has already made answers every question about
+// itself off the disk, so re-opening one — the commonest thing the
+// list does — costs no round trip.
+func TestReopeningAsksGitHubNothing(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	f.open("42")
+
+	if err := os.WriteFile(filepath.Join(f.root, "bin", "gh"), []byte("#!/bin/sh\necho 'gh: asked' >&2; exit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := f.open("42")
+
+	name := "pr-42-fix-crash-on-startup"
+	if !strings.Contains(out, name) {
+		t.Errorf("re-open without gh: %q", out)
+	}
+	if strings.Contains(out, "fetching") {
+		t.Errorf("re-open fetched again: %q", out)
 	}
 }
 

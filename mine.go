@@ -165,6 +165,28 @@ func issueChips(keys []string) string {
 	return b.String()
 }
 
+// mineLegend explains the mine row's glyphs. Three fixed slots — the
+// review verdict, the head commit's checks, a conflict — and then the
+// issues the branch carries.
+func (m model) mineLegend() string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		styleHeader.Render("Legend"),
+		fmt.Sprintf("  %s   a worktree exists for this row — your branch's, wherever it is", styleWorktree.Render("⎇")),
+		fmt.Sprintf("  %s   Claude working — actively processing a turn", styleClaudeWorking.Render("©")),
+		fmt.Sprintf("  %s   Claude blocked — waiting on you (permission, question, plan approval)", styleClaudeBlocked.Render("©")),
+		fmt.Sprintf("  %s  Claude done — unread (result to view; ack by focusing the window)", styleClaudeDone.Render("©")+styleClaudeDone.Render("*")),
+		"",
+		fmt.Sprintf("  %s   approved — GitHub's own reviewDecision, what the merge button reads", styleApproved.Render("✓")),
+		fmt.Sprintf("  %s   changes requested by a reviewer", styleChangesReqd.Render("⚠")),
+		fmt.Sprintf("  %s   reviewers asked, none have answered", styleDim.Render("·")),
+		fmt.Sprintf("  %s   nobody has been asked to look", styleDim.Render("○")),
+		"",
+		fmt.Sprintf("  %s %s %s the head commit's checks: green, failing, still running", styleApproved.Render("✓"), styleChangesReqd.Render("✗"), styleDraft.Render("◐")),
+		fmt.Sprintf("  %s   third slot: GitHub reports the branch as conflicting", styleChangesReqd.Render("⚠")),
+		fmt.Sprintf("  %s   the issues the branch carries, newest first — the first names the workspace", styleDim.Render("BAR-4157")),
+	)
+}
+
 // mineCountsSummary is the action row of the mine pane.
 func (m model) mineCountsSummary() string {
 	counts := map[blocking]int{}

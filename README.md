@@ -564,6 +564,15 @@ form that puts a secret in the config.
 | `/` | filter by number; `esc` clears | filter by key, title or project | filter by name |
 | `r` `?` `q` | refresh, help with the full legend, quit | the same | the same |
 
+In the mine pane the same keys act on a PR of your own, so three of
+them read differently. `↵` opens **its branch's** workspace — the
+feature's, when the branch carries an issue key — and starts a fresh
+conversation on `mine.prompt` rather than the review skill. `f` is
+`bindings.mine`'s: the review you were **given**, checked rather than
+complied with. And `c` refuses when the workspace is a feature's,
+naming `owl issue close <KEY>` instead: that branch holds commits that
+exist nowhere else, and only `issue close` checks for them first.
+
 `↵`, `s`, `f` and `c` run in the background: the list stays usable
 while the child works, the row shows a spinner in the worktree slot, a
 second press on the same row is refused until it reports, and a

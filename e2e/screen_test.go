@@ -50,6 +50,16 @@ func TestScreen(t *testing.T) {
 	waitFor(t, term, "owl · help")
 	snapshotWhenQuiet(t, term, "help")
 
+	// The mine pane carries its own glyphs, so the legend follows the
+	// focus the way the keys do.
+	term.SendKey(uv.KeyPressEvent{Code: uv.KeyEscape})
+	waitFor(t, term, "To review")
+	term.SendKey(uv.KeyPressEvent{Code: uv.KeyTab})
+	waitFor(t, term, "open your PR")
+	term.SendKey(uv.KeyPressEvent{Code: '?', Text: "?"})
+	waitFor(t, term, "owl · help")
+	snapshotWhenQuiet(t, term, "help-mine")
+
 	term.SendKey(uv.KeyPressEvent{Code: 'q', Text: "q"})
 	waitExit(t, term, cmd)
 }
@@ -274,6 +284,8 @@ func fakeGH(t *testing.T, root string) {
 case "$1 $2" in
   "api graphql")
     case "$*" in
+      # open asks for one PR's facts before it decides which workspace it gets
+      *viewerDidAuthor*) echo '{"data":{"repository":{"pullRequest":{"title":"Add Billing Migration","headRefName":"alice/billing","isCrossRepository":false,"viewerDidAuthor":false}}}}' ;;
       *reviewDecision*) cat "$(dirname "$0")/mine.json" ;;   # only the mine query selects it; matching the search string would catch -author:@me too
       *) cat "$(dirname "$0")/graphql.json" ;;
     esac ;;

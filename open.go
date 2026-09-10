@@ -36,14 +36,18 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	// Planning reads and creates nothing, so the lock can be taken on
 	// the workspace the PR actually resolves to: `owl pr open 4290` and
 	// `owl issue open BAR-4157` then take the same lock and cannot both
-	// build it.
-	plan := planPRWorkspace(cfg, repo, currentRepo(cfg.Remote), n)
+	// build it. A workspace owl already made answers it locally, and
+	// re-opening one asks GitHub nothing, as it never used to.
+	plan, found := existingPRWorkspace(cfg, repo, n)
+	if !found {
+		plan = planPRWorkspace(cfg, repo, currentRepo(cfg.Remote), n)
+	}
 	unlock, err := lockWorkspace(repo, plan.label(n))
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	name, wt, err := ensureWorktree(cfg, repo, n, plan, out)
+	plan, wt, err := ensureWorktree(cfg, repo, n, plan, out)
 	if err != nil {
 		return err
 	}
@@ -53,12 +57,12 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	}
 	ws := workspace{
 		label: plan.label(n),
-		name:  name,
+		name:  plan.name,
 		dir:   wt,
 		first: firstPrompt(cfg, n, plan),
 		env:   env,
 	}
-	return ws.open(cfg, newWindows(cfg, scopeForName(name)), repo, prompt, arrive, out)
+	return ws.open(cfg, newWindows(cfg, scopeForName(plan.name)), repo, prompt, arrive, out)
 }
 
 // workspace is what open and start act on once its worktree exists —
@@ -213,6 +217,41 @@ func (p prWorkspace) label(n int) string {
 	return "pr-" + strconv.Itoa(n)
 }
 
+// existingPRWorkspace is the workspace owl has already made for PR n,
+// read off the disk without asking GitHub anything: the directory
+// names it, and the branch inside says what it is — only a copy is
+// ever checked out under a `pr-<N>` branch, so anything else there is
+// your own work.
+//
+// Re-opening one is the commonest thing the list does and it used to
+// cost nothing, so it still does. A PR of yours that resolved to its
+// feature is deliberately not found here: that needs the branch, and
+// the branch needs GitHub.
+func existingPRWorkspace(cfg Config, repo string, n int) (prWorkspace, bool) {
+	list, err := listWorktrees(repo)
+	if err != nil {
+		return prWorkspace{}, false
+	}
+	for _, wt := range list {
+		if wt.Prunable {
+			continue
+		}
+		h := wt.handle()
+		if h == "" || !matchesPR(h, n) {
+			continue
+		}
+		// Detached counts as a copy: review worktrees often end up that
+		// way, and there is no branch to say otherwise.
+		p := prWorkspace{name: filepath.Base(wt.Path), branch: wt.Branch,
+			own: wt.Branch != "" && !matchesPR(wt.Branch, n)}
+		if p.own {
+			p.key = issueKeyFor(wt.Branch, cfg.Linear.Team)
+		}
+		return p, true
+	}
+	return prWorkspace{}, false
+}
+
 // planPRWorkspace decides what PR n's workspace is. slug is the GitHub
 // owner/name the PR lives in ("" when unknown).
 //
@@ -248,14 +287,11 @@ func planPRWorkspace(cfg Config, repo, slug string, n int) prWorkspace {
 		}
 		return name
 	}
-	// gh is missing, or offline, or the PR is not visible: nothing is
-	// known about the head, and a copy is the only workspace owl can
-	// build without it.
-	if !ok || facts.HeadRefName == "" {
-		name := named()
-		return prWorkspace{name: name, branch: name}
-	}
-	if facts.CrossRepo || facts.Author.Login == "" || facts.Author.Login != currentUser() {
+	// A copy is what someone else's PR gets, and what owl falls back to
+	// when it cannot know better: gh missing, offline, the PR not
+	// visible. A fork's head is not on this remote, so there is nothing
+	// local to check out even when the PR is yours.
+	if !ok || facts.HeadRefName == "" || !facts.Mine || facts.CrossRepo {
 		name := named()
 		return prWorkspace{name: name, branch: name}
 	}
@@ -276,12 +312,18 @@ func planPRWorkspace(cfg Config, repo, slug string, n int) prWorkspace {
 }
 
 // ensureWorktree makes sure the planned workspace exists and returns
-// its name and path. It runs under the lock and looks again before it
-// creates: another owl may have built it between the plan and the lock.
-func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer) (name, path string, err error) {
+// the plan as it settled, with its path. It runs under the lock and
+// looks again before it creates: another owl may have built it between
+// the plan and the lock.
+//
+// The plan comes back corrected rather than as it went in, because
+// what is reused may not be what was planned — the branch actually
+// checked out is what the prompt and the hook must be told about, not
+// the one owl would have used had it built the workspace itself.
+func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer) (prWorkspace, string, error) {
 	list, err := listWorktrees(repo)
 	if err != nil {
-		return "", "", err
+		return p, "", err
 	}
 	// The branch decides, and it is asked first — in a pass of its own,
 	// so that a `pr-<N>` copy left over from before does not win by
@@ -298,7 +340,8 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 			if filepath.Dir(wt.Path) != filepath.Join(repo, cfg.WorktreesDir) {
 				fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", p.branch, cfg.WorktreesDir, wt.Path)
 			}
-			return filepath.Base(wt.Path), wt.Path, nil
+			p.name = filepath.Base(wt.Path)
+			return p, wt.Path, nil
 		}
 	}
 	for _, wt := range list {
@@ -306,12 +349,16 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 			continue
 		}
 		if h := wt.handle(); h != "" && matchesPR(h, n) {
-			return h, wt.Path, nil
+			// A copy owl made earlier, and the branch in it is not the one
+			// the plan named: the prompt and the hook get what is really
+			// checked out here. Whose the PR is does not change with it.
+			p.name, p.branch = h, wt.Branch
+			return p, wt.Path, nil
 		}
 	}
-	path = filepath.Join(repo, cfg.WorktreesDir, p.name)
+	path := filepath.Join(repo, cfg.WorktreesDir, p.name)
 	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {
-		return "", "", err
+		return p, "", err
 	}
 	// A worktree whose directory is gone keeps its registration, and
 	// that registration still holds its branch: `worktree add` would
@@ -322,15 +369,15 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 		// `+`: the branch is owl's own, and one left behind by a
 		// hand-removed worktree may not fast-forward to today's head.
 		if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, p.branch)); err != nil {
-			return "", "", err
+			return p, "", err
 		}
 		if _, err := git(repo, "worktree", "add", path, p.branch); err != nil {
-			return "", "", err
+			return p, "", err
 		}
-		return p.name, path, nil
+		return p, path, nil
 	}
 	if _, err := git(repo, "fetch", "--quiet", cfg.Remote); err != nil {
-		return "", "", err
+		return p, "", err
 	}
 	switch {
 	case refExists(repo, "refs/heads/"+p.branch):
@@ -345,14 +392,14 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 		// a ref, and under the branch's own name it is still the work.
 		fmt.Fprintf(out, "fetching PR #%d into %s as %s\n", n, path, p.branch)
 		if _, err := git(repo, "fetch", cfg.Remote, fmt.Sprintf("+pull/%d/head:%s", n, p.branch)); err != nil {
-			return "", "", err
+			return p, "", err
 		}
 		_, err = git(repo, "worktree", "add", path, p.branch)
 	}
 	if err != nil {
-		return "", "", err
+		return p, "", err
 	}
-	return p.name, path, nil
+	return p, path, nil
 }
 
 // excludeFromStatus adds the worktrees directory to the repo's
@@ -396,33 +443,58 @@ type prFacts struct {
 	Title       string `json:"title"`
 	HeadRefName string `json:"headRefName"`
 	CrossRepo   bool   `json:"isCrossRepository"`
-	Author      struct {
-		Login string `json:"login"`
-	} `json:"author"`
+	Mine        bool   `json:"viewerDidAuthor"`
 }
+
+// prFactsQuery reads the four facts in one round trip. `pr view` can
+// answer three of them but not the fourth: it has no viewerDidAuthor,
+// so knowing whose the PR is would mean a second call to ask who you
+// are, on an action that should feel instant.
+const prFactsQuery = `query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){pullRequest(number:$n){title headRefName isCrossRepository viewerDidAuthor}}}`
 
 // lookupPR asks gh about the PR; ok is false when gh is missing or
 // fails (offline, unauthenticated), and open then falls back to the
 // workspace it can build without knowing anything: a copy at `pr-<N>`.
+//
 // The repo is passed explicitly when known: gh's own guess fails in a
 // clone with several remotes, and with `remote: upstream` it would
-// answer for the fork.
+// answer for the fork. Without a slug there is no owner and name to
+// query with, so that case takes the two-call road.
 func lookupPR(repo, slug string, n int) (prFacts, bool) {
-	args := []string{"pr", "view", strconv.Itoa(n)}
-	if slug != "" {
-		args = append(args, "--repo", slug)
+	if owner, name, ok := strings.Cut(slug, "/"); ok && owner != "" && name != "" {
+		var r struct {
+			Data struct {
+				Repository struct {
+					PullRequest *prFacts `json:"pullRequest"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		cmd := ghIn(repo, "api", "graphql", "-f", "query="+prFactsQuery,
+			"-F", "owner="+owner, "-F", "name="+name, "-F", "n="+strconv.Itoa(n))
+		if out, err := cmd.Output(); err == nil {
+			if json.Unmarshal(out, &r) == nil && r.Data.Repository.PullRequest != nil {
+				return *r.Data.Repository.PullRequest, true
+			}
+		}
+		return prFacts{}, false
 	}
-	cmd := exec.Command("gh", append(args, "--json", "title,headRefName,isCrossRepository,author")...)
-	cmd.Dir = repo
+	cmd := ghIn(repo, "pr", "view", strconv.Itoa(n), "--json", "title,headRefName,isCrossRepository,author")
 	out, err := cmd.Output()
 	if err != nil {
 		return prFacts{}, false
 	}
-	var f prFacts
+	var f struct {
+		prFacts
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+	}
 	if err := json.Unmarshal(out, &f); err != nil {
 		return prFacts{}, false
 	}
-	return f, true
+	facts := f.prFacts
+	facts.Mine = f.Author.Login != "" && f.Author.Login == currentUser()
+	return facts, true
 }
 
 // slugify turns a title into a directory-safe suffix: lowercase ASCII

@@ -1827,9 +1827,15 @@ func (m model) legend() string {
 	case "project":
 		return m.projectLegend()
 	}
+	// The two panes of the PR list carry different glyphs because they
+	// answer different questions, so the legend follows the focus the
+	// way the keys do.
+	if m.mineFocus {
+		return m.mineLegend()
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
-		fmt.Sprintf("  %s   worktree present for pr-<N>[-…] branch", styleWorktree.Render("⎇")),
+		fmt.Sprintf("  %s   a worktree exists for this row", styleWorktree.Render("⎇")),
 		fmt.Sprintf("  %s   Claude working — actively processing a turn", styleClaudeWorking.Render("©")),
 		fmt.Sprintf("  %s   Claude blocked — waiting on you (permission, question, plan approval)", styleClaudeBlocked.Render("©")),
 		fmt.Sprintf("  %s  Claude done — unread (result to view; ack by focusing the window)", styleClaudeDone.Render("©")+styleClaudeDone.Render("*")),
