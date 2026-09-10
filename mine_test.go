@@ -236,3 +236,55 @@ func TestPanesDoNotMoveWhenFocusDoes(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckTheReviewFiresOnYourOwnPR: `f` is gated on the work having
+// been started, and that gate used to look the workspace up by
+// `pr-<N>`. One of your own is named for its branch, so the lookup
+// found nothing and the key did nothing at all — silently, which is
+// the worst way for a key to fail.
+func TestCheckTheReviewFiresOnYourOwnPR(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.me = "me"
+	m.repoDir = t.TempDir()
+	mine := ownPR(4290, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 1, false)
+	mine.HeadRefName = "bar-4157-drop-legacy-tenant-shim"
+	m.mine = []PR{mine}
+	m.prs = []PR{{Number: 1, Title: "theirs", HeadRefName: "a"}}
+	m.width, m.height, m.ready = 140, 30, true
+	m.resizeViewport()
+
+	// Onto the mine pane and onto the row.
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = next.(model)
+	m.cursor = 1
+	row, ok := m.selectedRow()
+	if !ok || !row.mine {
+		t.Fatalf("not on a mine row: %+v", row)
+	}
+
+	f := m.bindings()[0]
+	if f.When != whenConversation {
+		t.Fatalf("the f binding is not gated on a conversation: %+v", f)
+	}
+	// Nothing started: the key is correctly a no-op.
+	if m.started(row) {
+		t.Error("a PR with no workspace reads as started")
+	}
+	// The workspace exists under the branch's name, not the PR's.
+	m.localState = map[string]LocalState{
+		"bar-4157-drop-legacy-tenant-shim": {
+			Worktree: "/repo/.worktrees.local/bar-4157-drop-legacy-tenant-shim",
+			Branch:   "bar-4157-drop-legacy-tenant-shim",
+			Window:   "bar-4157-drop-legacy-tenant-shim",
+		},
+	}
+	if !m.started(row) {
+		t.Error("f does not fire on your own PR whose workspace is open")
+	}
+	// And pressing it launches something rather than falling through.
+	before := len(m.inflight)
+	next, cmd := m.press(f)
+	if cmd == nil || len(next.(model).inflight) != before+1 {
+		t.Errorf("press did nothing: inflight %d -> %d", before, len(next.(model).inflight))
+	}
+}

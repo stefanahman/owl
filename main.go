@@ -19,6 +19,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -770,25 +771,17 @@ func (m model) bindings() []Binding {
 func (m model) press(b Binding) (tea.Model, tea.Cmd) {
 	var id, label, text string
 	var ok bool
+	row, _ := m.selectedRow()
+	if b.When == whenConversation && !m.started(row) {
+		return m, nil
+	}
 	switch {
 	case m.selectedPR() != nil:
 		pr := m.selectedPR()
-		if b.When == whenConversation {
-			ls := findLocalForPR(m.localState, pr.Number)
-			if ls.Window == "" && !hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, pr.Number) {
-				return m, nil
-			}
-		}
 		id, label = strconv.Itoa(pr.Number), fmt.Sprintf("#%d", pr.Number)
 		text, ok = b.forPR(m.repo, pr)
 	case m.selectedIssue() != nil:
 		is := m.selectedIssue()
-		if b.When == whenConversation {
-			ls := findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, is.Key) })
-			if ls.Window == "" && ls.Worktree == "" && (m.repoDir == "" || !hasConversationFor(filepath.Join(m.repoDir, m.cfg.WorktreesDir, is.Branch))) {
-				return m, nil
-			}
-		}
 		id, label = is.Key, is.Key
 		text, ok = b.forIssue(m.repo, is)
 	default:
@@ -1352,6 +1345,45 @@ func (m model) localOf(r visibleRow) LocalState {
 		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project) })
 	}
 	return LocalState{}
+}
+
+// started reports whether a row's work has been begun — a worktree or
+// a window for it, or a conversation Claude kept on disk after the
+// workspace was closed. It is what `when: conversation` gates on.
+//
+// It asks localOf rather than building a name from the row's number,
+// which is what `f` on one of your own PRs used to do: that workspace
+// is named for the branch, so a lookup by `pr-<N>` found nothing and
+// the key did nothing at all.
+func (m model) started(r visibleRow) bool {
+	if r.header() {
+		return false
+	}
+	if ls := m.localOf(r); ls.Window != "" || ls.Worktree != "" {
+		return true
+	}
+	if m.repoDir == "" {
+		return false
+	}
+	// Nothing local: Claude may still hold the conversation from a
+	// workspace that has been closed since, under the directory that
+	// workspace had.
+	switch {
+	case r.issue != nil:
+		return hasConversationFor(filepath.Join(m.repoDir, m.cfg.WorktreesDir, r.issue.Branch))
+	case r.pr != nil && r.mine:
+		// One of yours has two possible names and the TUI cannot ask
+		// GitHub which: the branch's, when it carries an issue key, and
+		// `pr-<N>-<slug>` when it does not. Both are cheap to look for.
+		if r.pr.HeadRefName != "" &&
+			hasConversationFor(filepath.Join(m.repoDir, m.cfg.WorktreesDir, path.Base(r.pr.HeadRefName))) {
+			return true
+		}
+		return hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, r.pr.Number)
+	case r.pr != nil:
+		return hasPriorConversation(m.repoDir, m.cfg.WorktreesDir, r.pr.Number)
+	}
+	return false
 }
 
 // jumpToNextAttention advances the cursor to the next row that wants
