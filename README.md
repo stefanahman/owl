@@ -117,6 +117,48 @@ Set `default_repo` in the config to start owl from anywhere. Outside a
 multiplexer, `open` prints `attach with: …` instead of taking you
 there.
 
+## Telling you work arrived (`owl pr --check`)
+
+The list is only awake while you are watching it — under tmux the popup
+closes the moment you open a review — so a PR that lands in your court
+while it is shut is exactly the one worth hearing about. `owl pr
+--check` is that, without a TUI: it fetches, says what has **arrived**
+since owl last looked, and leaves the cache as the new baseline.
+
+```sh
+$ owl pr --check
+#4291 todo             add billing migration
+#4242 waiting for you  ci: cache the monorepo
+```
+
+Run it from launchd, cron, or tmux's `status-interval` — owl stays a
+command and never becomes a daemon.
+
+A transition, not a state: a PR that has sat in your court since the
+last look is not news, and announcing the standing set every five
+minutes is how a notification becomes something you ignore. The
+baseline is the same cache the list reads, so **opening owl counts as
+having seen it**, and a first run on a cold cache is silent rather than
+a morning's worth at once.
+
+What comes out is yours to decide:
+
+```yaml
+hooks:
+  attention: 'terminal-notifier -title owl -message "$OWL_SUMMARY"'
+```
+
+with `OWL_ARRIVED` (how many), `OWL_ARRIVED_PRS` (`4291,4242`),
+`OWL_WAITING` (how many are in your court in total), `OWL_SUMMARY`,
+`OWL_REPO` and `OWL_MUX` set — and a mapping for one per multiplexer,
+as `after_open` takes. With no hook configured owl uses the
+multiplexer's own notification, which already works on all three.
+
+It deliberately says nothing about agents. An agent blocked or finished
+is attention too, and `n` jumps to it — but Claude Code already posts
+those to the multiplexer's notifications, and owl repeating them would
+tell you twice. This is the half nobody else watches.
+
 Two companions, each optional:
 
 - [claude-status](https://github.com/stefanahman/claude-status) writes

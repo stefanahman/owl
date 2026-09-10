@@ -1908,6 +1908,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
        owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
+       owl pr --check                   say what has arrived in your court since owl last looked, for a scheduler
        owl issue                        the issues assigned to you, from Linear
        owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
        owl issue start <KEY> [--prompt TEXT] the same without going there
@@ -1956,7 +1957,7 @@ func main() {
 			args = args[1:]
 			if len(args) > 0 {
 				switch args[0] {
-				case "open", "start", "close":
+				case "open", "start", "close", "--check":
 				default:
 					exitOn(usageError("pr: unknown command " + args[0]))
 				}
@@ -2024,6 +2025,8 @@ func main() {
 		// change, and the failure would surface on Enter, an hour in.
 		exitOn(newWindows(cfg, reviews).Ping())
 		runTUI(initialModel(cfg))
+	case args[0] == "--check":
+		err = runCheck(cfg, os.Stdout)
 	case args[0] == "open":
 		err = runOpen(cfg, args[1:], os.Stdout, true)
 	case args[0] == "start":

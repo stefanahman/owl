@@ -276,11 +276,20 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 // between qualifiers, ISSUE_ADVANCED returns the union.
 func (m model) fetchPRs() tea.Msg {
 	gen := m.fetchGen // the round this fetch belongs to
-	repo := m.repo
-	if repo == "" {
+	if m.repo == "" {
 		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
 	}
+	prs, err := openPRs(m.repo)
+	if err != nil {
+		return errMsg{gen, err}
+	}
+	return prsMsg{gen, prs}
+}
 
+// openPRs is the fetch itself, without the TUI around it: `owl pr
+// --check` runs the same query from a scheduler, where there is no
+// model and no fetch round.
+func openPRs(repo string) ([]PR, error) {
 	query := `
 query($q: String!) {
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
@@ -302,9 +311,9 @@ query($q: String!) {
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return errMsg{gen, fmt.Errorf("gh api graphql: %s", ee.Stderr)}
+			return nil, fmt.Errorf("gh api graphql: %s", ee.Stderr)
 		}
-		return errMsg{gen, fmt.Errorf("gh api graphql: %w", err)}
+		return nil, fmt.Errorf("gh api graphql: %w", err)
 	}
 
 	type prNode struct {
@@ -331,7 +340,7 @@ query($q: String!) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &resp); err != nil {
-		return errMsg{gen, fmt.Errorf("parse graphql: %w", err)}
+		return nil, fmt.Errorf("parse graphql: %w", err)
 	}
 
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
@@ -350,7 +359,7 @@ query($q: String!) {
 		pr.Author.Login = n.Author.Login
 		prs = append(prs, pr)
 	}
-	return prsMsg{gen, prs}
+	return prs, nil
 }
 
 // fetchMerged returns PRs merged in the last mergedWindow, so a PR you

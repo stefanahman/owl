@@ -246,6 +246,12 @@ func defaultBindings() BindingsConfig {
 
 type HooksConfig struct {
 	AfterOpen hookByMux `yaml:"after_open"`
+	// Attention runs when `owl pr --check` finds work has arrived. Left
+	// empty, owl falls back to the multiplexer's own notification —
+	// which is why this is a hook and not a setting: owl knows tmux,
+	// herdr and cmux, and everything else is a command with the numbers
+	// in its environment.
+	Attention hookByMux `yaml:"attention"`
 }
 
 // hookByMux is a hook command, one for every multiplexer (a string)
@@ -440,6 +446,8 @@ open_cmd: ""                     # opens URLs; default: open (macOS) or xdg-open
 on_open: auto                    # the TUI once an open starts: auto (quit under tmux, where a popup closes at once and open finishes behind it; stay under herdr and cmux, where the list keeps its own workspace), quit, stay (keep the list), switch (move your client to the reviews, for owl in a tmux window)
 
 hooks:
+  attention: ""                  # runs when owl pr --check finds work has arrived, with OWL_ARRIVED, OWL_ARRIVED_PRS, OWL_WAITING, OWL_SUMMARY, OWL_REPO, OWL_MUX set; a mapping gives one per multiplexer, as after_open does
+                                 # empty: owl uses the multiplexer's own notification instead
   after_open: ""                 # command run after an open with OWL_PR (a review) or OWL_ISSUE and OWL_BRANCH (a feature), OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
                                  # A mapping gives one per multiplexer, e.g. {tmux: spaces focus reviews}: none under herdr and cmux, where the window is already in front
 
