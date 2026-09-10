@@ -106,7 +106,11 @@ type Project struct {
 	URL       string    `json:"url"`
 	Progress  float64   `json:"progress"` // 0..1, Linear's own
 	Scope     int       `json:"scope"`    // issues in it, whoever they belong to
+	Priority  int       `json:"priority"` // 1 urgent … 4 low, 0 none — as an issue's
 	UpdatedAt time.Time `json:"updatedAt"`
+	// TargetDate is Linear's TimelessDate, `2026-11-16` — a day with no
+	// time in it — and "" when the project has no date set.
+	TargetDate string `json:"targetDate"`
 	// CompletedAt is when the project was closed; the zero time while
 	// it is open, since Linear sends null.
 	CompletedAt time.Time `json:"completedAt"`
@@ -117,15 +121,31 @@ type Project struct {
 	Lead struct {
 		Name string `json:"name"`
 	} `json:"lead"`
+	// Initiatives is the layer above the project. Linear allows several;
+	// the row has space for one, and one is what nearly every project
+	// has.
+	Initiatives struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"initiatives"`
 	Milestones struct {
 		Nodes []Milestone `json:"nodes"`
 	} `json:"projectMilestones"`
 }
 
+// Initiative is the initiative the project belongs to, or "".
+func (p Project) Initiative() string {
+	if len(p.Initiatives.Nodes) == 0 {
+		return ""
+	}
+	return p.Initiatives.Nodes[0].Name
+}
+
 // projectFields is what the project query selects. `scope` is the
 // issue count: the issues connection caps at fifty, so counting its
 // nodes would report 50 for a project of 915.
-const projectFields = `id name slugId url progress scope updatedAt completedAt status { name type } lead { name } projectMilestones(first: 50) { nodes { id name progress } }`
+const projectFields = `id name slugId url progress scope priority targetDate updatedAt completedAt status { name type } lead { name } initiatives(first: 1) { nodes { name } } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
 const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt state { name type } project { id name } projectMilestone { id name sortOrder } assignee { name isMe } team { key }`

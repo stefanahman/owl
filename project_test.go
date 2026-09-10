@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"charm.land/lipgloss/v2"
 )
 
 func fixtureProjects() []Project {
@@ -13,6 +15,11 @@ func fixtureProjects() []Project {
 			Progress: progress, Scope: scope, UpdatedAt: time.Now().Add(-age)}
 		p.State.Name, p.State.Type = state, stype
 		p.Lead.Name = "Stefan Åhman"
+		p.Priority = 2
+		p.TargetDate = time.Now().Add(12 * 24 * time.Hour).Format("2006-01-02")
+		p.Initiatives.Nodes = append(p.Initiatives.Nodes, struct {
+			Name string `json:"name"`
+		}{"Capture + Refine"})
 		for i := 0; i < milestones; i++ {
 			p.Milestones.Nodes = append(p.Milestones.Nodes, Milestone{ID: "ms", Name: "M", Progress: 0.5})
 		}
@@ -63,6 +70,10 @@ func TestProjectListRendersSectionsAndColumns(t *testing.T) {
 		"11 ms",
 		"0/917", // scope, not a capped issues connection
 		"1/4",
+		"!!",               // priority 2, the issue list's own glyphs
+		"in 12d",           // the target date, read against today
+		"Capture + Refine", // the initiative above the project
+		"Stefan",           // the lead, which the query already fetched
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("project list lacks %q:\n%s", want, out)
@@ -236,5 +247,73 @@ func TestProjectTable(t *testing.T) {
 	}
 	if err := runProject(cfg, []string{"bogus"}, &out); err == nil {
 		t.Error("unknown project command should fail")
+	}
+}
+
+func TestRelativeDue(t *testing.T) {
+	day := func(d int) string { return time.Now().AddDate(0, 0, d).Format("2006-01-02") }
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{day(0), "today"},
+		{day(1), "in 1d"},
+		{day(12), "in 12d"},
+		{day(21), "in 3w"},
+		{day(120), "in 4mo"},
+		{day(-1), "1d late"},
+		{day(-10), "10d late"},
+		// Not a date Linear would send, and not a reason to render "?"
+		// in a column that is empty on most rows anyway.
+		{"tomorrow", ""},
+	} {
+		if got := relativeDue(c.in); got != c.want {
+			t.Errorf("relativeDue(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// The widest thing the column has to hold.
+	if w := len("10d late"); w != dueWidth {
+		t.Errorf("dueWidth = %d, want %d", dueWidth, w)
+	}
+}
+
+// TestProjectRowShedsColumnsRatherThanWrapping: all four optional
+// columns together are wider than a popup's row. A row that wrapped
+// would cost a line per project, which is the overview.
+func TestProjectRowShedsColumnsRatherThanWrapping(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	// Every width, not a handful: projectFixed is a hand-summed constant
+	// and an off-by-one in it would show at exactly one window size.
+	for width := 60; width <= 220; width++ {
+		m := newProjectModel(defaultConfig(), "acme/example", nil, nil)
+		m.projects, m.issues, m.ready = fixtureProjects(), projectIssues(), true
+		m.width, m.height = width, 30
+		m.resizeViewport()
+		for _, row := range m.visibleProjectRows() {
+			if row.header() {
+				continue
+			}
+			got := lipgloss.Width(m.renderRow(row, true))
+			if got <= width {
+				continue
+			}
+			// Wider than the window. The one acceptable reason is that
+			// there is nothing left to shed: every optional column gone
+			// and the name already at its floor. Below about eighty
+			// cells the columns that are always there — the bar, the
+			// counts, the state — no longer fit beside a 24-cell name,
+			// and that is true of this row with or without the four
+			// added here.
+			if c := m.projectCols(); c != (projectCols{}) || m.projectNameWidth() != nameFloor {
+				t.Errorf("at width %d a row is %d wide with %+v still on it:\n%s",
+					width, got, c, stripANSI(m.renderRow(row, true)))
+			}
+		}
+		// And what it sheds, it sheds in order.
+		c := m.projectCols()
+		if c.lead > 0 && c.initiative == 0 {
+			t.Errorf("at width %d the lead outlived the initiative: %+v", width, c)
+		}
+		if c.due > 0 && c.priority == 0 {
+			t.Errorf("at width %d the date outlived the priority: %+v", width, c)
+		}
 	}
 }

@@ -420,25 +420,46 @@ to you, and prints its key and URL.
 ## Projects (`owl project`)
 
 ```
-owl · projects · acme/app                                   updated just now
+owl · projects · acme/app                                              updated just now
 14 projects · 6 in progress · 1 planned · 7 backlog · 15 issues yours
-────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────────────────────────────────
 In progress
-▸ Sequential Capture redesign          ▓▓▓▓▓▓░░░░  62%  12/127  11 ms
-  Emission Categories — Plumbing       ▓▓▓▓▓▓▓░░░  71%   0/6     4 ms
-  Bardo Backstage (BACKEND)            ▓░░░░░░░░░   8%   0/917         Paused
+▸ !!  Sequential Capture redesign   ▓▓▓▓▓▓░░░░  62%  12/127  11 ms  in 12d   Capture + Refine  Stefan
+      Emission Categories — Plumbing ▓▓▓▓▓▓▓░░░ 71%   0/6     4 ms           Backstage         Emilio
+  !   Bardo Backstage (BACKEND)     ▓░░░░░░░░░   8%   0/917         3d late  Backstage         Stefan  Paused
 Planned
-  Endpoint Validation w. LLM errors    ▓▓▓▓▓░░░░░  50%   2/4
+      Endpoint Validation w. LLM errors ▓▓▓▓▓░░░ 50%  2/4                    Other             Emilio
 Backlog
-  Sven v2 — Deterministic harness      ▓▓▓░░░░░░░  28%   0/18    6 ms
+      Sven v2 — Deterministic harness ▓▓▓░░░░░░ 28%   0/18    6 ms           Other             Stefan
 ```
 
 The projects you work in, in three sections by status, newest change
-first. A row shows the name, Linear's own progress as ten cells, **your
-open issues over every issue the project holds**, the milestone count,
+first. A row shows the priority, the name, Linear's own progress as ten
+cells, **your open issues over every issue the project holds**, the
+milestone count, the target date, the initiative above it, the lead,
 and the state name only where the section does not already say it — a
 status named Paused but typed `started` sits under In progress and says
 so.
+
+Priority uses the issue list's own `!!!`/`!!`/`!`/`-`, so the two lists
+read alike. The **target date** is read against today — `in 12d`,
+`today`, `3d late` — and a date already past is the one thing on the
+row that is not dim, because it is the one thing that is not merely
+information. The **initiative** is the layer above the project, which
+is what makes a long list scannable: half a dozen names covering
+everything, rather than fourteen unrelated ones.
+
+Most of these are blank on most rows, and that is the honest rendering
+— an empty priority means nobody set one. Four extra columns are also
+wider than the row a popup gets, so rather than wrapping, the row
+**sheds them as the window narrows**: the lead first, then the
+initiative, then the date, and the priority last.
+
+Two fields that look made for this list are not on it, because the data
+is not there to justify a column: Linear's project `health`
+(onTrack/atRisk/offTrack) and `lastUpdate` were each set on **one
+project in twenty-five** in the workspace this was built against. They
+are a `projectFields` entry away if your workspace fills them in.
 
 A project in one of `project.dim_statuses` renders **dim throughout** —
 name, bar and counts — while staying in the section its status type

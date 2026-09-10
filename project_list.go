@@ -127,21 +127,104 @@ func (m model) mineIn(p Project) int {
 // The project row's columns. As on the issue row, everything but the
 // name is fixed width and the name takes what the window leaves.
 const (
-	barCells       = 10
-	mineWidth      = 9
-	milestoneWidth = 6
-	nameFloor      = 24
-	nameCeiling    = 60
-	// projectFixed is everything on the row but the name: cursor, the
-	// bar, the percentage, the counts, the milestones, the state, gaps.
-	projectFixed = 2 + 5 + 2 + barCells + 1 + 4 + 2 + mineWidth + 2 + milestoneWidth + 1 + stateWidth
+	barCells        = 10
+	mineWidth       = 9
+	milestoneWidth  = 6
+	nameFloor       = 24
+	nameCeiling     = 60
+	priorityWidth   = 3  // !!!
+	dueWidth        = 8  // "10d late"
+	initiativeWidth = 16 // "Capture + Refine"
+	leadWidth       = 9  // a given name, as the issue row's assignee
+	// projectFixed is everything on the row that is always there:
+	// cursor, the bar, the percentage, the counts, the milestones, the
+	// state, gaps.
+	projectFixed = 2 + 5 + 2 + barCells + 1 + 4 + 2 + mineWidth + 2 + milestoneWidth + 2 + stateWidth
 )
+
+// projectCols is how much each of the optional columns gets, 0 for one
+// that does not fit.
+//
+// All four together are wider than the row a popup gets, so rather
+// than wrapping — which would cost a line per project and undo the
+// overview — the row sheds them, least telling first: the lead, whose
+// name is on most rows the same one; then the initiative; then the
+// date; and last the priority, which is three cells and the thing you
+// asked the list for.
+type projectCols struct{ priority, due, initiative, lead int }
+
+// width is what the optional columns cost, each with the gap before
+// it: two for the three that trail the row, one for the priority,
+// which sits tight against the name like the issue row's does.
+func (c projectCols) width() int {
+	n := 0
+	if c.priority > 0 {
+		n += c.priority + 1
+	}
+	for _, w := range []int{c.due, c.initiative, c.lead} {
+		if w > 0 {
+			n += w + 2
+		}
+	}
+	return n
+}
+
+func (m model) projectCols() projectCols {
+	c := projectCols{priorityWidth, dueWidth, initiativeWidth, leadWidth}
+	if m.width == 0 {
+		return c
+	}
+	for _, drop := range []*int{&c.lead, &c.initiative, &c.due, &c.priority} {
+		if projectFixed+c.width()+nameFloor <= m.width {
+			break
+		}
+		*drop = 0
+	}
+	return c
+}
 
 func (m model) projectNameWidth() int {
 	if m.width == 0 {
 		return 44
 	}
-	return clampInt(m.width-projectFixed, nameFloor, nameCeiling)
+	return clampInt(m.width-projectFixed-m.projectCols().width(), nameFloor, nameCeiling)
+}
+
+// finished reports whether a project has left the board, whichever way
+// it left.
+func finished(stateType string) bool {
+	return stateType == "completed" || stateType == "canceled"
+}
+
+// relativeDue reads Linear's TimelessDate against today: `in 12d`,
+// `today`, `10d late`. "" when the project has no target date, which
+// is most of them.
+//
+// Whole days, both sides: a target date carries no time, so measuring
+// from this instant would call something due this evening "in 0d" and
+// something due at dawn "late".
+func relativeDue(date string) string {
+	if date == "" {
+		return ""
+	}
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return ""
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, t.Location())
+	days := int(t.Sub(today).Hours() / 24)
+	switch {
+	case days == 0:
+		return "today"
+	case days < 0:
+		return fmt.Sprintf("%dd late", -days)
+	case days < 14:
+		return fmt.Sprintf("in %dd", days)
+	case days < 70:
+		return fmt.Sprintf("in %dw", days/7)
+	}
+	return fmt.Sprintf("in %dmo", days/30)
 }
 
 // progressBar draws Linear's own fraction as ten cells. A parked
@@ -196,17 +279,53 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 	if dim {
 		name = styleDim.Render(name)
 	}
-	return strings.TrimRight(fmt.Sprintf(
-		"%s%s %s  %s %3.0f%%  %s  %s %s",
+	// A date already past is the one thing on this row that is not just
+	// information, so it is the one thing that is not dim — but only
+	// while the project can still act on it. A finished project's target
+	// date is history, and a completed row reading "10d late" in red
+	// asks for something that cannot be done.
+	cols := m.projectCols()
+	due, dueStyle := "", styleDim
+	if !finished(p.State.Type) {
+		due = relativeDue(p.TargetDate)
+		if strings.HasSuffix(due, "late") && !dim {
+			dueStyle = styleChangesReqd
+		}
+	}
+	prio := ""
+	if cols.priority > 0 {
+		prio = cell(priorityMark(p.Priority), cols.priority, styleDim) + " "
+	}
+	out := fmt.Sprintf(
+		"%s%s %s%s  %s %3.0f%%  %s  %s",
 		cursor,
 		workspaceBadges(m.localOf(row), starting),
+		prio,
 		name,
 		progressBar(p.Progress, dim),
 		p.Progress*100,
 		cell(counts, mineWidth, style),
 		cell(milestones, milestoneWidth, styleDim),
-		cell(state, stateWidth, styleDim),
-	), " ")
+	)
+	for _, c := range []struct {
+		text  string
+		width int
+		style lipgloss.Style
+	}{
+		{due, cols.due, dueStyle},
+		{p.Initiative(), cols.initiative, styleDim},
+		{firstWord(p.Lead.Name), cols.lead, styleDim},
+		{state, stateWidth, styleDim},
+	} {
+		if c.width > 0 {
+			// Two spaces, as between every other pair on this row. One is
+			// invisible when the text fills its column exactly — which
+			// "Capture + Refine" does, at sixteen — and two fields then
+			// read as one.
+			out += "  " + cell(c.text, c.width, c.style)
+		}
+	}
+	return strings.TrimRight(out, " ")
 }
 
 // projectCountsSummary is the idle-state action row of the project list.
