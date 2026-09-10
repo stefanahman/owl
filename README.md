@@ -315,13 +315,26 @@ SHARP-0. A branch closing several issues shows all of them, newest
 first, and opens into the newest one's workspace: one branch is one
 piece of work and gets one workspace.
 
-Two consequences worth knowing. The window's container follows the
-**workspace name**, not the command that opened it, so one worktree can
-never end up with a window among the reviews and another among the
-features, each with its own agent. And `owl pr close <N>` on a PR that
-resolved to a feature refuses and says so: closing a feature deletes a
-branch whose commits exist nowhere else, and `owl issue close` is the
-one that checks for them first.
+**The prompt follows the workspace too.** `/owl:review` is a procedure
+for someone else's pull request — it ends in a review posted with `gh`,
+which you cannot do to yourself — so your own PR opens on `mine.prompt`
+instead: read the commits, the checks, the review comments and the
+worktree, then say what is done, what is left, and what is stopping it
+from landing, and wait.
+
+That fires only where there is nothing to come back to. A workspace
+that already holds a conversation resumes it with `-c` and is sent no
+prompt at all, so the feature you have been building all morning opens
+on its own transcript, not on an instruction. The first prompt is for
+arriving somewhere for the first time.
+
+Two more consequences. The window's container follows the **workspace
+name**, not the command that opened it, so one worktree can never end
+up with a window among the reviews and another among the features, each
+with its own agent. And `owl pr close <N>` on a PR that resolved to a
+feature refuses and says so: closing a feature deletes a branch whose
+commits exist nowhere else, and `owl issue close` is the one that
+checks for them first.
 
 `open` is idempotent: it creates what is missing and selects the
 window. A workspace is named once, from the PR title at first open,
@@ -671,6 +684,9 @@ agent:
 issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
+
+mine:                            # a PR of your own, from the second pane of `owl pr`
+  prompt: "Please read up on…"   # first prompt of a *fresh* conversation on one; {pr}, {branch}, {key}
 
 project:
   session: projects              # tmux: one window per project — the conversation above the issues

@@ -55,7 +55,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		label: plan.label(n),
 		name:  name,
 		dir:   wt,
-		first: strings.ReplaceAll(cfg.Agent.Prompt, "{pr}", strconv.Itoa(n)),
+		first: firstPrompt(cfg, n, plan),
 		env:   env,
 	}
 	return ws.open(cfg, newWindows(cfg, scopeForName(name)), repo, prompt, arrive, out)
@@ -168,6 +168,28 @@ func parseOpenArgs(noun, what string, args []string) (id, prompt string, err err
 		return "", "", usageError(noun + " open: " + what + " required")
 	}
 	return id, prompt, nil
+}
+
+// firstPrompt is what a *fresh* conversation in the workspace opens
+// on. A workspace that already holds one resumes it and is sent no
+// prompt at all (startLine), so this is the prompt for arriving
+// somewhere for the first time and nothing else.
+//
+// The prompt follows the workspace, like its name and its container:
+// `/owl:review` is a procedure for someone else's pull request — it
+// ends in a review posted with gh — and pointing it at your own work
+// asks the agent to review you. Your own opens on where the work
+// stands instead, which is the question the mine pane asks.
+func firstPrompt(cfg Config, n int, p prWorkspace) string {
+	prompt := cfg.Agent.Prompt
+	if p.own {
+		prompt = cfg.Mine.Prompt
+	}
+	return strings.NewReplacer(
+		"{pr}", strconv.Itoa(n),
+		"{branch}", p.branch,
+		"{key}", p.key,
+	).Replace(prompt)
 }
 
 // prWorkspace is the workspace a PR gets, decided before any of it is

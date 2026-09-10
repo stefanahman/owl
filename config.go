@@ -38,6 +38,7 @@ type Config struct {
 	Bindings     BindingsConfig `yaml:"bindings"`
 	Linear       LinearConfig   `yaml:"linear"`
 	Issue        IssueConfig    `yaml:"issue"`
+	Mine         MineConfig     `yaml:"mine"`
 	Project      ProjectConfig  `yaml:"project"`
 	Groups       GroupsConfig   `yaml:"groups"`
 }
@@ -98,6 +99,14 @@ func (p ProjectConfig) dimmed(status string) bool {
 		}
 	}
 	return false
+}
+
+// MineConfig is the pane of your own PRs. It has no session of its
+// own — one of your PRs opens into its branch's workspace, which is a
+// feature's window or a review's depending on the branch — only the
+// first prompt of a conversation that starts there.
+type MineConfig struct {
+	Prompt string `yaml:"prompt"`
 }
 
 // LinearConfig is the issue tracker: the key, as a reference, and the
@@ -435,6 +444,9 @@ issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (BAR-123)
 
+mine:                            # a PR of your own, opened from the second pane of ` + "`owl pr`" + `
+  prompt: "Please read up on where this work stands before changing anything. The branch is {branch} and its pull request is #{pr}: read the commits against the base, the PR's checks, its review comments and whether it merges cleanly, and anything uncommitted in the worktree. Then tell me what is done, what is left, and what is stopping it from landing — and wait for me. Do not review this PR: it is mine, not one I was asked to look at."    # first prompt of a *fresh* conversation on a PR of your own; {pr}, {branch}, and {key} (empty when the branch carries no issue). A workspace that already holds a conversation resumes it instead and is sent no prompt at all, so this fires when you arrive somewhere for the first time
+
 project:
   session: projects              # tmux: one window per project lives here — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
@@ -528,6 +540,7 @@ func defaultConfig() Config {
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
+	c.Mine = MineConfig{Prompt: "Please read up on where this work stands before changing anything. The branch is {branch} and its pull request is #{pr}: read the commits against the base, the PR's checks, its review comments and whether it merges cleanly, and anything uncommitted in the worktree. Then tell me what is done, what is left, and what is stopping it from landing — and wait for me. Do not review this PR: it is mine, not one I was asked to look at."}
 	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}", DimStatuses: []string{"Paused"}}
 	c.Groups = GroupsConfig{
 		Reviews:  GroupStyle{Color: "#00afff", Icon: "eye"},

@@ -55,6 +55,39 @@ func TestScopeForName(t *testing.T) {
 	}
 }
 
+func TestFirstPromptFollowsTheWorkspace(t *testing.T) {
+	cfg := defaultConfig()
+
+	theirs := prWorkspace{name: "pr-42-fix", branch: "pr-42-fix"}
+	if got := firstPrompt(cfg, 42, theirs); got != "/owl:review 42" {
+		t.Errorf("someone else's PR opens on %q, want the review skill", got)
+	}
+
+	// Yours never opens on the review skill: that procedure ends in a
+	// review posted with gh, and you cannot review yourself.
+	yours := prWorkspace{name: "bar-4157-shim", branch: "bar-4157-shim", key: "BAR-4157", own: true}
+	got := firstPrompt(cfg, 4290, yours)
+	if strings.Contains(got, "/owl:review") {
+		t.Errorf("your own PR opens on the review skill: %q", got)
+	}
+	for _, want := range []string{"#4290", "bar-4157-shim"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the prompt does not name %s: %q", want, got)
+		}
+	}
+	// A branch with no issue leaves no placeholder standing.
+	if got := firstPrompt(cfg, 9, prWorkspace{name: "pr-9-x", branch: "tidy-imports", own: true}); strings.Contains(got, "{") {
+		t.Errorf("an unsubstituted placeholder: %q", got)
+	}
+
+	// And none of it fires on a workspace that already holds a
+	// conversation: that resumes, and a resumed conversation is sent no
+	// prompt at all. The first prompt is for arriving somewhere new.
+	if line := startLine(cfg.Agent.Cmd, firstPrompt(cfg, 4290, yours), true, ""); line != cfg.Agent.Cmd+" -c" {
+		t.Errorf("resuming sent a prompt: %q", line)
+	}
+}
+
 // ownFixture is the fixture with PR 42 belonging to you, pushed to
 // head, and BAR configured as the team.
 func ownFixture(t *testing.T, head string) *fixture {
