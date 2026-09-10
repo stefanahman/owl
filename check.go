@@ -78,17 +78,22 @@ func runCheck(cfg Config, out io.Writer) error {
 	// No cache at all is a first run, not a morning's worth of news:
 	// everything in your court would read as having just arrived. Take
 	// the baseline and say nothing.
+	// No cache at all is a first run, not a morning's worth of news:
+	// everything in your court would read as having just arrived. The
+	// count is still true, though, so the hook still hears it — a badge
+	// should be right from the first run, and only the announcement is
+	// suppressed.
 	cached := loadCache(repo)
-	if cached == nil {
-		saveCache(repo, cacheFile{Prs: prs, Me: me, FetchedAt: time.Now()})
-		return nil
+	updated := cacheFile{Prs: prs, Me: me, FetchedAt: time.Now()}
+	var news []PR
+	if cached != nil {
+		news = arrived(cached.Prs, prs, me)
+		// Everything else in the file is the list's, not the check's:
+		// this runs from a scheduler behind your back, and wiping the
+		// merged section or moving the cursor is not its business.
+		updated = *cached
+		updated.Prs, updated.Me, updated.FetchedAt = prs, me, time.Now()
 	}
-	news := arrived(cached.Prs, prs, me)
-	// Everything else in the file is the list's, not the check's: this
-	// runs from a scheduler behind your back, and wiping the merged
-	// section or moving the cursor is not its business.
-	updated := *cached
-	updated.Prs, updated.Me, updated.FetchedAt = prs, me, time.Now()
 
 	// The baseline moves whether or not anything arrived, and before
 	// the hook runs: a hook that fails should not make owl announce the
@@ -104,33 +109,43 @@ func runCheck(cfg Config, out io.Writer) error {
 	for _, pr := range news {
 		fmt.Fprintf(out, "#%-5d %-16s %s\n", pr.Number, pr.MyReviewStatus(me), trim(pr.Title, 60))
 	}
-	if len(news) == 0 {
-		return nil
-	}
 	return announce(cfg, repo, news, waiting, out)
 }
 
-// announce tells the world that work arrived: the configured hook if
-// there is one, else the multiplexer's own notification.
+// announce reports where things stand: the configured hook if there is
+// one, else the multiplexer's own notification.
 //
-// The hook is the agnostic half. owl knows about tmux, herdr and cmux
-// and nothing else, and it should stay that way — a desktop
-// notifier, a status bar of your own, a light on a shelf are a command
-// with the numbers in its environment.
+// The two are shaped differently on purpose, because they are
+// different things. A notification is an **event** — it fires when
+// work arrives and stays quiet otherwise, since one every five minutes
+// saying the same thing is not a notification. A hook is asked about
+// **state**, every run, arrival or not: a badge that can go up must be
+// able to come down, and a hook that only hears about arrivals can
+// raise a count it will never clear.
+//
+// The hook is also the agnostic half. owl knows about tmux, herdr and
+// cmux and should keep knowing only those — a desktop notifier, a
+// sidebar badge, a light on a shelf are a command with the numbers in
+// its environment.
 func announce(cfg Config, repo string, news []PR, waiting int, out io.Writer) error {
 	numbers := make([]string, 0, len(news))
 	for _, pr := range news {
 		numbers = append(numbers, strconv.Itoa(pr.Number))
 	}
 	summary := fmt.Sprintf("%d waiting for you in %s", waiting, repo)
-	if len(news) == 1 {
+	switch {
+	case len(news) == 1:
 		summary = fmt.Sprintf("#%s %s — %d waiting for you", numbers[0], trim(news[0].Title, 40), waiting)
+	case waiting == 0:
+		summary = "nothing waiting for you in " + repo
 	}
 
 	mx := newWindows(cfg, reviews)
 	hook := cfg.Hooks.Attention.For(mx.Kind())
 	if hook == "" {
-		mx.Notify(summary)
+		if len(news) > 0 {
+			mx.Notify(summary)
+		}
 		return nil
 	}
 	env := map[string]string{

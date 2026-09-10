@@ -148,11 +148,40 @@ hooks:
   attention: 'terminal-notifier -title owl -message "$OWL_SUMMARY"'
 ```
 
-with `OWL_ARRIVED` (how many), `OWL_ARRIVED_PRS` (`4291,4242`),
-`OWL_WAITING` (how many are in your court in total), `OWL_SUMMARY`,
-`OWL_REPO` and `OWL_MUX` set — and a mapping for one per multiplexer,
-as `after_open` takes. With no hook configured owl uses the
-multiplexer's own notification, which already works on all three.
+with `OWL_ARRIVED` (how many just arrived), `OWL_ARRIVED_PRS`
+(`4291,4242`), `OWL_WAITING` (how many are in your court in total),
+`OWL_SUMMARY`, `OWL_REPO` and `OWL_MUX` set — and a mapping for one per
+multiplexer, as `after_open` takes.
+
+**The hook runs on every check, arrival or not**, because it is asked
+about state rather than told about an event: a badge that can go up has
+to be able to come down, and a hook that only hears about arrivals
+raises a count it can never clear. `OWL_ARRIVED` is `0` on a quiet run
+and `OWL_WAITING` is still the truth. With no hook configured owl falls
+back to the multiplexer's own notification, and *that* is event-shaped
+— it fires when something arrives and stays quiet otherwise, since one
+every five minutes saying the same thing is not a notification.
+
+Which makes a sidebar badge a hook, not a feature. Under cmux:
+
+```yaml
+hooks:
+  attention: |
+    if [ "$OWL_WAITING" -gt 0 ]; then
+      cmux set-status owl "$OWL_WAITING waiting" --workspace prs \
+        --icon eye.fill --color "#00afff" --priority 80
+    else
+      cmux clear-status owl --workspace prs
+    fi
+```
+
+Two things that decide whether that works. The `--workspace` is not
+optional: a scheduled check has no cmux context of its own, so without
+it the badge lands on whichever workspace happens to be selected. And
+reaching cmux at all from a scheduler needs the app started with
+`CMUX_SOCKET_MODE=allowAll` — the same condition
+[docs/multiplexers.md](docs/multiplexers.md) names for running owl
+outside a cmux terminal.
 
 It deliberately says nothing about agents. An agent blocked or finished
 is attention too, and `n` jumps to it — but Claude Code already posts

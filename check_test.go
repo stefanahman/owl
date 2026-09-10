@@ -118,4 +118,17 @@ func TestAttentionHookGetsTheNumbers(t *testing.T) {
 	if got := strings.TrimSpace(string(b)); got != "2|7,4|5|acme/app" {
 		t.Errorf("hook environment = %q", got)
 	}
+
+	// Nothing arrived, but the standing count is still true and the
+	// hook still hears it — a badge that can go up has to come down.
+	if err := announce(cfg, "acme/app", nil, 0, os.Stdout); err != nil {
+		t.Fatal(err)
+	}
+	b, err = os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(b)); got != "0||0|acme/app" {
+		t.Errorf("hook on a quiet run = %q", got)
+	}
 }
