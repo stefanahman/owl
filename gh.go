@@ -39,6 +39,26 @@ type PR struct {
 		Login string `json:"login"`
 	} `json:"author"`
 
+	// The fields below come from the `mine` fetch only — your own PRs
+	// are asked a different question, so they carry different answers.
+	// Zero on a row from the review list, which never shows them.
+	//
+	// ReviewDecision is GitHub's own verdict: APPROVED,
+	// CHANGES_REQUESTED, REVIEW_REQUIRED. Better than deriving one from
+	// the reviews, because it is the same answer the merge button uses.
+	ReviewDecision string `json:"reviewDecision,omitempty"`
+	// CI is the head commit's status check rollup: SUCCESS, FAILURE,
+	// PENDING, ERROR, EXPECTED, or "" where nothing has reported.
+	CI string `json:"ci,omitempty"`
+	// Mergeable is MERGEABLE, CONFLICTING or UNKNOWN — and it is
+	// UNKNOWN most of the time, because GitHub computes it lazily when
+	// something asks. Worth showing when it is there; never worth
+	// grouping by.
+	Mergeable string `json:"mergeable,omitempty"`
+	// Asked is how many reviewers have been requested and have not yet
+	// answered. Zero on a finished PR means nobody has been asked.
+	Asked int `json:"asked,omitempty"`
+
 	// Reviews is the full review history for this PR (chronological).
 	// We use the full history rather than `latestReviews` because
 	// `latestReviews` is truly the latest per user — including COMMENTED
@@ -357,6 +377,93 @@ query($q: String!) {
 			Reviews:     n.Reviews.Nodes,
 		}
 		pr.Author.Login = n.Author.Login
+		prs = append(prs, pr)
+	}
+	return prs, nil
+}
+
+// mineQuery asks what is blocking your own pull requests, which is a
+// different question from what needs your review and so a different
+// set of fields. reviewDecision is GitHub's own verdict rather than
+// one derived from the reviews, and the rollup is the head commit's,
+// which is the one the merge button reads.
+const mineQuery = `
+query($q: String!) {
+  search(query: $q, type: ISSUE_ADVANCED, first: 100) {
+    nodes {
+      ... on PullRequest {
+        number title body url headRefName headRefOid updatedAt isDraft
+        mergeable reviewDecision
+        author { login }
+        reviewRequests(first: 1) { totalCount }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}`
+
+// minePRs returns your own open pull requests in the repo.
+func minePRs(repo string) ([]PR, error) {
+	cmd := exec.Command("gh", "api", "graphql",
+		"-f", "query="+mineQuery,
+		"-f", fmt.Sprintf("q=repo:%s is:pr is:open author:@me", repo),
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			return nil, fmt.Errorf("gh api graphql: %s", ee.Stderr)
+		}
+		return nil, fmt.Errorf("gh api graphql: %w", err)
+	}
+	var resp struct {
+		Data struct {
+			Search struct {
+				Nodes []struct {
+					Number         int    `json:"number"`
+					Title          string `json:"title"`
+					Body           string `json:"body"`
+					URL            string `json:"url"`
+					HeadRefName    string `json:"headRefName"`
+					HeadRefOid     string `json:"headRefOid"`
+					UpdatedAt      string `json:"updatedAt"`
+					IsDraft        bool   `json:"isDraft"`
+					Mergeable      string `json:"mergeable"`
+					ReviewDecision string `json:"reviewDecision"`
+					Author         struct {
+						Login string `json:"login"`
+					} `json:"author"`
+					ReviewRequests struct {
+						TotalCount int `json:"totalCount"`
+					} `json:"reviewRequests"`
+					Commits struct {
+						Nodes []struct {
+							Commit struct {
+								StatusCheckRollup struct {
+									State string `json:"state"`
+								} `json:"statusCheckRollup"`
+							} `json:"commit"`
+						} `json:"nodes"`
+					} `json:"commits"`
+				} `json:"nodes"`
+			} `json:"search"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return nil, fmt.Errorf("parse graphql: %w", err)
+	}
+	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
+	for _, n := range resp.Data.Search.Nodes {
+		pr := PR{
+			Number: n.Number, Title: n.Title, Body: n.Body, URL: n.URL,
+			HeadRefName: n.HeadRefName, HeadRefOid: n.HeadRefOid,
+			UpdatedAt: n.UpdatedAt, IsDraft: n.IsDraft,
+			Mergeable: n.Mergeable, ReviewDecision: n.ReviewDecision,
+			Asked: n.ReviewRequests.TotalCount,
+		}
+		pr.Author.Login = n.Author.Login
+		if c := n.Commits.Nodes; len(c) > 0 {
+			pr.CI = c[0].Commit.StatusCheckRollup.State
+		}
 		prs = append(prs, pr)
 	}
 	return prs, nil

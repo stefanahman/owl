@@ -25,6 +25,7 @@ import (
 type cacheFile struct {
 	Prs       []PR      `json:"prs"`
 	Merged    []PR      `json:"merged"`
+	Mine      []PR      `json:"mine"`
 	Me        string    `json:"me"`
 	FetchedAt time.Time `json:"fetchedAt"`
 	Cursor    int       `json:"cursor"` // the row the cursor was on at exit; the next start resumes there

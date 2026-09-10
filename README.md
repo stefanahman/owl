@@ -222,6 +222,68 @@ on.
 | `⚠` | someone requested changes |
 | `[draft]` | a draft PR |
 
+## Two panes (`tab`)
+
+The PR list has two, because "what needs my review" and "what is
+stopping mine from landing" are different questions with different
+answers and different keys. `tab` moves between them; the pane you are
+not driving goes dim, so which one has the keys is never in doubt. Each
+keeps its own cursor, so coming back lands where you left.
+
+**The panes do not move.** The review queue is always above, yours
+always below, and `tab` changes only the highlight — a pane that
+swapped places would put the rows you were reading somewhere else every
+time you switched, which is the eye movement two panes exist to save.
+
+```
+To review (2)
+▸ #4302  ⎇ ©  ·   1h  refactor(backstage-desktop): rename the bundled…
+Merged (last 1d)
+  #4247       ✓  16h  fix: stop the Overview and Issues tabs reading…
+Mine (17)
+Blocked on you
+  #4273  ○ ✗ ⚠  19h  feat(capture): mark enrichment stale on edit… [draft]
+  #4003  ✓ ✓ ⚠   2w  feat(sven): safety-filter resilience…
+Ready to merge
+  #4007  ✓ ◐     7m  feat(capture): per-tenant captureEngine override…
+Waiting on reviewers
+  #4299  · ✓     1h  feat(ingest): stamp periodStart/periodEnd…
+Not out for review
+  #4290  ○ ✓     3h  refactor(tenancy): drop the legacy tenant shim
+  #4306  ○ ✓    17h  fix(compile-db): keep captureStatus out… [draft]
+```
+
+The mine pane groups by **what is in the way**, not by review status:
+blocked on you (a red check, changes requested, a conflict), ready to
+merge, waiting on reviewers who have been asked, and not out for review
+— never offered to anyone, which is every draft plus anything you
+marked ready and forgot to request a review on.
+
+Those two wear the same face and are not the same thing: a draft nobody
+was asked about is what a draft is, while a PR marked ready and never
+sent out is the one real omission this pane can catch. So the section
+sorts by which — **drafts sink**, and the omission sits on top of them.
+Nothing else re-orders: recency is the rule in every section, and
+inside this one once the drafts have sunk.
+
+| badge | meaning |
+|---|---|
+| `✓` `⚠` `·` `○` | GitHub's own `reviewDecision`: approved, changes requested, reviewers asked, nobody asked |
+| `✓` `✗` `◐` | the head commit's checks: green, failing, still running |
+| `⚠` (third slot) | GitHub reports the branch as conflicting |
+
+Two things worth knowing. `mergeable` is computed lazily, so a PR
+GitHub has not been asked about reads as no-conflict until something
+asks — which means the list can change shape on a refresh with nothing
+having happened. And a PR approved with checks still running sits under
+"Ready to merge" with a `◐`: the badge is the truth, the heading is the
+intent.
+
+Keys follow the pane. `bindings.mine` is its own list, shipping `f` —
+the same key as the issue list's, and the same job: go through the
+review you were **given**, checking each comment rather than complying
+with it.
+
 `open` is idempotent: it creates what is missing and selects the
 window. A workspace is named once, from the PR title at first open,
 and found by number afterwards — after `close`, by the name Claude's

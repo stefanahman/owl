@@ -7,12 +7,6 @@ import (
 	"time"
 )
 
-// ansiRe strips the styles so a test asserts on the text, not on the
-// escape codes lipgloss wrapped it in.
-var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
-
 func fixtureProjects() []Project {
 	mk := func(name, slug, state, stype string, progress float64, scope, milestones int, age time.Duration) Project {
 		p := Project{ID: "uuid-" + slug, Name: name, SlugID: slug, URL: "https://linear.app/x/project/" + slug,

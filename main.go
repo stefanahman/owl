@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -87,6 +88,12 @@ type projectsMsg struct {
 	projects []Project
 }
 
+// mineMsg carries your own open PRs: the mine pane's fetch.
+type mineMsg struct {
+	gen int
+	prs []PR
+}
+
 // doneProjectsMsg carries the projects completed inside
 // doneProjectWindow — the project list's answer to doneMsg.
 type doneProjectsMsg struct {
@@ -149,6 +156,7 @@ type keyMap struct {
 	Yank     key.Binding
 	Next     key.Binding
 	Cleanup  key.Binding
+	Pane     key.Binding
 	Drill    key.Binding
 	Back     key.Binding
 	Search   key.Binding
@@ -178,6 +186,7 @@ func newKeyMap(k KeysConfig, bindings []Binding) keyMap {
 		Yank:     bind(k.Yank, "yank PR URL"),
 		Next:     bind(k.Next, "next attention-needed"),
 		Cleanup:  bind(k.Cleanup, "clean up worktree"),
+		Pane:     bind(k.Pane, "other pane"),
 		Drill:    bind(k.Drill, "the project's issues"),
 		Back:     bind(k.Back, "back"),
 		Search:   bind(k.Search, "search"),
@@ -219,7 +228,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	actions := append([]key.Binding{k.Enter, k.Start, k.Browser, k.Yank, k.Cleanup, k.Drill, k.Back}, k.Bindings...)
+	actions := append([]key.Binding{k.Enter, k.Start, k.Browser, k.Yank, k.Cleanup, k.Pane, k.Drill, k.Back}, k.Bindings...)
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Next, k.Home, k.End, k.PageUp, k.PageDown},
 		actions,
@@ -275,8 +284,11 @@ type visibleRow struct {
 	pr           *PR
 	status       ReviewStatus
 	merged       bool
-	issue        *Issue
-	project      *Project
+	// mine marks a PR row as one of yours, in the mine pane: the badges
+	// and the keys it answers to are that pane's, not the review list's.
+	mine    bool
+	issue   *Issue
+	project *Project
 }
 
 // header reports whether the row is a section title.
@@ -324,11 +336,25 @@ type model struct {
 	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
-	repo         string // owner/name on GitHub
-	repoDir      string // the repository's main working tree; "" outside a repo
-	me           string
-	prs          []PR
-	merged       []PR
+	repo    string // owner/name on GitHub
+	repoDir string // the repository's main working tree; "" outside a repo
+	me      string
+	prs     []PR
+	merged  []PR
+	mine    []PR // your own open PRs: the mine pane
+	// mineFocus says the mine pane has the cursor and the keys. Only
+	// the PR list has two panes; the other lists leave it false.
+	// otherCursor holds the row the unfocused pane was left on, and the
+	// two swap when Tab moves the focus, so every cursor and row
+	// function keeps reading m.cursor and needs to know nothing about
+	// panes.
+	mineFocus   bool
+	otherCursor int
+	// contentHeight is the rows' share of the screen, chrome removed.
+	// With two panes the viewport gets part of it and the rest is drawn
+	// beneath; both come from this one number.
+	contentHeight int
+
 	issues       []Issue
 	doneIssues   []Issue   // completed inside doneWindow; the Done section
 	projects     []Project // the project list's rows
@@ -494,6 +520,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	if cache != nil {
 		m.prs = cache.Prs
 		m.merged = cache.Merged
+		m.mine = cache.Mine
 		m.me = cache.Me
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -527,7 +554,7 @@ func (m model) fetches() []tea.Cmd {
 		// The issues too: a row says how much of the project is yours.
 		return []tea.Cmd{m.fetchProjects, m.fetchIssues, m.fetchDoneProjects}
 	}
-	return []tea.Cmd{m.fetchPRs, m.fetchMerged, fetchUser}
+	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine, fetchUser}
 }
 
 func fetchUser() tea.Msg { return userMsg(currentUser()) }
@@ -549,6 +576,7 @@ func (m model) persistCache() {
 	saveCache(m.repo, cacheFile{
 		Prs:       m.prs,
 		Merged:    m.merged,
+		Mine:      m.mine,
 		Me:        m.me,
 		FetchedAt: m.lastFetched,
 		Cursor:    m.cursor,
@@ -704,6 +732,12 @@ func (m model) bindings() []Binding {
 		return m.cfg.Bindings.Issue
 	case "project":
 		return nil // no per-row prompts until a project has a workspace
+	}
+	// Your own PR answers to different keys than someone else's: the
+	// review pane's f re-reads the feedback you are giving, the mine
+	// pane's the review you were given.
+	if m.mineFocus {
+		return m.cfg.Bindings.Mine
 	}
 	return m.cfg.Bindings.PR
 }
@@ -919,6 +953,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 		m.persistCache()
 
+	case mineMsg:
+		if msg.gen != m.fetchGen {
+			break
+		}
+		m.mine = msg.prs
+		m.ready = true
+		m.clampCursor()
+		m.refreshList()
+		m.persistCache()
+
 	case mergedMsg:
 		if msg.gen != m.fetchGen {
 			break
@@ -1059,6 +1103,17 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
+	case key.Matches(msg, m.keys.Pane):
+		if m.panes() {
+			// The cursors swap with the focus, so each pane comes back to
+			// the row you left it on.
+			m.mineFocus = !m.mineFocus
+			m.cursor, m.otherCursor = m.otherCursor, m.cursor
+			m.keys = newKeyMap(m.cfg.Keys, m.bindings())
+			m.labelKeysForPane()
+			m.clampCursor()
+			m.refreshList()
+		}
 	case key.Matches(msg, m.keys.Drill):
 		// Only from a project row, and only into a project: the drill is
 		// one level, project to its issues.
@@ -1224,6 +1279,25 @@ func (r visibleRow) label() string {
 	return r.id()
 }
 
+// ansiRe matches the escape codes lipgloss wraps styled text in.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// stripANSI removes the styling from a rendered line. The inactive
+// pane is drawn dim, and dimming text that already carries colours
+// means taking the colours off first.
+func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+// dimBlock renders a whole pane as inactive: every line stripped of
+// its own styling and dimmed, so which pane has the keys is never in
+// question.
+func dimBlock(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = styleDim.Render(stripANSI(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // stateUnlessSection is the state name a row shows: none when the
 // section it sits in already says it. "Backlog" inside Backlog is
 // noise; "In Review" inside In progress is the point.
@@ -1325,6 +1399,11 @@ func (m *model) resizeViewport() {
 	if h < 3 {
 		h = 3
 	}
+	// contentHeight is what the rows have between the chrome. The
+	// viewport's own height is the focused pane's share of it, which
+	// refreshList sets — deriving it from the viewport instead would
+	// shrink it again on every resize.
+	m.contentHeight = h
 	m.list.SetWidth(m.width)
 	m.list.SetHeight(h)
 	m.help.SetWidth(m.width)
@@ -1349,6 +1428,18 @@ func (m model) visibleRows() []visibleRow {
 	case "project":
 		return m.visibleProjectRows()
 	}
+	// The PR list has two panes and the focused one owns the cursor, so
+	// every caller of this — selectedRow, clampCursor, the scroll maths
+	// — reads the pane you are driving without knowing there are two.
+	if m.mineFocus {
+		return m.visibleMineRows()
+	}
+	return m.visibleReviewRows()
+}
+
+// visibleReviewRows is the PR list's review pane: what needs your
+// review, grouped by where you sit on it.
+func (m model) visibleReviewRows() []visibleRow {
 	filter := m.search.Value()
 
 	matches := func(pr PR) bool {
@@ -1414,8 +1505,14 @@ func (m model) visibleRows() []visibleRow {
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
 	rows := m.visibleRows()
-	h := m.list.Height()
-	if h == 0 || len(rows) == 0 {
+	h := m.contentHeight
+	if m.panes() {
+		h = m.focusedPaneHeight()
+	}
+	if h > 0 {
+		m.list.SetHeight(h)
+	}
+	if h <= 0 || len(rows) == 0 {
 		m.list.SetContent("")
 		return
 	}
@@ -1475,6 +1572,21 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	if row.merged {
 		age = relativeAge(row.pr.MergedAt)
 	}
+	// Your own PR carries a different set of facts and so a different
+	// block: GitHub's verdict, the head commit's checks, and a conflict
+	// where it has computed one. The author is you, so the name goes.
+	if row.mine {
+		return strings.TrimRight(fmt.Sprintf(
+			"%s#%-5d %s %s  %s %s%s",
+			cursor,
+			row.pr.Number,
+			workspaceBadges(local, starting),
+			mineBadges(*row.pr),
+			styleDim.Render(fmt.Sprintf("%3s", age)),
+			trim(row.pr.Title, 68),
+			draft,
+		), " ")
+	}
 	return fmt.Sprintf(
 		"%s#%-5d %s %s  %s%s (%s)",
 		cursor,
@@ -1530,6 +1642,31 @@ func (m model) actionRowView() string {
 	}
 }
 
+// labelKeysForPane names the keys after what they do in the pane that
+// has them: the help line is the only place a key explains itself, and
+// "open review" is wrong on a pull request of your own.
+func (m *model) labelKeysForPane() {
+	enter, cleanup := "open review", "clean up worktree"
+	if m.mineFocus {
+		enter, cleanup = "open your PR", "clean up worktree"
+	}
+	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, enter)
+	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, cleanup)
+}
+
+// panes reports whether the list is the two-pane one. Only the PR
+// list is: a review queue and your own PRs are different questions
+// with different answers and different keys.
+func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
+
+// otherPaneRows is the pane that does not have the cursor.
+func (m model) otherPaneRows() []visibleRow {
+	if m.mineFocus {
+		return m.visibleReviewRows()
+	}
+	return m.visibleMineRows()
+}
+
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
 // What just finished counts as data: a week where the only project you
@@ -1544,7 +1681,7 @@ func (m model) hasData() bool {
 	case "project":
 		return len(m.projects) > 0 || len(m.doneProjects) > 0
 	}
-	return len(m.prs) > 0 || len(m.merged) > 0
+	return len(m.prs) > 0 || len(m.merged) > 0 || len(m.mine) > 0
 }
 
 // noun is what the list holds, plural: PRs, issues or projects.
@@ -1573,8 +1710,11 @@ func (m model) countsSummary() string {
 	case "project":
 		return m.projectCountsSummary()
 	}
-	if m.me == "" || len(m.prs) == 0 && len(m.merged) == 0 {
+	if m.me == "" || len(m.prs) == 0 && len(m.merged) == 0 && len(m.mine) == 0 {
 		return styleDim.Render(fmt.Sprintf("%d open", len(m.prs)))
+	}
+	if m.mineFocus {
+		return m.mineCountsSummary()
 	}
 	counts := map[ReviewStatus]int{}
 	for _, pr := range m.prs {
@@ -1742,9 +1882,94 @@ func (m model) render() string {
 		return b.String()
 	}
 
-	b.WriteString(m.list.View())
+	if m.panes() {
+		b.WriteString(m.panesView())
+	} else {
+		b.WriteString(m.list.View())
+	}
 	b.WriteString("\n\n" + m.help.View(m.keys))
 	return b.String()
+}
+
+// focusedPaneHeight is how many rows the focused pane gets. The same
+// number sizes the viewport and slices the rows into it, so the cursor
+// cannot scroll out of a window narrower than the one it was measured
+// against.
+func (m model) focusedPaneHeight() int {
+	avail := m.contentHeight - 2 // one heading each
+	if avail < 2 {
+		avail = 2
+	}
+	h, _ := splitPaneHeights(avail, len(m.visibleRows()), len(m.otherPaneRows()))
+	return h
+}
+
+// panesView draws the two panes of the PR list.
+//
+// Their places are fixed — the review queue above, your own below —
+// and Tab moves only the highlight. Swapping them would put the rows
+// you were reading somewhere else every time you changed pane, which
+// is the eye movement the two panes exist to save.
+//
+// Only the focused pane scrolls: it has the viewport and the cursor.
+// The other shows what fits, dimmed, with a last line saying what it
+// cut; Tab is how you reach the rest, which is also how you get its
+// keys.
+func (m model) panesView() string {
+	other := m.otherPaneRows()
+	avail := m.contentHeight - 2 // one heading each
+	if avail < 2 {
+		avail = 2
+	}
+	_, otherH := splitPaneHeights(avail, len(m.visibleRows()), len(other))
+
+	// The focused pane is the viewport, already sized and filled by
+	// refreshList; the other is drawn here and dimmed.
+	focused := m.list.View()
+	inactive := m.inactivePane(other, otherH)
+	review := fmt.Sprintf("To review (%d)", len(m.prs))
+	mine := fmt.Sprintf("Mine (%d)", len(m.mine))
+
+	if m.mineFocus {
+		return dimBlock(review) + "\n" + inactive + "\n" +
+			styleHeader.Render(mine) + "\n" + focused
+	}
+	return styleHeader.Render(review) + "\n" + focused + "\n" +
+		dimBlock(mine) + "\n" + inactive
+}
+
+// inactivePane renders the rows of the pane without the cursor: as
+// many as it has room for, dimmed, and a last line naming what did not
+// fit rather than cutting silently.
+func (m model) inactivePane(rows []visibleRow, h int) string {
+	if h <= 0 || len(rows) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, h)
+	for i := 0; i < h && i < len(rows); i++ {
+		lines = append(lines, m.renderRow(rows[i], false))
+	}
+	if cut := len(rows) - h; cut > 0 {
+		lines[len(lines)-1] = fmt.Sprintf("  … %d more, %s to go there", cut+1, m.keys.Pane.Help().Key)
+	}
+	return dimBlock(strings.Join(lines, "\n"))
+}
+
+// splitPaneHeights gives each pane the rows it wants where they fit,
+// and splits the shortfall so neither is squeezed to nothing by the
+// other having plenty.
+func splitPaneHeights(avail, want, otherWant int) (int, int) {
+	if want+otherWant <= avail {
+		return want, otherWant
+	}
+	half := avail / 2
+	switch {
+	case want <= half:
+		return want, avail - want
+	case otherWant <= avail-half:
+		return avail - otherWant, otherWant
+	}
+	return half, avail - half
 }
 
 // ------------------------------------------------------------

@@ -230,16 +230,49 @@ func fakeGH(t *testing.T, root string) {
 			pr(3510, "retry on 429", "erin", "eee", 8*time.Hour, review("stefanahman", "CHANGES_REQUESTED", "eee", 9*time.Hour)),
 		}},
 	}}
-	data, err := json.Marshal(graphql)
-	if err != nil {
-		t.Fatal(err)
+	// Your own PRs are a different query and a different set: one per
+	// section, so the snapshot shows what the grouping actually does
+	// rather than the review pane twice.
+	mine := func(n int, title, oid string, at time.Duration, draft bool, decision, ci, mergeable string, asked int) map[string]any {
+		return map[string]any{
+			"number": n, "title": title, "body": "", "url": fmt.Sprintf("https://github.com/acme/app/pull/%d", n),
+			"headRefName": "mine/" + fmt.Sprint(n), "headRefOid": oid, "updatedAt": ago(at), "isDraft": draft,
+			"mergeable": mergeable, "reviewDecision": decision,
+			"author":         map[string]string{"login": "stefanahman"},
+			"reviewRequests": map[string]any{"totalCount": asked},
+			"commits": map[string]any{"nodes": []any{
+				map[string]any{"commit": map[string]any{"statusCheckRollup": map[string]any{"state": ci}}},
+			}},
+		}
 	}
-	if err := os.WriteFile(filepath.Join(bin, "graphql.json"), data, 0o644); err != nil {
-		t.Fatal(err)
+	mineJSON := map[string]any{"data": map[string]any{
+		"search": map[string]any{"nodes": []any{
+			mine(4273, "mark enrichment stale on edit", "m1", 18*time.Hour, true, "REVIEW_REQUIRED", "FAILURE", "CONFLICTING", 0),
+			mine(4007, "per-tenant captureEngine override", "m2", 30*time.Minute, false, "APPROVED", "SUCCESS", "MERGEABLE", 0),
+			mine(4299, "stamp periodStart on raw ingest", "m3", 49*time.Minute, false, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2),
+			mine(4306, "keep captureStatus out of the generated type", "m4", 17*time.Hour, true, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 0),
+			// Ready, green, and nobody asked to look: the one omission
+			// this pane catches, and the reason it has a heading of its
+			// own rather than sitting among the drafts.
+			mine(4290, "drop the legacy tenant shim", "m5", 3*time.Hour, false, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0),
+		}},
+	}}
+	for name, v := range map[string]any{"graphql.json": graphql, "mine.json": mineJSON} {
+		data, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bin, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	script := `#!/bin/sh
 case "$1 $2" in
-  "api graphql") cat "$(dirname "$0")/graphql.json" ;;
+  "api graphql")
+    case "$*" in
+      *reviewDecision*) cat "$(dirname "$0")/mine.json" ;;   # only the mine query selects it; matching the search string would catch -author:@me too
+      *) cat "$(dirname "$0")/graphql.json" ;;
+    esac ;;
   "pr list") echo '[]' ;;
   "api user") echo stefanahman ;;
   "pr view") echo "Add Billing Migration" ;;
