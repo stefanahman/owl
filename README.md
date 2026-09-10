@@ -311,8 +311,9 @@ finds it too, because the branch inside still carries the key.
 The link between a PR and its issue is the key in the branch name —
 what Linear's own GitHub integration puts there — filtered by
 `linear.team`, so `deps/sharp-0.35.4` is a dependency bump and not
-SHARP-0. A branch closing several issues opens into the newest one's
-workspace: one branch is one piece of work and gets one workspace.
+SHARP-0. A branch closing several issues shows all of them, newest
+first, and opens into the newest one's workspace: one branch is one
+piece of work and gets one workspace.
 
 Two consequences worth knowing. The window's container follows the
 **workspace name**, not the command that opened it, so one worktree can

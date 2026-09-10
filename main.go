@@ -1583,15 +1583,21 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	// block: GitHub's verdict, the head commit's checks, and a conflict
 	// where it has computed one. The author is you, so the name goes.
 	if row.mine {
+		// The issues this branch closes, which is also where Enter takes
+		// you. The title gives up the width they need, down to a floor —
+		// a row with three keys on it still has to read as a title.
+		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.Team))
+		width := max(68-lipgloss.Width(chips), 24)
 		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s",
+			"%s#%-5d %s %s  %s %s%s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
-			trim(row.pr.Title, 68),
+			trim(row.pr.Title, width),
 			draft,
+			chips,
 		), " ")
 	}
 	return fmt.Sprintf(

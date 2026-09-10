@@ -150,6 +150,21 @@ func mineBadges(pr PR) string {
 	return verdict + " " + ci + " " + conflict
 }
 
+// issueChips names every issue of yours a PR's branch carries, newest
+// first — the mirror of prChips on an issue row, where a PR appears
+// under several issues for the same reason.
+//
+// The first is the one whose workspace the PR opens into: a branch
+// closing two issues is one piece of work and gets one workspace, and
+// the newest is the one being worked on.
+func issueChips(keys []string) string {
+	var b strings.Builder
+	for _, key := range keys {
+		b.WriteString(styleDim.Render("  " + key))
+	}
+	return b.String()
+}
+
 // mineCountsSummary is the action row of the mine pane.
 func (m model) mineCountsSummary() string {
 	counts := map[blocking]int{}

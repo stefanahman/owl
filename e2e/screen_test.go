@@ -233,10 +233,10 @@ func fakeGH(t *testing.T, root string) {
 	// Your own PRs are a different query and a different set: one per
 	// section, so the snapshot shows what the grouping actually does
 	// rather than the review pane twice.
-	mine := func(n int, title, oid string, at time.Duration, draft bool, decision, ci, mergeable string, asked int) map[string]any {
+	mine := func(n int, title, branch, oid string, at time.Duration, draft bool, decision, ci, mergeable string, asked int) map[string]any {
 		return map[string]any{
 			"number": n, "title": title, "body": "", "url": fmt.Sprintf("https://github.com/acme/app/pull/%d", n),
-			"headRefName": "mine/" + fmt.Sprint(n), "headRefOid": oid, "updatedAt": ago(at), "isDraft": draft,
+			"headRefName": branch, "headRefOid": oid, "updatedAt": ago(at), "isDraft": draft,
 			"mergeable": mergeable, "reviewDecision": decision,
 			"author":         map[string]string{"login": "stefanahman"},
 			"reviewRequests": map[string]any{"totalCount": asked},
@@ -247,14 +247,18 @@ func fakeGH(t *testing.T, root string) {
 	}
 	mineJSON := map[string]any{"data": map[string]any{
 		"search": map[string]any{"nodes": []any{
-			mine(4273, "mark enrichment stale on edit", "m1", 18*time.Hour, true, "REVIEW_REQUIRED", "FAILURE", "CONFLICTING", 0),
-			mine(4007, "per-tenant captureEngine override", "m2", 30*time.Minute, false, "APPROVED", "SUCCESS", "MERGEABLE", 0),
-			mine(4299, "stamp periodStart on raw ingest", "m3", 49*time.Minute, false, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2),
-			mine(4306, "keep captureStatus out of the generated type", "m4", 17*time.Hour, true, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 0),
+			mine(4273, "mark enrichment stale on edit", "proj-118-enrichment-stale", "m1", 18*time.Hour, true, "REVIEW_REQUIRED", "FAILURE", "CONFLICTING", 0),
+			mine(4007, "per-tenant captureEngine override", "proj-121-capture-engine", "m2", 30*time.Minute, false, "APPROVED", "SUCCESS", "MERGEABLE", 0),
+			// No issue behind it: the column is empty and the row keeps
+			// the width the others give up.
+			mine(4299, "stamp periodStart on raw ingest", "mine/4299", "m3", 49*time.Minute, false, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2),
+			// One branch closing two, newest first — the first is the one
+			// whose workspace it opens into.
+			mine(4306, "keep captureStatus out of the generated type", "proj-104-proj-131-compile-db", "m4", 17*time.Hour, true, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 0),
 			// Ready, green, and nobody asked to look: the one omission
 			// this pane catches, and the reason it has a heading of its
 			// own rather than sitting among the drafts.
-			mine(4290, "drop the legacy tenant shim", "m5", 3*time.Hour, false, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0),
+			mine(4290, "drop the legacy tenant shim", "proj-140-tenant-shim", "m5", 3*time.Hour, false, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0),
 		}},
 	}}
 	for name, v := range map[string]any{"graphql.json": graphql, "mine.json": mineJSON} {
@@ -291,7 +295,7 @@ esac
 func hermeticEnv(t *testing.T, root string) []string {
 	t.Helper()
 	cfg := filepath.Join(root, "config.yaml")
-	config := "mux: tmux\nagent:\n  cmd: \"true\"\nbindings:\n  pr:\n    - key: l\n      name: Linear\n      pattern: 'PROJ-\\d+'\n      url: https://linear.app/acme/issue/{id}\n"
+	config := "mux: tmux\nagent:\n  cmd: \"true\"\nlinear:\n  team: PROJ\nbindings:\n  pr:\n    - key: l\n      name: Linear\n      pattern: 'PROJ-\\d+'\n      url: https://linear.app/acme/issue/{id}\n"
 	if err := os.WriteFile(cfg, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
