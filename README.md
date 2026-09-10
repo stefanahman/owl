@@ -46,10 +46,13 @@ is written twice and nothing goes stale in a second place.
 - **The agent's state, in the list.** `©` follows Claude every two
   seconds: working, blocked on you, done and unread. `n` jumps to the
   next row that needs you.
-- **Prompts on a key.** `f` sends "check the feedback since your last
-  review" to a review's Claude; `bindings` add your own, a prompt or a
-  URL, per list. A prompt is refused while Claude is waiting on a
-  question or a permission, since the keystrokes would answer it.
+- **Prompts on a key.** `f` is feedback on both lists, from the two
+  sides of it: on a review, "check the feedback since your last
+  review"; on an issue, go through the review *you* were given and
+  check each comment before applying it, because agreeing with all of
+  it is the failure mode. `bindings` add your own, a prompt or a URL,
+  per list. A prompt is refused while Claude is waiting on a question
+  or a permission, since the keystrokes would answer it.
 - **Skills with manners.** The bundled [plugin](owl/README.md) gives
   the agent its process: `review` never posts without you, `feature`
   never pushes without you, `dependabot` fixes on the bot's branch and
@@ -530,6 +533,11 @@ bindings:                        # your own keys on a row: a prompt for its agen
     - key: f                     # shipped; listing it again replaces it
       name: check feedback
       prompt: "Please carefully check the feedback since your last review …"
+      when: conversation
+  issue:
+    - key: f                     # shipped; the review you were given, not the one you are giving
+      name: check the review
+      prompt: "Please go through the review on {key}'s pull request carefully … Agreeing with all of it is the failure mode, not the goal."
       when: conversation
 ```
 

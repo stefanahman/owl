@@ -96,12 +96,29 @@ bindings:
 	if url, ok := cfg.Bindings.PR[3].forPR("acme/app", pr); !ok || url != "https://ci.example/acme/app/42/fix/crash?from=https://gh/x/pull/42" {
 		t.Errorf("ci link: got %q, %v", url, ok)
 	}
+	// By key, not by index: the shipped bindings come first, so an
+	// index here would move every time owl ships another one.
+	byKey := func(list []Binding, key string) Binding {
+		for _, b := range list {
+			if len(b.Key) > 0 && b.Key[0] == key {
+				return b
+			}
+		}
+		t.Fatalf("no binding on %q in %+v", key, list)
+		return Binding{}
+	}
 	is := &Issue{Key: "BAR-9", Title: "Fix the owl", Branch: "bar-9-fix-the-owl", URL: "https://linear.app/x/issue/BAR-9"}
-	if text, ok := cfg.Bindings.Issue[0].forIssue("acme/app", is); !ok || text != "Continue BAR-9 on bar-9-fix-the-owl" {
+	if text, ok := byKey(cfg.Bindings.Issue, "p").forIssue("acme/app", is); !ok || text != "Continue BAR-9 on bar-9-fix-the-owl" {
 		t.Errorf("issue prompt: %q, %v", text, ok)
 	}
-	if url, ok := cfg.Bindings.Issue[1].forIssue("acme/app", is); !ok || url != is.URL {
+	if url, ok := byKey(cfg.Bindings.Issue, "l").forIssue("acme/app", is); !ok || url != is.URL {
 		t.Errorf("issue url: %q, %v", url, ok)
+	}
+	// The shipped review key is there, on both lists, and only where a
+	// conversation exists to send it to.
+	review := byKey(cfg.Bindings.Issue, "f")
+	if review.When != whenConversation || !strings.Contains(review.Prompt, "failure mode") {
+		t.Errorf("shipped issue f = %+v", review)
 	}
 
 	// A user's f replaces the shipped one, in place.

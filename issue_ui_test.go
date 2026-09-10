@@ -176,13 +176,29 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 	if len(*calls) != 1 || (*calls)[0] != "issue open BAR-4160" {
 		t.Errorf("child args %v, want [issue open BAR-4160]", *calls)
 	}
-	// Feedback is not an issue key: nothing launches.
+	// f is `when: conversation`: with nothing started for this issue it
+	// does nothing rather than starting a workspace to talk to.
 	nm.inflight = map[string]string{}
 	next, cmd = nm.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	if cmd != nil || len(next.(model).inflight) != 0 {
-		t.Error("f launched something on the issue list")
+		t.Error("f started a workspace for an issue that had none")
 	}
-	// c only fires with a workspace to remove.
+	// With one, it sends the review prompt to the agent already there.
+	nm.localState = map[string]LocalState{"bar-4160-per-tenant-override": {Worktree: "/wt", Window: "bar-4160-per-tenant-override"}}
+	next, cmd = nm.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if cmd == nil || next.(model).inflight["BAR-4160"] == "" {
+		t.Errorf("f did not reach the running agent: %v", next.(model).inflight)
+	}
+	runBatch(cmd)
+	time.Sleep(100 * time.Millisecond)
+	last := (*calls)[len(*calls)-1]
+	if !strings.HasPrefix(last, "issue start BAR-4160 --prompt ") || !strings.Contains(last, "failure mode") {
+		t.Errorf("f ran %q", last)
+	}
+	// c only fires with a workspace to remove. (inflight is a map, so
+	// the f above is still in the one nm holds; a second key on a row
+	// is refused while one is in flight.)
+	nm.inflight = map[string]string{}
 	nm.localState = map[string]LocalState{"bar-4160-per-tenant-override": {Worktree: "/wt"}}
 	next, cmd = nm.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	if cmd == nil || next.(model).inflight["BAR-4160"] != "closing BAR-4160…" {

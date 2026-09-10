@@ -215,10 +215,33 @@ func mergeBindings(defaults, user []Binding) []Binding {
 // language increases deliberation, urgency causes shortcuts.
 const feedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
 
+// reviewPrompt is what the shipped `f` sends on an issue: the other
+// side of feedback from the PR list's.
+//
+// The failure it exists to stop is agreement. An agent handed review
+// comments applies them — all of them, in order, without asking
+// whether each is right — because complying reads as helpful and
+// arguing reads as difficult. But a reviewer can be wrong about what
+// the code does, or right about the code and wrong about this
+// repository, and a fix built on a wrong premise is worse than the
+// finding it answers. So the prompt makes each comment a claim to
+// check rather than an instruction to carry out, asks for the evidence
+// either way, and says outright that agreeing with everything is the
+// failure and not the goal. Same calm tenor as feedbackPrompt: room to
+// deliberate, no urgency.
+const reviewPrompt = "Please go through the review on {key}'s pull request carefully — take your time, and treat every comment as a claim to check rather than an instruction to follow. First pass: for each comment find the code it is about and decide whether it is right, citing file:line. A reviewer can be wrong about what the code does, or right about the code and wrong about this repository's conventions — check both. Second pass: critique your own verdicts and drop any you cannot evidence. Then change only what survives that, and answer the rest with what you found. Report each comment as AGREED (and what you changed) / DISAGREED (and the evidence) / UNCLEAR (and the question you need answered). Agreeing with all of it is the failure mode, not the goal."
+
 // defaultBindings are the keys owl ships on a row; a user's entry
 // with the same key replaces one.
+//
+// `f` on both lists, because on both it means deal with the feedback:
+// on a PR the review you are giving, on an issue the review you were
+// given.
 func defaultBindings() BindingsConfig {
-	return BindingsConfig{PR: []Binding{{Key: keyNames{"f"}, Name: "check feedback", Prompt: feedbackPrompt, When: whenConversation}}}
+	return BindingsConfig{
+		PR:    []Binding{{Key: keyNames{"f"}, Name: "check feedback", Prompt: feedbackPrompt, When: whenConversation}},
+		Issue: []Binding{{Key: keyNames{"f"}, Name: "check the review", Prompt: reviewPrompt, When: whenConversation}},
+	}
 }
 
 type HooksConfig struct {
@@ -464,11 +487,15 @@ bindings:                        # your own keys on a row: a prompt handed to th
     #   name: Linear
     #   pattern: 'PROJ-\d+'
     #   url: https://linear.app/<org>/issue/{id}
-  # issue:                       # on an issue; placeholders {key}, {repo}, {branch}, {url}, {id} (pattern over title and branch)
-  #   - key: p
-  #     name: Continue
-  #     prompt: "Continue {key} where the last session left off"
-  #     when: conversation
+  issue:                         # on an issue; placeholders {key}, {repo}, {branch}, {url}, {id} (pattern over title and branch)
+    - key: f                     # shipped; the other side of the PR list's f — the review you were given, not the one you are giving
+      name: check the review
+      prompt: "Please go through the review on {key}'s pull request carefully — take your time, and treat every comment as a claim to check rather than an instruction to follow. First pass: for each comment find the code it is about and decide whether it is right, citing file:line. A reviewer can be wrong about what the code does, or right about the code and wrong about this repository's conventions — check both. Second pass: critique your own verdicts and drop any you cannot evidence. Then change only what survives that, and answer the rest with what you found. Report each comment as AGREED (and what you changed) / DISAGREED (and the evidence) / UNCLEAR (and the question you need answered). Agreeing with all of it is the failure mode, not the goal."
+      when: conversation
+    # - key: p
+    #   name: Continue
+    #   prompt: "Continue {key} where the last session left off"
+    #   when: conversation
 `
 
 func defaultConfig() Config {
