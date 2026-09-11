@@ -13,7 +13,12 @@ import (
 
 // testIssueModel is testModel for the issue list: no tracker, no
 // fetches; the children's arguments are recorded.
-func testIssueModel(t *testing.T) (model, *[]string) {
+//
+// The recorder is a function and not the slice, because a child runs
+// on its own goroutine: the write was already locked and the read was
+// not, which is a race whether or not it ever lost a call. Handing
+// back a copy under the same lock makes -race usable on this package.
+func testIssueModel(t *testing.T) (model, func() []string) {
 	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	done := make(chan struct{})
@@ -30,7 +35,11 @@ func testIssueModel(t *testing.T) (model, *[]string) {
 		<-done
 		return errors.New("test ended")
 	}
-	return m, &calls
+	return m, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), calls...)
+	}
 }
 
 func mkIssue(key, title, branch, state, stype string, prio int, age time.Duration) Issue {
@@ -173,8 +182,8 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
 	// The child runs in the issue scope: `owl issue open`, not `owl pr open`.
-	if len(*calls) != 1 || (*calls)[0] != "issue open BAR-4160" {
-		t.Errorf("child args %v, want [issue open BAR-4160]", *calls)
+	if got := calls(); len(got) != 1 || got[0] != "issue open BAR-4160" {
+		t.Errorf("child args %v, want [issue open BAR-4160]", got)
 	}
 	// f is `when: conversation`: with nothing started for this issue it
 	// does nothing rather than starting a workspace to talk to.
@@ -191,7 +200,8 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
-	last := (*calls)[len(*calls)-1]
+	got := calls()
+	last := got[len(got)-1]
 	if !strings.HasPrefix(last, "issue start BAR-4160 --prompt ") || !strings.Contains(last, "failure mode") {
 		t.Errorf("f ran %q", last)
 	}
@@ -297,8 +307,8 @@ func TestIssueBindingHandsThePrompt(t *testing.T) {
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
-	if len(*calls) != 1 || (*calls)[0] != "issue start BAR-4160 --prompt Continue BAR-4160" {
-		t.Errorf("child args %v", *calls)
+	if got := calls(); len(got) != 1 || got[0] != "issue start BAR-4160 --prompt Continue BAR-4160" {
+		t.Errorf("child args %v", got)
 	}
 	// f is no issue key unless bound there: nothing launches.
 	nm.inflight = map[string]string{}
