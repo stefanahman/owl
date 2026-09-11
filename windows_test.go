@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stefanahman/mux"
 	"github.com/stefanahman/mux/muxtest"
@@ -304,16 +306,107 @@ func TestStatesInAsksAFlatMultiplexerOnce(t *testing.T) {
 
 	cfg := defaultConfig()
 	cfg.Mux = "cmux"
-	statesIn(cfg, reviews, features)
+	statesIn(cfg, nil, reviews, features)
 	one, _ := os.ReadFile(calls)
 
 	if err := os.Remove(calls); err != nil {
 		t.Fatal(err)
 	}
-	statesIn(cfg, reviews)
+	statesIn(cfg, nil, reviews)
 	alone, _ := os.ReadFile(calls)
 
 	if got, want := len(strings.Split(string(one), "\n")), len(strings.Split(string(alone), "\n")); got != want {
 		t.Errorf("two scopes cost %d calls into cmux, one scope %d — the flat list should be read once", got, want)
+	}
+}
+
+// TestNoWatchKeepsNoDriver: a kept driver is only safe while a watch
+// keeps it current.
+//
+// The cmux driver answers list and pills from a snapshot it fills on
+// first read, and only a mutating call ever clears it. With a live
+// watch that snapshot is bypassed entirely — States() answers from the
+// watcher's view — but without one, a driver held across reads would
+// report the states it saw first for as long as the list ran. So when
+// the watch fails to start, the driver goes with it and reads go back
+// to a fresh driver each time.
+func TestNoWatchKeepsNoDriver(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A cmux that is not there: Watch's first read fails, so no watch.
+	if err := os.WriteFile(filepath.Join(bin, "cmux"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cfg := defaultConfig()
+	cfg.Mux = "cmux"
+	msg, ok := startWatch(context.Background(), cfg)().(watchMsg)
+	if !ok {
+		t.Fatalf("startWatch returned %T", startWatch(context.Background(), cfg)())
+	}
+	if msg.signal != nil {
+		t.Error("a watch was reported where cmux does not answer")
+	}
+	if msg.driver != nil {
+		t.Error("the driver was kept without a watch to keep it current; its snapshot would freeze")
+	}
+}
+
+// TestTickCadenceFollowsTheWatch: the timer is two different things.
+//
+// Under cmux a watch reports a state the instant it changes and the
+// timer is only a net for what a watch cannot see, so it can be slow.
+// Under tmux and herdr there is no watch and the timer is still the
+// only way a © ever changes colour — slowing it there would have
+// traded a real cost for a regression nobody asked for.
+func TestTickCadenceFollowsTheWatch(t *testing.T) {
+	plain, watched := localRefreshInterval(false), localRefreshInterval(true)
+	if plain != localRefreshEvery || watched != localRefreshWatched {
+		t.Errorf("intervals = %v without a watch, %v with; want %v and %v",
+			plain, watched, localRefreshEvery, localRefreshWatched)
+	}
+	if plain >= watched {
+		t.Errorf("the unwatched tick (%v) is not the faster of the two (%v)", plain, watched)
+	}
+}
+
+// TestWatchEndsWithTheList: cmux's event stream is a child process
+// held open for as long as the list watches, and mux kills it when the
+// context it was started on is cancelled. Starting it on a context
+// that is never cancelled would leave the child to notice the broken
+// pipe on its next heartbeat — so the list's own context is what it
+// gets, and cancelling that must close the channel.
+func TestWatchEndsWithTheList(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A cmux that answers the first read and then streams nothing.
+	script := "#!/bin/sh\ncase \"$1 $2\" in\n  'workspace list') echo '{\"workspaces\":[]}' ;;\n  'events') sleep 60 ;;\n  *) echo '{}' ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "cmux"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cfg := defaultConfig()
+	cfg.Mux = "cmux"
+	ctx, stop := context.WithCancel(context.Background())
+	msg, ok := startWatch(ctx, cfg)().(watchMsg)
+	if !ok || msg.signal == nil {
+		stop()
+		t.Skip("this cmux did not yield a watch; the lifetime is what is under test, not the fake")
+	}
+
+	stop()
+	select {
+	case _, open := <-msg.signal:
+		if open {
+			t.Error("cancelling the list's context left the watch signalling")
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("the watch outlived the context it was started on")
 	}
 }

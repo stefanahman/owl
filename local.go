@@ -32,25 +32,74 @@ type localMsg map[string]LocalState
 // either source degrade gracefully — you get whatever partial data was
 // available.
 func (m model) fetchLocal() tea.Msg {
+	return m.fetchLocalIn(m.stateScopes()...)
+}
+
+// stateScopes are the containers this list's rows can have windows in.
+//
+// The PR list shows your own PRs beside the reviews, and one of those
+// opens into its branch's workspace — a feature's window, in the other
+// container. Reading only the reviews would leave every mine row
+// looking unopened while an agent works in it.
+func (m model) stateScopes() []scope {
 	sc := m.sc
 	if sc.owns == nil {
 		sc = reviews
 	}
-	// The PR list shows your own PRs beside the reviews, and one of
-	// those opens into its branch's workspace — a feature's window, in
-	// the other container. Reading only the reviews would leave every
-	// mine row looking unopened while an agent works in it.
 	if m.panes() {
-		return m.fetchLocalIn(sc, features)
+		return []scope{sc, features}
 	}
-	return m.fetchLocalIn(sc)
+	return []scope{sc}
+}
+
+// fetchStates reads the agent states alone, for a watch signal to act
+// on.
+//
+// Separate from fetchLocal because under a watch the states cost
+// nothing while `git worktree list` costs a process every time, and a
+// busy agent signals every few hundred milliseconds — running the git
+// command at that rate would be worse than the poll this replaces.
+// Worktrees appear when something makes one, which the slow tick is
+// soon enough for.
+//
+// It carries the raw states and merges nothing: a command is a closure
+// over the model as it was when the command was made, and merging here
+// would fold the new states into an overlay that may since have been
+// replaced. withStates does it in Update, against the current one.
+func (m model) fetchStates() tea.Msg {
+	return statesMsg(statesIn(m.cfg, m.stateDriver, m.stateScopes()...))
+}
+
+// withStates is the overlay with the window states replaced and the
+// worktrees kept. What a watch signal knows is which windows exist and
+// what their agents are doing, never what is checked out.
+func withStates(local map[string]LocalState, windows map[string]string) map[string]LocalState {
+	out := make(map[string]LocalState, len(local)+len(windows))
+	for handle, ls := range local {
+		ls.Window, ls.ClaudeState = "", ""
+		if state, ok := windows[handle]; ok {
+			ls.Window, ls.ClaudeState = handle, state
+		}
+		// An entry that was only ever a window, whose window has gone,
+		// goes with it rather than lingering as an empty row.
+		if ls.Worktree == "" && ls.Window == "" {
+			continue
+		}
+		out[handle] = ls
+	}
+	for name, state := range windows {
+		if _, ok := out[name]; !ok {
+			out[name] = LocalState{Window: name, ClaudeState: state}
+		}
+	}
+	return out
 }
 
 // fetchLocalIn is fetchLocal for the given scopes. Window names are
 // disjoint by shape between them, so the merge cannot collide.
 func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
 	worktrees := readWorktrees()
-	windows := statesIn(m.cfg, scopes...)
+	windows := statesIn(m.cfg, m.stateDriver, scopes...)
 
 	out := make(map[string]LocalState)
 	for handle, wt := range worktrees {

@@ -288,3 +288,32 @@ func TestCheckTheReviewFiresOnYourOwnPR(t *testing.T) {
 		t.Errorf("press did nothing: inflight %d -> %d", before, len(next.(model).inflight))
 	}
 }
+
+// TestFetchStatesKeepsTheWorktrees: a watch signal re-reads the agent
+// states and nothing else. `git worktree list` is a process, a busy
+// agent signals every few hundred milliseconds, and running it at that
+// rate would be worse than the poll the watch replaces — so the
+// worktrees carry over from the last full read.
+func TestFetchStatesKeepsTheWorktrees(t *testing.T) {
+	m := model{localState: map[string]LocalState{
+		"pr-42-fix": {Worktree: "/repo/.worktrees.local/pr-42-fix", Branch: "pr-42-fix", Window: "pr-42-fix", ClaudeState: agentWorking},
+		"pr-7-old":  {Worktree: "/repo/.worktrees.local/pr-7-old", Branch: "pr-7-old"},
+		"pr-9-gone": {Window: "pr-9-gone", ClaudeState: agentIdle},
+	}}
+	// No multiplexer answers here, so every window is gone.
+	got := withStates(m.localState, nil)
+	if ls := got["pr-42-fix"]; ls.Worktree == "" || ls.Branch == "" {
+		t.Errorf("the worktree was dropped on a states-only read: %+v", ls)
+	}
+	if ls := got["pr-42-fix"]; ls.Window != "" || ls.ClaudeState != "" {
+		t.Errorf("a window that is gone survived: %+v", ls)
+	}
+	if _, ok := got["pr-7-old"]; !ok {
+		t.Error("a worktree with no window was dropped")
+	}
+	// An entry that was only ever a window, whose window has gone, goes
+	// with it rather than lingering as an empty row.
+	if _, ok := got["pr-9-gone"]; ok {
+		t.Error("a window-only entry outlived its window")
+	}
+}

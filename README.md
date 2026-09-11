@@ -43,9 +43,10 @@ is written twice and nothing goes stale in a second place.
 - **Workspaces on demand.** Enter fetches the branch into a worktree,
   opens a window, starts Claude on a first prompt. `c` removes all
   three; the conversation stays on disk, so the next Enter resumes it.
-- **The agent's state, in the list.** `©` follows Claude every two
-  seconds: working, blocked on you, done and unread. `n` jumps to the
-  next row that needs you.
+- **The agent's state, in the list.** `©` follows Claude: working,
+  blocked on you, done and unread. `n` jumps to the next row that needs
+  you. Under cmux the change arrives as cmux publishes it; under tmux
+  and herdr the list asks every two seconds.
 - **Prompts on a key.** `f` is feedback on both lists, from the two
   sides of it: on a review, "check the feedback since your last
   review"; on an issue, go through the review *you* were given and

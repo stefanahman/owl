@@ -14,6 +14,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -38,6 +39,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/term"
+	"github.com/stefanahman/mux"
 )
 
 // ------------------------------------------------------------
@@ -79,6 +81,24 @@ type doneMsg struct {
 	issues []Issue
 }
 
+// watchMsg carries the driver the list will read state through and the
+// channel that says when to. Both are nil where the multiplexer has no
+// watch, and the timer alone then does the work it always did.
+type watchMsg struct {
+	driver mux.Driver
+	signal <-chan struct{}
+}
+
+// statesMsg carries the agent states alone — every window the list's
+// scopes own, and what the agent in each is doing. A watch signal
+// answers this and leaves the worktrees alone.
+type statesMsg map[string]string
+
+// stateChangedMsg is one signal from the multiplexer: a later States()
+// would answer differently. open reports whether the watch is still
+// live — a closed channel must not be waited on again.
+type stateChangedMsg struct{ open bool }
+
 // cancelledMsg carries the issues cancelled inside cancelledWindow.
 type cancelledMsg struct {
 	gen    int
@@ -111,16 +131,79 @@ type doneProjectsMsg struct {
 	projects []Project
 }
 
-// localTickMsg asks for the local overlay again. Claude's state is
-// whatever the multiplexer reports as Claude works; following it every
-// two seconds — a status bar's cadence — lets a © change colour as
-// Claude starts, gets blocked or finishes, without a key press.
+// localTickMsg asks for the whole local overlay again: the worktrees
+// and the agent states both.
+//
+// Under a watch it is the safety net rather than the mechanism: what
+// it catches then is what a watch cannot say — a worktree made outside
+// owl, a subscription that died quietly. Without one it is still the
+// mechanism, and still runs at the old cadence.
 type localTickMsg struct{}
 
-const localRefreshEvery = 2 * time.Second
+// Two cadences, because the timer is two different things depending on
+// whether a watch is live. Under tmux and herdr there is none, the
+// timer is still the only way a © ever changes colour, and two seconds
+// is what that costs there: one `tmux list-windows`, a few
+// milliseconds. Under cmux a watch reports the change itself, and the
+// timer drops to the slow one — polling every two seconds there was a
+// process per workspace per tick.
+const (
+	localRefreshEvery   = 2 * time.Second
+	localRefreshWatched = 30 * time.Second
+)
 
-func localTick() tea.Cmd {
-	return tea.Tick(localRefreshEvery, func(time.Time) tea.Msg { return localTickMsg{} })
+// localRefreshInterval is how long the timer waits, given whether a
+// watch is live.
+func localRefreshInterval(watching bool) time.Duration {
+	if watching {
+		return localRefreshWatched
+	}
+	return localRefreshEvery
+}
+
+func localTick(watching bool) tea.Cmd {
+	return tea.Tick(localRefreshInterval(watching), func(time.Time) tea.Msg { return localTickMsg{} })
+}
+
+// startWatch subscribes to the multiplexer's state changes, and keeps
+// the driver it subscribed on: mux.Watch hangs the subscription off
+// that instance, and States() then answers from it without running
+// anything. A multiplexer with no watch answers a nil channel, and
+// waitForState makes no command for one, so nothing waits on it.
+func startWatch(ctx context.Context, cfg Config) tea.Cmd {
+	return func() tea.Msg {
+		if ctx == nil {
+			return watchMsg{} // no list to outlive: nothing to watch for
+		}
+		d := stateDriver(cfg)
+		if d == nil {
+			return watchMsg{}
+		}
+		ch, err := mux.Watch(d, ctx)
+		if err != nil || ch == nil {
+			// No watch to be had — cmux unreachable, or already watched.
+			// The driver is dropped with it, and deliberately: reads
+			// through a kept one answer from its snapshot, and only a
+			// mutating call ever clears that. Without a watch to keep it
+			// current, a kept driver would report the states it saw first
+			// for as long as the list ran. A fresh driver per read is
+			// what the timer had before, and it is still correct.
+			return watchMsg{}
+		}
+		return watchMsg{driver: d, signal: ch}
+	}
+}
+
+// waitForState blocks on the watch until it signals, once. Re-armed on
+// every signal, which is how a channel is read inside an Update loop.
+func waitForState(ch <-chan struct{}) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		_, open := <-ch
+		return stateChangedMsg{open: open}
+	}
 }
 
 // errMsg is a failed fetch: the list is stale (or, with nothing to
@@ -363,6 +446,18 @@ type model struct {
 	// panes.
 	mineFocus   bool
 	otherCursor int
+	// ctx ends when the list does, and is what the multiplexer's watch
+	// is started on. nil outside runTUI — a model in a test or a
+	// one-shot command starts no watch.
+	ctx context.Context
+	// stateDriver is the multiplexer this list reads agent state
+	// through, kept for the life of the list so that a watch started on
+	// it survives; nil under tmux, and until the watch command lands.
+	// stateSignal wakes the list when the multiplexer says a state
+	// changed, and is nil where the multiplexer has none.
+	stateDriver mux.Driver
+	stateSignal <-chan struct{}
+
 	// contentHeight is the rows' share of the screen, chrome removed.
 	// With two panes the viewport gets part of it and the rest is drawn
 	// beneath; both come from this one number.
@@ -555,7 +650,8 @@ func (m model) Init() tea.Cmd {
 	}
 	return tea.Batch(append(m.fetches(),
 		m.fetchLocal,
-		localTick(),
+		localTick(false), // no watch yet; the next tick knows
+		startWatch(m.ctx, m.cfg),
 		m.spinner.Tick,
 		textinput.Blink,
 		tea.RequestBackgroundColor,
@@ -1001,7 +1097,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// LocalState is derived from tmux/git — cheap to refetch, not cached.
 
 	case localTickMsg:
-		cmds = append(cmds, m.fetchLocal, localTick())
+		cmds = append(cmds, m.fetchLocal, localTick(m.stateSignal != nil))
+
+	case statesMsg:
+		// Only the states: the worktrees stay as the last full read left
+		// them, and the merge happens here because this is where the
+		// overlay is current.
+		m.localState = withStates(m.localState, msg)
+		m.refreshList()
+
+	case watchMsg:
+		m.stateDriver, m.stateSignal = msg.driver, msg.signal
+		if msg.signal == nil {
+			break // no watch: the timer is the mechanism, as it was
+		}
+		// The driver arriving is itself news: it is the one a watch is
+		// live on, so this first read is the cheap kind.
+		cmds = append(cmds, m.fetchStates, waitForState(m.stateSignal))
+
+	case stateChangedMsg:
+		if !msg.open {
+			// The watch is gone. The timer is still running, so the list
+			// keeps refreshing, just no longer the instant it changes.
+			m.stateSignal = nil
+			break
+		}
+		cmds = append(cmds, m.fetchStates, waitForState(m.stateSignal))
 
 	case errMsg:
 		if msg.gen != m.fetchGen {
@@ -2339,7 +2460,15 @@ func main() {
 
 // runTUI runs a list until it quits, keeps its cursor for the next
 // start, and prints what an open left for the terminal behind it.
+//
+// The context is the watch's: cmux's event stream is a child process
+// held open for as long as the list is watching, and cancelling here
+// kills it the moment the list ends rather than leaving it to notice
+// the broken pipe on its next heartbeat.
 func runTUI(m model) {
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	m.ctx = ctx
 	final, err := tea.NewProgram(m).Run()
 	exitOn(err)
 	fm := final.(model)

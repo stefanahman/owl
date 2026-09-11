@@ -17,6 +17,7 @@ owl is the review side of them.
 | a prompt while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed | refused from the pill, or from cmux's hook state without it; an agent neither saw gets the text typed |
 | Enter arrives | `select-window`, then your hook | `workspace focus`; every attached client follows | `workspace select`, and `focus-window` when owl runs outside cmux |
 | the TUI after an open (`on_open: auto`) | quits — the popup closes, the open finishes behind it | stays in its workspace | stays in its workspace |
+| how the state arrives | asked, every two seconds: one `tmux list-windows` | asked, every two seconds | **published**: owl subscribes to cmux's event stream and is told, and the timer drops to thirty seconds as a net |
 | a failure after the TUI is gone | tmux's status line, eight seconds | a herdr notification | a cmux notification, on owl's own workspace |
 | `hooks.after_open` sees | `OWL_SESSION` = the session, `OWL_WINDOW` = the window | `OWL_SESSION` = the herdr session, `OWL_WINDOW` = the label | `OWL_WINDOW` = the name; cmux has no session |
 
@@ -26,6 +27,44 @@ make sense with one multiplexer. `hooks.after_open` takes a mapping
 for that: `{tmux: spaces focus reviews}` runs under tmux and nothing
 elsewhere. `--config FILE` reads another config; `OWL_CONFIG` does the
 same for hooks that cannot pass flags.
+
+
+## Watching cmux rather than asking it
+
+Under tmux and herdr owl asks for the agent states on a timer, which
+costs one command each time. Under cmux asking cost one process **per
+workspace**: claude-status writes its pill per workspace and cmux has
+no bulk read of them, so a refresh was `cmux list-status --workspace
+<id>` thirty-six times on a machine with thirty-six workspaces. Every
+two seconds, for as long as a list was open, times however many lists
+were.
+
+owl subscribes instead. `mux.Watch` opens cmux's event stream — one
+child process for the life of the list — and keeps the driver's view
+of every workspace current from the frames. `States()` then answers
+from memory and runs nothing. Measured on a 36-workspace machine, over
+the same twenty seconds of an idle list: **203 process launches before,
+7 after**.
+
+Three things follow from it.
+
+The badge is also **faster**, not only cheaper: a pill change arrives
+as cmux publishes it, debounced by 300 ms, rather than on the next
+two-second poll.
+
+The timer stays, at thirty seconds, for what a watch cannot say — a
+worktree made outside owl, a subscription that died quietly. It is a
+net rather than the mechanism. Where there is no watch it remains the
+mechanism and keeps its two seconds: slowing it under tmux would have
+bought nothing and cost the badge.
+
+And the driver is kept for the life of the list, which is the part
+worth knowing if you touch this. A watch lives on the instance it was
+started on, and the instance caches what it reads. Kept **with** a
+watch, that cache is bypassed entirely and the view is current. Kept
+**without** one, it would answer with the states it saw first, for as
+long as the list ran. So when the watch fails to start, owl drops the
+driver with it and goes back to a fresh one per read.
 
 ## tmux
 

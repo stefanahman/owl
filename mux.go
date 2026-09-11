@@ -84,26 +84,49 @@ func scopeForName(name string) scope {
 	return reviews
 }
 
+// stateDriver is the one driver a list reads agent state through, kept
+// for as long as the list runs, or nil where there is nothing to keep.
+//
+// It exists because a watch lives on the driver it was started on:
+// mux.Watch hangs the subscription off the instance's own cache, so a
+// driver built afresh for each read — which is what newWindows does —
+// would never see it and would go back to asking cmux one process per
+// workspace. tmux gets nil: its driver is scoped to a session, so the
+// scopes cannot share one, and it has no watch to lose either.
+func stateDriver(cfg Config) mux.Driver {
+	d := newWindows(cfg, reviews).d
+	if d.Kind() == "tmux" {
+		return nil
+	}
+	return d
+}
+
 // statesIn is the agent state of every window the scopes own.
 //
 // Only tmux keeps the scopes apart — a session each — so only there
 // does the multiplexer have to be asked once per scope. cmux and herdr
 // hold one flat list of workspaces, and asking a second time fetches
-// the same answer to filter differently: three subprocesses on cmux,
-// on a two-second refresh.
-func statesIn(cfg Config, scopes ...scope) map[string]string {
+// the same answer to filter differently.
+//
+// shared is the driver the caller keeps, and the whole point of
+// passing it in: with a watch live on it, States() answers from the
+// watcher's view and runs nothing at all.
+func statesIn(cfg Config, shared mux.Driver, scopes ...scope) map[string]string {
 	out := map[string]string{}
 	if len(scopes) == 0 {
 		return out
 	}
-	first := newWindows(cfg, scopes[0])
-	if len(scopes) == 1 || first.Kind() == "tmux" {
-		for _, sc := range scopes {
-			maps.Copy(out, newWindows(cfg, sc).States())
+	if shared == nil {
+		first := newWindows(cfg, scopes[0])
+		if len(scopes) == 1 || first.Kind() == "tmux" {
+			for _, sc := range scopes {
+				maps.Copy(out, newWindows(cfg, sc).States())
+			}
+			return out
 		}
-		return out
+		shared = first.d
 	}
-	states, err := first.d.States()
+	states, err := shared.States()
 	if err != nil {
 		return out
 	}
