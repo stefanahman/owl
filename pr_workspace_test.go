@@ -231,6 +231,44 @@ func TestOpenYourOwnPRJoinsTheFeatureAlreadyOpen(t *testing.T) {
 	}
 }
 
+// TestOpenYourOwnPRInAForeignWorktreeKeepsTheName: the branch is
+// already checked out somewhere owl did not put it, under a directory
+// name that is nobody's workspace — Claude Code's own
+// `.claude/worktrees/<something>`, say. owl opens it there, as it does
+// for any worktree already on the branch, but the window keeps the name
+// owl planned.
+//
+// Taking the directory's name instead produced one no scope owns, and
+// the scope is read from the name: every later call went looking for a
+// window owl had just opened and reported "cmux: no window
+// group-key-tags".
+func TestOpenYourOwnPRInAForeignWorktreeKeepsTheName(t *testing.T) {
+	head := "refactor/tidy-imports"
+	f := ownFixture(t, head)
+	f.git(f.repo, "fetch", "-q", "origin", head+":"+head)
+	foreign := filepath.Join(f.repo, ".claude", "worktrees", "group-key-tags")
+	f.git(f.repo, "worktree", "add", "-q", foreign, head)
+
+	out := f.open("42")
+
+	name := "pr-42-fix-crash-on-startup"
+	if !strings.Contains(out, "started reviews:"+name) {
+		t.Errorf("output: %q", out)
+	}
+	if !strings.Contains(out, foreign) {
+		t.Errorf("did not open the worktree already on the branch: %q", out)
+	}
+	// The name it opened under has to be one its own scope owns, or the
+	// window cannot be found again.
+	if sc := scopeForName(name); !sc.owns(name) {
+		t.Errorf("scopeForName(%q) = %s, which does not own it", name, sc.name)
+	}
+	// And no second worktree on one branch.
+	if made := filepath.Join(f.repo, ".worktrees.local", name); f.exists(made) {
+		t.Errorf("a second worktree on one branch: %s", made)
+	}
+}
+
 func TestOpenYourOwnPRWithNoIssueKeepsThePRName(t *testing.T) {
 	head := "refactor/tidy-imports"
 	f := ownFixture(t, head)

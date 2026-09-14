@@ -241,8 +241,10 @@ func existingPRWorkspace(cfg Config, repo string, n int) (prWorkspace, bool) {
 			continue
 		}
 		// Detached counts as a copy: review worktrees often end up that
-		// way, and there is no branch to say otherwise.
-		p := prWorkspace{name: filepath.Base(wt.Path), branch: wt.Branch,
+		// way, and there is no branch to say otherwise. The handle names
+		// it, not the directory: the two differ when the worktree is one
+		// somebody else made, and only the handle is a name a scope owns.
+		p := prWorkspace{name: h, branch: wt.Branch,
 			own: wt.Branch != "" && !matchesPR(wt.Branch, n)}
 		if p.own {
 			p.key = issueKeyFor(wt.Branch, cfg.Linear.Team)
@@ -340,7 +342,16 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 			if filepath.Dir(wt.Path) != filepath.Join(repo, cfg.WorktreesDir) {
 				fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", p.branch, cfg.WorktreesDir, wt.Path)
 			}
-			p.name = filepath.Base(wt.Path)
+			// The workspace takes the worktree's handle, not its
+			// directory name: a worktree somebody else made is called
+			// whatever they called it, and a name that is nobody's
+			// workspace — neither a PR number nor an issue key — belongs
+			// to no scope, so every later call fails to find the window
+			// owl is opening right now. Where the directory has no
+			// handle the planned name stands; only the path is adopted.
+			if h := wt.handle(); h != "" {
+				p.name = h
+			}
 			return p, wt.Path, nil
 		}
 	}

@@ -1,9 +1,21 @@
-// A workspace is three things named identically: a git worktree under
-// <repo>/<worktrees_dir>, the branch checked out in it, and a window
-// in the multiplexer (mux.go). A review's is `pr-<N>` or
-// `pr-<N>-<slug>`; a feature's is the branch Linear names for the
-// issue, `<team>-<n>-<slug>`. This file holds what `open`, `close` and
-// the TUI overlay share.
+// A workspace is a git worktree, the branch checked out in it, and a
+// window in the multiplexer (mux.go), under one name: `pr-<N>` or
+// `pr-<N>-<slug>` for a review, the branch Linear names for a feature
+// (`<team>-<n>-<slug>`), `proj-<slug>` for a project. That name is the
+// identity — isWorkspaceName says what counts as one, and the scope a
+// workspace belongs to is read from it — so every name owl assigns has
+// to be one, or the window it just opened is one it cannot find again.
+//
+// Usually the worktree is <repo>/<worktrees_dir>/<name> and the three
+// agree. A PR of your own is the exception: it opens whatever worktree
+// already holds its branch, wherever that is and whatever it is called,
+// because the branch is the work and a second checkout of it is not.
+// Then the name is that worktree's handle when it has one — the
+// feature window the issue list opened, say — and the planned name
+// when it does not. `close` removes only worktrees under
+// worktrees_dir, so an adopted one is left where it was found.
+//
+// This file holds what `open`, `close` and the TUI overlay share.
 package main
 
 import (
