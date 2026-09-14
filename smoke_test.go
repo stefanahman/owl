@@ -49,7 +49,7 @@ func TestFetchSmoke(t *testing.T) {
 
 	merged := m.fetchMerged()
 	if mm, ok := merged.(mergedMsg); ok {
-		t.Logf("fetchMerged returned %d PRs (last %s)", len(mm.prs), mergedWindow)
+		t.Logf("fetchMerged returned %d PRs (last %s)", len(mm.prs), m.cfg.MergedWindow)
 	} else {
 		t.Fatalf("fetchMerged returned unexpected type %T", merged)
 	}

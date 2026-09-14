@@ -65,13 +65,13 @@ func fixtureIssues() []Issue {
 	}
 }
 
-// fixtureDone is an issue completed inside doneWindow and one closed
-// two days ago — the second must not reach the list.
+// fixtureDone is an issue completed inside done_window and one closed
+// five days ago — the second must not reach the list.
 func fixtureDone() []Issue {
 	fresh := withProject(mkIssue("BAR-4286", "Open update-activity fields", "bar-4286-open-update", "Done", "completed", 0, 3*time.Hour), "Endpoint Validation")
 	fresh.CompletedAt = time.Now().Add(-3 * time.Hour)
-	stale := mkIssue("BAR-4109", "Direct assignment strands calculation", "bar-4109-direct-assignment", "Done", "completed", 0, 48*time.Hour)
-	stale.CompletedAt = time.Now().Add(-48 * time.Hour)
+	stale := mkIssue("BAR-4109", "Direct assignment strands calculation", "bar-4109-direct-assignment", "Done", "completed", 0, 5*24*time.Hour)
+	stale.CompletedAt = time.Now().Add(-5 * 24 * time.Hour)
 	return []Issue{fresh, stale}
 }
 
@@ -98,7 +98,7 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	for _, want := range []string{
 		"owl · issues · acme/example",
 		"In progress", "Todo", "Backlog",
-		"Done", "· 1d", // the window the Done section reaches back
+		"Done", "· 3d", // the window the Done section reaches back
 		"BAR-4160", "⎇", "©", // the workspace and the blocked agent
 		"BAR-4159", "!!", "8h", "In Review", "#3561  #3543✓",
 		"BAR-4578", "!!!", "#3550 draft",
@@ -111,10 +111,10 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 			t.Errorf("issue list lacks %q:\n%s", want, out)
 		}
 	}
-	// Closed two days ago: past doneWindow, so it stays out however the
-	// tracker (or a stale cache) answered.
+	// Closed five days ago: past done_window, so it stays out however
+	// the tracker (or a stale cache) answered.
 	if strings.Contains(out, "BAR-4109") {
-		t.Errorf("an issue done 48h ago is in the list:\n%s", out)
+		t.Errorf("an issue done five days ago is in the list:\n%s", out)
 	}
 	// The state name only where it adds something: "In Review" inside In
 	// progress yes, "Backlog" inside Backlog no.

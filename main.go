@@ -1673,7 +1673,7 @@ func (m model) visibleReviewRows() []visibleRow {
 		}
 	}
 	if len(mergedVisible) > 0 {
-		title := "Merged (last " + mergedWindowLabel + ")"
+		title := "Merged (last " + m.cfg.MergedWindow.Text + ")"
 		out = append(out, visibleRow{sectionTitle: title, sectionStyle: styleSectionMerged, merged: true})
 		for i := range mergedVisible {
 			out = append(out, visibleRow{pr: &mergedVisible[i], merged: true})
@@ -1918,7 +1918,7 @@ func (m model) countsSummary() string {
 		counts[StatusWaitingForAuthor],
 		counts[StatusApproved],
 		len(m.merged),
-		mergedWindowLabel,
+		m.cfg.MergedWindow.Text,
 	))
 }
 

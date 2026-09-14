@@ -13,14 +13,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// mergedWindow is how far back to fetch merged PRs. Big enough to
-// cover a day of team activity so "merged without my review" cases
-// stay visible for audit; short enough to keep the list from turning
-// into a firehose.
-const (
-	mergedWindow      = 24 * time.Hour
-	mergedWindowLabel = "1d" // mergedWindow, as the UI says it
-)
+// How far back merged PRs are fetched is `merged_window` in the
+// config (default 3d): long enough that "merged without my review"
+// cases stay visible for audit and that Friday's merges are still
+// there on Monday, short enough to keep the list from turning into a
+// firehose.
 
 // PR mirrors the JSON shape returned by `gh pr list --json ...`.
 // Fields intentionally kept minimal to keep the query fast.
@@ -477,7 +474,7 @@ func minePRs(repo string) ([]PR, error) {
 // reviewed doesn't vanish from view the instant it merges.
 func (m model) fetchMerged() tea.Msg {
 	gen := m.fetchGen
-	cutoff := time.Now().Add(-mergedWindow).UTC().Format("2006-01-02T15:04:05Z")
+	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
 	q := fmt.Sprintf("%s merged:>=%s", prSearchQuery, cutoff)
 	prs, err := ghPRList(m.repo, "merged", q)
 	if err != nil {

@@ -844,9 +844,9 @@ func TestFrames(t *testing.T) {
 				tm.Send(localMsg{"pr-3543-feat": {Worktree: "/wt", Window: "pr-3543-feat", ClaudeState: "blocked"}})
 				tm.Send(mergedMsg{prs: fixtureMerged()})
 			},
-			want: []string{"Todo", "Waiting for author", "Approved", "Merged (last 1d)",
+			want: []string{"Todo", "Waiting for author", "Approved", "Merged (last 3d)",
 				"#3543", "#3510", "#3502", "#3550", "#3488", "⎇", "©", "✓", "·",
-				"4 open · 1 todo · 0 you · 2 author · 1 approved · 1 merged (1d)"},
+				"4 open · 1 todo · 0 you · 2 author · 1 approved · 1 merged (3d)"},
 		},
 		"search": {
 			drive: func(tm *teatest.TestModel) {

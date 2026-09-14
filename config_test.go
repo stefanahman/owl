@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The template is the user-facing documentation of the defaults, so
@@ -311,6 +313,42 @@ func TestRunConfigUsage(t *testing.T) {
 		var ue usageError
 		if !errors.As(err, &ue) {
 			t.Errorf("%v: got %v, want a usageError", args, err)
+		}
+	}
+}
+
+// TestWindowsParseAndKeepTheirWords: a window is written the way it is
+// spoken — 3d, 12h — and keeps that text, because the section header
+// says it back and "72h" is nobody's idea of three days.
+func TestWindowsParseAndKeepTheirWords(t *testing.T) {
+	if got := defaultConfig().MergedWindow; got.Text != "3d" || got.D != 72*time.Hour {
+		t.Errorf("default merged_window = %+v, want 3d", got)
+	}
+	if got := defaultConfig().DoneWindow; got.Text != "3d" || got.D != 72*time.Hour {
+		t.Errorf("default done_window = %+v, want 3d", got)
+	}
+	for _, c := range []struct {
+		text string
+		want time.Duration
+	}{
+		{"1d", 24 * time.Hour},
+		{"3d", 72 * time.Hour},
+		{"0.5d", 12 * time.Hour},
+		{"12h", 12 * time.Hour},
+		{"90m", 90 * time.Minute},
+	} {
+		cfg, err := parseConfig([]byte("merged_window: " + c.text + "\n"))
+		if err != nil {
+			t.Errorf("merged_window: %s: %v", c.text, err)
+			continue
+		}
+		if cfg.MergedWindow.D != c.want || cfg.MergedWindow.Text != c.text {
+			t.Errorf("merged_window: %s parsed to %+v, want %s", c.text, cfg.MergedWindow, c.want)
+		}
+	}
+	for _, bad := range []string{"3 days", "soon", "d", "3x", ""} {
+		if _, err := parseConfig([]byte("done_window: " + strconv.Quote(bad) + "\n")); err == nil {
+			t.Errorf("done_window: %q was accepted", bad)
 		}
 	}
 }

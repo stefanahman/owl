@@ -34,7 +34,7 @@ func (m model) fetchDone() tea.Msg {
 	if m.tracker == nil {
 		return doneMsg{gen, nil}
 	}
-	issues, err := m.tracker.Done(time.Now().Add(-doneWindow))
+	issues, err := m.tracker.Done(time.Now().Add(-m.cfg.DoneWindow.D))
 	if err != nil {
 		return doneMsg{gen, nil}
 	}
@@ -110,40 +110,46 @@ func flattenPRs(index map[string][]PR) []PR {
 	return out
 }
 
-// doneWindow is how far back the Done section reaches: an issue you
-// closed stays in view for a day, the way a merged PR does on the PR
-// list, so finishing something does not make it vanish.
+// How far back the Done section reaches is `done_window` in the config
+// (default 3d), the same setting shape as the PR list's merged window:
+// an issue you closed stays in view, so finishing something does not
+// make it vanish, and what you finished on Friday is still there on
+// Monday.
 const (
-	doneWindow      = 24 * time.Hour
-	doneWindowLabel = "1d" // doneWindow, as the UI says it
-	// Cancelled reaches further back than done. Finishing something is
-	// your own act and you saw it happen; cancelling is often someone
-	// else's decision about your work, and three days is long enough
-	// not to miss one over a weekend.
+	// Cancelled is not configurable and reaches three days. Finishing
+	// something is your own act and you saw it happen; cancelling is
+	// often someone else's decision about your work, and three days is
+	// long enough not to miss one over a weekend.
 	cancelledWindow      = 3 * 24 * time.Hour
 	cancelledWindowLabel = "3d"
 )
 
 // issueSections are the issue list's groups, in order: what is being
 // worked on, what is next, what waits, what just finished.
-var issueSections = []struct {
+type issueSection struct {
 	title string
 	note  string // dim, after the title
 	style lipgloss.Style
 	types []string // Linear's state types
-}{
-	{"In progress", "", styleSectionOK, []string{"started"}},
-	{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}},
-	{"Backlog", "", styleSectionWait, []string{"backlog"}},
-	{"Done", doneWindowLabel, styleSectionMerged, []string{"completed"}},
-	// Last, and its own section rather than part of Done: cancelling is
-	// not finishing, and a row that reads as either would be worse than
-	// not showing it.
-	//
-	// "Canceled" with one l, which is Linear's spelling and not owl's:
-	// each section is named what the tracker calls that state, and that
-	// is also what keeps the row from repeating it in the state column.
-	{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}},
+}
+
+// issueSections are the list's groups, in order; the Done section says
+// back the window the config asked for.
+func (m model) issueSections() []issueSection {
+	return []issueSection{
+		{"In progress", "", styleSectionOK, []string{"started"}},
+		{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}},
+		{"Backlog", "", styleSectionWait, []string{"backlog"}},
+		{"Done", m.cfg.DoneWindow.Text, styleSectionMerged, []string{"completed"}},
+		// Last, and its own section rather than part of Done: cancelling is
+		// not finishing, and a row that reads as either would be worse than
+		// not showing it.
+		//
+		// "Canceled" with one l, which is Linear's spelling and not owl's:
+		// each section is named what the tracker calls that state, and that
+		// is also what keeps the row from repeating it in the state column.
+		{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}},
+	}
 }
 
 // visibleIssueRows groups the issues by state type, newest change
@@ -163,7 +169,7 @@ func (m model) visibleIssueRows() []visibleRow {
 	all := make([]Issue, 0, len(m.issues)+len(m.doneIssues)+len(m.cancelledIssues))
 	all = append(append(append(all, m.issues...), m.doneIssues...), m.cancelledIssues...)
 	var out []visibleRow
-	for _, sec := range issueSections {
+	for _, sec := range m.issueSections() {
 		var members []Issue
 		for _, is := range all {
 			if !contains(sec.types, is.State.Type) || !matches(is) {
@@ -171,7 +177,7 @@ func (m model) visibleIssueRows() []visibleRow {
 			}
 			// The window is the query's, but a cache read from an earlier
 			// day would smuggle older ones in: hold the line here too.
-			if is.State.Type == "completed" && time.Since(is.CompletedAt) > doneWindow {
+			if is.State.Type == "completed" && time.Since(is.CompletedAt) > m.cfg.DoneWindow.D {
 				continue
 			}
 			if is.State.Type == "canceled" && time.Since(is.CanceledAt) > cancelledWindow {

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -41,6 +42,61 @@ type Config struct {
 	Mine         MineConfig     `yaml:"mine"`
 	Project      ProjectConfig  `yaml:"project"`
 	Groups       GroupsConfig   `yaml:"groups"`
+	MergedWindow Window         `yaml:"merged_window"`
+	DoneWindow   Window         `yaml:"done_window"`
+}
+
+// Window is how far back a "what just finished" section reaches, as
+// written: `3d`, `12h`, `90m`. It keeps the text as well as the
+// duration, because the section header says it back to you — a header
+// reading "Merged (last 72h)" for a config that says 3d would be owl
+// paraphrasing the user to the user.
+type Window struct {
+	D    time.Duration
+	Text string
+}
+
+func (w Window) String() string { return w.Text }
+
+// UnmarshalYAML parses Go's own duration units and `d` for days, which
+// Go does not have: a window is spoken about in days far more often
+// than in hours, and `72h` is nobody's idea of three days.
+func (w *Window) UnmarshalYAML(node *yaml.Node) error {
+	var text string
+	if err := node.Decode(&text); err != nil {
+		return err
+	}
+	d, err := parseWindow(text)
+	if err != nil {
+		return err
+	}
+	*w = Window{D: d, Text: text}
+	return nil
+}
+
+// parseWindow reads `3d` as three days and everything else as Go does.
+func parseWindow(text string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(text, "d"); ok {
+		n, err := strconv.ParseFloat(days, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a window (try 3d, 12h, 90m)", text)
+		}
+		return time.Duration(n * float64(24*time.Hour)), nil
+	}
+	d, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a window (try 3d, 12h, 90m)", text)
+	}
+	return d, nil
+}
+
+// window is the duration, for the code that only wants that.
+func window(text string) Window {
+	d, err := parseWindow(text)
+	if err != nil {
+		panic("owl: bad built-in window " + text) // only defaults reach this
+	}
+	return Window{D: d, Text: text}
 }
 
 // IssueConfig is the feature side: where feature windows live under
@@ -473,6 +529,14 @@ hooks:
   after_open: ""                 # command run after an open with OWL_PR (a review) or OWL_ISSUE and OWL_BRANCH (a feature), OWL_WINDOW, OWL_WORKTREE, OWL_REPO, OWL_MUX set, and OWL_SESSION under tmux and herdr; ~ is expanded.
                                  # A mapping gives one per multiplexer, e.g. {tmux: spaces focus reviews}: none under herdr and cmux, where the window is already in front
 
+# How far back the "what just finished" sections reach: the PR list's
+# Merged section and the merged half of the mine pane, and the issue
+# list's Done section. Written as 3d, 12h or 90m, and said back in the
+# section header. Three days so what landed on Friday is still there on
+# Monday.
+merged_window: 3d
+done_window: 3d
+
 theme:                           # lipgloss colours: ANSI 0-255 or #rrggbb
   working: "#dbbc7f"
   blocked: "214"
@@ -556,6 +620,11 @@ func defaultConfig() Config {
 	c.Bindings = defaultBindings()
 	c.OnOpen = "auto"
 	c.Theme = ThemeConfig{Working: "#dbbc7f", Blocked: "214", Done: "42"}
+	// Three days, so what landed on Friday is still there on Monday. A
+	// day was too short to survive a weekend, which is exactly when the
+	// question "did that land?" gets asked.
+	c.MergedWindow = window("3d")
+	c.DoneWindow = window("3d")
 	c.Keys = KeysConfig{
 		Up: keyNames{"up", "k"}, Down: keyNames{"down", "j"},
 		Top: keyNames{"g", "home"}, Bottom: keyNames{"G", "end"},
