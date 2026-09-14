@@ -23,12 +23,13 @@ import (
 // cacheFile is the on-disk shape. Kept flat and versioned by field
 // presence (no explicit version yet — nothing incompatible has shipped).
 type cacheFile struct {
-	Prs       []PR      `json:"prs"`
-	Merged    []PR      `json:"merged"`
-	Mine      []PR      `json:"mine"`
-	Me        string    `json:"me"`
-	FetchedAt time.Time `json:"fetchedAt"`
-	Cursor    int       `json:"cursor"` // the row the cursor was on at exit; the next start resumes there
+	Prs        []PR      `json:"prs"`
+	Merged     []PR      `json:"merged"`
+	Mine       []PR      `json:"mine"`
+	MineMerged []PR      `json:"mineMerged"` // your own, landed inside merged_window
+	Me         string    `json:"me"`
+	FetchedAt  time.Time `json:"fetchedAt"`
+	Cursor     int       `json:"cursor"` // the row the cursor was on at exit; the next start resumes there
 }
 
 // issueCacheFile is the issue list's on-disk shape.

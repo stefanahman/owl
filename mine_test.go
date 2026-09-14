@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +82,61 @@ func TestDraftsSinkOnlyWhereTheyAreMixed(t *testing.T) {
 	for i := range want {
 		if order[i] != want[i] {
 			t.Fatalf("rows = %v, want %v", order, want)
+		}
+	}
+}
+
+// TestMinePaneShowsWhatLanded: a PR of your own is invisible the
+// moment it merges — the review list excludes your own by author, and
+// the open fetch has dropped it — so the mine pane keeps it for
+// merged_window, last, newest first.
+func TestMinePaneShowsWhatLanded(t *testing.T) {
+	merged := func(n int, ago time.Duration) PR {
+		pr := ownPR(n, "APPROVED", "SUCCESS", "MERGEABLE", 0, false)
+		pr.MergedAt = time.Now().Add(-ago).UTC().Format(time.RFC3339)
+		return pr
+	}
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.mine = []PR{ownPR(1, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2, false)}
+	m.mineMerged = []PR{merged(2, 30*time.Hour), merged(3, 2*time.Hour)}
+
+	rows := m.visibleMineRows()
+	var sections []string
+	var order []int
+	for _, row := range rows {
+		if row.pr != nil {
+			order = append(order, row.pr.Number)
+			continue
+		}
+		sections = append(sections, row.sectionTitle)
+	}
+	if want := "Merged (last 3d)"; sections[len(sections)-1] != want {
+		t.Errorf("sections = %v, want %q last", sections, want)
+	}
+	// The open one first in its own section, then what landed, newest
+	// merge first.
+	if want := []int{1, 3, 2}; !reflect.DeepEqual(order, want) {
+		t.Errorf("rows = %v, want %v", order, want)
+	}
+	for _, row := range rows {
+		if row.pr != nil && row.pr.Number != 1 && !row.merged {
+			t.Errorf("PR #%d is in the merged section but not marked merged", row.pr.Number)
+		}
+	}
+}
+
+// TestMineMergedFollowsTheWindowLabel: the section says back the
+// window the config asked for, not a number owl chose.
+func TestMineMergedFollowsTheWindowLabel(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.MergedWindow = window("12h")
+	m := newModel(cfg, "acme/app", nil)
+	pr := ownPR(7, "APPROVED", "SUCCESS", "MERGEABLE", 0, false)
+	pr.MergedAt = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	m.mineMerged = []PR{pr}
+	for _, row := range m.visibleMineRows() {
+		if row.pr == nil && row.sectionTitle != "Merged (last 12h)" {
+			t.Errorf("section title = %q, want the configured window", row.sectionTitle)
 		}
 	}
 }

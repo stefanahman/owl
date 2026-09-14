@@ -118,10 +118,15 @@ type projectsMsg struct {
 	projects []Project
 }
 
-// mineMsg carries your own open PRs: the mine pane's fetch.
+// mineMsg carries your own PRs: the open ones the mine pane groups by
+// what is blocking them, and the ones that landed inside
+// merged_window, which no other list shows — the review list excludes
+// your own by author, and an open-PR fetch loses a PR the moment it
+// merges.
 type mineMsg struct {
-	gen int
-	prs []PR
+	gen    int
+	prs    []PR
+	merged []PR
 }
 
 // doneProjectsMsg carries the projects completed inside
@@ -432,12 +437,13 @@ type model struct {
 	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
-	repo    string // owner/name on GitHub
-	repoDir string // the repository's main working tree; "" outside a repo
-	me      string
-	prs     []PR
-	merged  []PR
-	mine    []PR // your own open PRs: the mine pane
+	repo       string // owner/name on GitHub
+	repoDir    string // the repository's main working tree; "" outside a repo
+	me         string
+	prs        []PR
+	merged     []PR
+	mine       []PR // your own open PRs: the mine pane
+	mineMerged []PR // your own PRs merged inside merged_window
 	// mineFocus says the mine pane has the cursor and the keys. Only
 	// the PR list has two panes; the other lists leave it false.
 	// otherCursor holds the row the unfocused pane was left on, and the
@@ -633,6 +639,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		m.prs = cache.Prs
 		m.merged = cache.Merged
 		m.mine = cache.Mine
+		m.mineMerged = cache.MineMerged
 		m.me = cache.Me
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -689,12 +696,13 @@ func (m model) persistCache() {
 		return
 	}
 	saveCache(m.repo, cacheFile{
-		Prs:       m.prs,
-		Merged:    m.merged,
-		Mine:      m.mine,
-		Me:        m.me,
-		FetchedAt: m.lastFetched,
-		Cursor:    m.cursor,
+		Prs:        m.prs,
+		Merged:     m.merged,
+		Mine:       m.mine,
+		MineMerged: m.mineMerged,
+		Me:         m.me,
+		FetchedAt:  m.lastFetched,
+		Cursor:     m.cursor,
 	})
 }
 
@@ -1077,6 +1085,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.mine = msg.prs
+		m.mineMerged = msg.merged
 		m.ready = true
 		m.clampCursor()
 		m.refreshList()

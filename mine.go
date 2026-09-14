@@ -15,22 +15,39 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-// fetchMine asks GitHub for your own open PRs.
+// fetchMine asks GitHub for your own PRs: the open ones, and the ones
+// that landed inside merged_window.
+//
+// The merged half is asked for separately because it answers a
+// different question and GitHub answers it with a different query —
+// and because nothing else shows it. The review list excludes your own
+// PRs by author (you cannot review your own), and the open fetch drops
+// a PR the moment it merges, so without this your own merge disappears
+// the second it lands.
 func (m model) fetchMine() tea.Msg {
 	gen := m.fetchGen
 	if m.repo == "" {
-		return mineMsg{gen, nil}
+		return mineMsg{gen: gen}
 	}
 	prs, err := minePRs(m.repo)
 	if err != nil {
 		return errMsg{gen, err}
 	}
-	return mineMsg{gen, prs}
+	// A failure here leaves the Merged section empty rather than
+	// failing the pane: the open PRs are the pane's job, and what
+	// landed is the footnote.
+	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
+	merged, err := ghPRList(m.repo, "merged", fmt.Sprintf("author:@me merged:>=%s", cutoff))
+	if err != nil {
+		merged = nil
+	}
+	return mineMsg{gen: gen, prs: prs, merged: merged}
 }
 
 // blocking is why a PR of yours is not landing, and which section it
@@ -113,6 +130,29 @@ func (m model) visibleMineRows() []visibleRow {
 		for i := range members {
 			out = append(out, visibleRow{pr: &members[i], sectionTitle: sec.title, mine: true})
 		}
+	}
+	// What landed, last: the pane is about what is in the way, and
+	// these are in nobody's way. They are here because they are
+	// nowhere else — the review list is other people's work by
+	// definition — so "did that land?" has an answer that does not
+	// involve leaving owl.
+	var landed []PR
+	for _, pr := range m.mineMerged {
+		if filter != "" && !strings.Contains(strconv.Itoa(pr.Number), filter) && !strings.Contains(strings.ToLower(pr.Title), strings.ToLower(filter)) {
+			continue
+		}
+		landed = append(landed, pr)
+	}
+	if len(landed) == 0 {
+		return out
+	}
+	sort.SliceStable(landed, func(i, j int) bool {
+		return parsedTime(landed[i].MergedAt).After(parsedTime(landed[j].MergedAt))
+	})
+	title := "Merged (last " + m.cfg.MergedWindow.Text + ")"
+	out = append(out, visibleRow{sectionTitle: title, sectionStyle: styleSectionMerged, merged: true})
+	for i := range landed {
+		out = append(out, visibleRow{pr: &landed[i], sectionTitle: title, mine: true, merged: true})
 	}
 	return out
 }
