@@ -255,10 +255,22 @@ Not out for review
 ```
 
 The mine pane groups by **what is in the way**, not by review status:
-blocked on you (a red check, changes requested, a conflict), ready to
-merge, waiting on reviewers who have been asked, and not out for review
-— never offered to anyone, which is every draft plus anything you
-marked ready and forgot to request a review on.
+blocked on you (a red check, a conflict, changes you have not handed
+back), ready to merge, waiting on reviewers who have been asked, and
+not out for review — never offered to anyone, which is every draft plus
+anything you marked ready and forgot to request a review on.
+
+"Changes requested" sits in whichever of the first two the ball is
+actually in. Re-request the review and the row moves to **waiting on
+reviewers**, because a reviewer's own review consumes their request —
+so one standing beside their verdict was made after it, and the move is
+theirs. GitHub disagrees: it keeps `reviewDecision` at
+`CHANGES_REQUESTED` until they answer, since only a new review or a
+dismissal clears it, and `mergeStateStatus` stays `BLOCKED` alongside.
+That is the right answer to "may this merge" and the wrong one to
+"whose move is it". A red check or a conflict is yours either way. The
+row keeps its `⚠` in every case, so the section never hides the
+verdict.
 
 Those two wear the same face and are not the same thing: a draft nobody
 was asked about is what a draft is, while a PR marked ready and never

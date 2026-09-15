@@ -55,13 +55,14 @@ func (m model) fetchMine() tea.Msg {
 type blocking int
 
 const (
-	blockedOnYou    blocking = iota // a red check, changes requested, a conflict
+	blockedOnYou    blocking = iota // a red check, a conflict, changes you have not handed back
 	readyToMerge                    // approved and green: nothing left but the button
 	waitingOnOthers                 // reviewers asked, none have answered
 	notOutForReview                 // never offered to anyone: a draft, or one you forgot to ask about
 )
 
-// whyBlocked places one of your PRs.
+// whyBlocked places one of your PRs by what is stopping it, which is
+// not the same question as what GitHub will let you merge.
 //
 // Mergeable is read where GitHub has bothered to compute it — it is
 // UNKNOWN on most PRs most of the time, since it is worked out lazily
@@ -69,9 +70,23 @@ const (
 // never the reason a section is empty.
 func whyBlocked(pr PR) blocking {
 	switch {
+	// A red check and a conflict are yours whoever is reviewing.
 	case pr.CI == "FAILURE" || pr.CI == "ERROR",
-		pr.ReviewDecision == "CHANGES_REQUESTED",
 		pr.Mergeable == "CONFLICTING":
+		return blockedOnYou
+	// Changes requested and still in your hands. Once you have handed
+	// it back it is theirs again, and a request outstanding is what
+	// says you have: a reviewer's own review consumes their request, so
+	// one standing alongside their verdict was made after it.
+	//
+	// GitHub disagrees and keeps reviewDecision at CHANGES_REQUESTED
+	// until they answer — re-requesting does not clear it, only a new
+	// review or a dismissal does, and mergeStateStatus stays BLOCKED
+	// with it. That is the right answer to "may this merge" and the
+	// wrong one to "whose move is it", which is what this pane asks.
+	// The row still carries the ⚠, so the verdict is not hidden by the
+	// section it sits in.
+	case pr.ReviewDecision == "CHANGES_REQUESTED" && pr.Asked == 0:
 		return blockedOnYou
 	case pr.ReviewDecision == "APPROVED" && !pr.IsDraft:
 		return readyToMerge

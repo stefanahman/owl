@@ -25,7 +25,15 @@ func TestWhyBlocked(t *testing.T) {
 	}{
 		{"red check", ownPR(1, "REVIEW_REQUIRED", "FAILURE", "UNKNOWN", 0, false), blockedOnYou},
 		{"errored check", ownPR(2, "REVIEW_REQUIRED", "ERROR", "UNKNOWN", 0, false), blockedOnYou},
-		{"changes requested", ownPR(3, "CHANGES_REQUESTED", "SUCCESS", "MERGEABLE", 1, false), blockedOnYou},
+		{"changes requested", ownPR(3, "CHANGES_REQUESTED", "SUCCESS", "MERGEABLE", 0, false), blockedOnYou},
+		// Changes requested and handed back: a request outstanding beside
+		// the verdict was made after it, since a reviewer's own review
+		// consumes theirs. GitHub still reports CHANGES_REQUESTED and
+		// still blocks the merge; the move is the reviewer's all the same.
+		{"changes requested, re-requested", ownPR(13, "CHANGES_REQUESTED", "SUCCESS", "MERGEABLE", 1, false), waitingOnOthers},
+		// But a red check is yours whoever is holding the review.
+		{"changes requested, re-requested, red check", ownPR(14, "CHANGES_REQUESTED", "FAILURE", "MERGEABLE", 1, false), blockedOnYou},
+		{"changes requested, re-requested, conflicting", ownPR(15, "CHANGES_REQUESTED", "SUCCESS", "CONFLICTING", 1, false), blockedOnYou},
 		// Approved and green, and still yours to deal with: a conflict
 		// outranks the approval, which is why the switch checks it first.
 		{"approved but conflicting", ownPR(4, "APPROVED", "SUCCESS", "CONFLICTING", 0, false), blockedOnYou},
