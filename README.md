@@ -25,7 +25,7 @@ Waiting for author
   #3550       ·    5h  fix retry ordering (bob)
 Approved
   #3502       ✓    3d  bump node to 22 (dave)
-Merged (last 1d)
+Merged (last 3d)
   #3488            6h  remove legacy flag (erin)
 ```
 
@@ -84,7 +84,7 @@ prompt of a review and of a feature:
 | needs | why |
 |---|---|
 | git, and [`gh`](https://cli.github.com) authenticated for the repo's host | every read and fetch goes through `gh`; GitHub.com is what it is used with, a GitHub Enterprise host should work but is untested |
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) on the PATH of the shell your multiplexer runs | the start line is typed into that shell |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) on the PATH of the shell your multiplexer runs | the start line is typed into that shell — the prompt is not: it is written to `$XDG_STATE_HOME/owl/prompts/<workspace>.md` (mode 0600) and the line reads it back, so a prompt of any size and shape arrives whole |
 | one of tmux (≥ 3.2 for the popup), herdr ≥ 0.9, cmux ≥ 0.64 (macOS) | where the workspaces live |
 | a Linear API key, for `owl issue` only | see [Features](#features-owl-issue) |
 
@@ -239,7 +239,7 @@ time you switched, which is the eye movement two panes exist to save.
 ```
 To review (2)
 ▸ #4302  ⎇ ©  ·   1h  refactor(backstage-desktop): rename the bundled…
-Merged (last 1d)
+Merged (last 3d)
   #4247       ✓  16h  fix: stop the Overview and Issues tabs reading…
 Mine (17)
 Blocked on you
@@ -252,6 +252,8 @@ Waiting on reviewers
 Not out for review
   #4290  ○ ✓     3h  refactor(tenancy): drop the legacy tenant shim
   #4306  ○ ✓    17h  fix(compile-db): keep captureStatus out… [draft]
+Merged (last 3d)
+  #4294  ✓ ✓     2h  fix(capture): reject enrichment writes made obsolete…
 ```
 
 The mine pane groups by **what is in the way**, not by review status:
@@ -259,6 +261,12 @@ blocked on you (a red check, a conflict, changes you have not handed
 back), ready to merge, waiting on reviewers who have been asked, and
 not out for review — never offered to anyone, which is every draft plus
 anything you marked ready and forgot to request a review on.
+
+Last comes what landed, inside `merged_window`. Nothing else shows it:
+the review list is other people's work by definition (`-author:@me`),
+and an open-PR fetch drops a PR the moment it merges — so without this
+your own merge disappears the second it happens, which is a strange way
+for a day's work to end.
 
 "Changes requested" sits in whichever of the first two the ball is
 actually in. Re-request the review and the row moves to **waiting on
@@ -750,6 +758,9 @@ herdr:
 remote: origin                   # the GitHub remote: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # relative to the repo root
 default_repo: ""                 # used when owl starts outside a git repo
+
+merged_window: 3d                # how far back the Merged sections reach: 3d, 12h, 90m — said back in the section header
+done_window: 3d                  # the same for the issue list's Done section
 
 agent:
   cmd: claude --permission-mode auto   # Claude Code, with your flags (e.g. --model claude-opus-5); -c is appended when the worktree has a prior conversation
