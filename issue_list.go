@@ -131,16 +131,20 @@ type issueSection struct {
 	note  string // dim, after the title
 	style lipgloss.Style
 	types []string // Linear's state types
+	// byPriority leads the section with what matters rather than with
+	// what moved last. Only the not-started sections set it: those are
+	// the ones you read to choose what to pick up.
+	byPriority bool
 }
 
 // issueSections are the list's groups, in order; the Done section says
 // back the window the config asked for.
 func (m model) issueSections() []issueSection {
 	return []issueSection{
-		{"In progress", "", styleSectionOK, []string{"started"}},
-		{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}},
-		{"Backlog", "", styleSectionWait, []string{"backlog"}},
-		{"Done", m.cfg.DoneWindow.Text, styleSectionMerged, []string{"completed"}},
+		{"In progress", "", styleSectionOK, []string{"started"}, false},
+		{"Todo", "", styleSectionTodo, []string{"unstarted", "triage"}, true},
+		{"Backlog", "", styleSectionWait, []string{"backlog"}, true},
+		{"Done", m.cfg.DoneWindow.Text, styleSectionMerged, []string{"completed"}, false},
 		// Last, and its own section rather than part of Done: cancelling is
 		// not finishing, and a row that reads as either would be worse than
 		// not showing it.
@@ -148,13 +152,33 @@ func (m model) issueSections() []issueSection {
 		// "Canceled" with one l, which is Linear's spelling and not owl's:
 		// each section is named what the tracker calls that state, and that
 		// is also what keeps the row from repeating it in the state column.
-		{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}},
+		{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}, false},
 	}
 }
 
-// visibleIssueRows groups the issues by state type, newest change
-// first within a group, with the search filter — a key, a title or a
-// project fragment, case-insensitively — applied.
+// priorityRank orders Linear's priority for sorting: urgent first, no
+// priority last. Linear numbers them 1 urgent … 4 low and gives 0 to
+// an issue nobody has ranked, so the raw number sorts the unranked to
+// the top of the list.
+func priorityRank(p int) int {
+	if p == 0 {
+		return 9
+	}
+	return p
+}
+
+// visibleIssueRows groups the issues by state type, with the search
+// filter — a key, a title or a project fragment, case-insensitively —
+// applied.
+//
+// Not-started sections lead with priority, everything else with the
+// last change. The question a backlog answers is which to pick up
+// next, and recency answers a different one: of seventeen backlog
+// issues here, the six most recently touched were all unranked while
+// four marked High sat below them. The started sections keep recency,
+// because what you touched last is how you find your way back into
+// work already begun, and the closed ones keep it because their order
+// is history.
 func (m model) visibleIssueRows() []visibleRow {
 	filter := strings.ToLower(m.search.Value())
 	matches := func(is Issue) bool {
@@ -188,7 +212,15 @@ func (m model) visibleIssueRows() []visibleRow {
 		if len(members) == 0 {
 			continue
 		}
-		sort.SliceStable(members, func(i, j int) bool { return members[i].UpdatedAt.After(members[j].UpdatedAt) })
+		sort.SliceStable(members, func(i, j int) bool {
+			if sec.byPriority {
+				a, b := priorityRank(members[i].Priority), priorityRank(members[j].Priority)
+				if a != b {
+					return a < b
+				}
+			}
+			return members[i].UpdatedAt.After(members[j].UpdatedAt)
+		})
 		out = append(out, visibleRow{sectionTitle: sec.title, sectionNote: sec.note, sectionStyle: sec.style})
 		for i := range members {
 			out = append(out, visibleRow{issue: &members[i], sectionTitle: sec.title})

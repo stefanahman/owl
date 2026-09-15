@@ -386,7 +386,26 @@ Canceled · 3d
 Every issue Linear assigns to you — all of them, paged 100 at a time
 until Linear runs out — in five sections by state: in progress, todo,
 backlog, what you finished in the last day, and what was cancelled in
-the last three, newest change first.
+the last three.
+
+**Todo and Backlog lead with priority**; everything else leads with the
+last change. Those two are the sections you read to choose what to pick
+up, and recency answers a different question — in the workspace this
+was built against, the six most recently touched backlog issues were
+all unranked while four marked High sat below them. `!!!` to `-` on the
+row is the order, so nothing needs a legend. In progress keeps recency
+because what you touched last is how you find your way back into work
+already begun, and Done and Cancelled keep it because their order is
+history.
+
+Linear's own line is [Active versus
+Backlog](https://linear.app/docs/default-team-pages) — Todo counts as
+active, and means committed-but-not-started rather than important. The
+way Linear intends issues to cross that line is
+[cycles](https://linear.app/docs/configuring-workflows): "issues here
+will be updated to active (To do) status if they're moved to a cycle."
+With cycles off, Todo only fills by hand and priority is the signal
+that is actually there — which is why the ordering leans on it.
 
 **Cancelling is not finishing**, so it is a section of its own rather
 than a row in Done, and it reaches back three days where Done reaches

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -375,5 +376,57 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 	}
 	if done != -1 && cancelled < done {
 		t.Errorf("Canceled sits above Done: %d, %d", cancelled, done)
+	}
+}
+
+// TestBacklogLeadsWithPriority: the backlog is the list you read to
+// choose what to pick up, and recency answers a different question.
+// Against the real workspace this was built from, the six most
+// recently touched backlog issues were all unranked while four marked
+// High sat below them.
+//
+// The started section keeps recency: what you touched last is how you
+// find your way back into work already begun.
+func TestBacklogLeadsWithPriority(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	at := func(is Issue, ago time.Duration) Issue {
+		is.UpdatedAt = time.Now().Add(-ago)
+		return is
+	}
+	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
+	m.issues = []Issue{
+		// Backlog: touched most recently, ranked by nobody.
+		at(mkIssue("BAR-4927", "put the grade on the calculation", "b1", "Backlog", "backlog", 0, 0), time.Hour),
+		at(mkIssue("BAR-5077", "verify Dellner reads correctly", "b2", "Backlog", "backlog", 0, 0), 2*time.Hour),
+		// Backlog: High and Medium, and stale.
+		at(mkIssue("BAR-4577", "post-define validation", "b3", "Backlog", "backlog", 2, 0), 30*24*time.Hour),
+		at(mkIssue("BAR-4579", "narrow-scope resolver", "b4", "Backlog", "backlog", 3, 0), 20*24*time.Hour),
+		at(mkIssue("BAR-4303", "declared-direction amounts", "b5", "Backlog", "backlog", 2, 0), 40*24*time.Hour),
+		// In progress: priority must not reorder these.
+		at(mkIssue("BAR-9001", "the one I touched last", "s1", "In Progress", "started", 0, 0), time.Minute),
+		at(mkIssue("BAR-9002", "started, and urgent", "s2", "In Progress", "started", 1, 0), 5*24*time.Hour),
+	}
+	m.ready = true
+	m.width, m.height = 160, 40
+	m.resizeViewport()
+
+	var section string
+	order := map[string][]string{}
+	for _, row := range m.visibleIssueRows() {
+		if row.issue == nil {
+			section = row.sectionTitle
+			continue
+		}
+		order[section] = append(order[section], row.issue.Key)
+	}
+
+	// High before High before Medium, then the unranked by recency.
+	want := []string{"BAR-4577", "BAR-4303", "BAR-4579", "BAR-4927", "BAR-5077"}
+	if got := order["Backlog"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("backlog order = %v\n              want %v", got, want)
+	}
+	// Recency, untouched by the urgent one below it.
+	if got, want := order["In progress"], []string{"BAR-9001", "BAR-9002"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("in-progress order = %v, want %v — started sections keep recency", got, want)
 	}
 }
