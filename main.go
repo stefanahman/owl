@@ -2072,7 +2072,17 @@ func (m model) render() string {
 	}
 
 	rows := m.visibleRows()
-	if len(rows) == 0 {
+	// Empty means both panes on the PR list, not the focused one. Your
+	// own pull requests live in the other pane, and a repo where every
+	// PR is yours — which a solo project is — has nothing to review and
+	// everything to show. Returning here would draw "no PRs need your
+	// review" over a pane that was holding them, and tab cannot reach a
+	// pane that was never rendered.
+	empty := len(rows) == 0
+	if m.panes() {
+		empty = empty && len(m.otherPaneRows()) == 0
+	}
+	if empty {
 		switch {
 		case m.search.Value() != "":
 			b.WriteString(fmt.Sprintf("\nno %s match /%s\n", m.noun(), m.search.Value()))
