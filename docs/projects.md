@@ -206,6 +206,58 @@ hook refusing a commit whose branch does not carry that worktree's key
 would make it impossible rather than discouraged. owl already writes
 `.git/info/exclude` per worktree, so it has the hook into that.
 
+## When a project is renamed in Linear
+
+owl names a project's workspace `proj-<slug of the project's name>`, and
+the name is the one thing about a project that changes. Rename it and
+the row loses its `⎇` and `©`: the worktree and the conversation are
+still there, under the old slug, and owl is looking for the new one.
+
+Nothing is lost. The session id survives, because `projects.json` is
+keyed by the project's Linear UUID and not by its name.
+
+**Do not press Enter first.** owl would create a *second*, empty
+worktree under the new slug and start a fresh conversation carrying the
+old session id, leaving the real transcript behind. Move first, then
+open.
+
+```sh
+# 1. the worktree, from the repo root — safe, a project's is detached
+#    and clean, so nothing can be lost here
+git worktree move .worktrees.local/proj-<old-slug> .worktrees.local/proj-<new-slug>
+
+# 2. the conversation. Claude Code indexes it by the worktree's absolute
+#    path with every non-alphanumeric character replaced by a dash, the
+#    leading slash included, so
+#      /Users/me/src/app/.worktrees.local/proj-x
+#    is the directory
+#      -Users-me-src-app--worktrees-local-proj-x
+#    (one dash per character: the `--` comes from `/.`). In
+#    $CLAUDE_CONFIG_DIR/projects when that is set, ~/.claude/projects
+#    otherwise.
+mv ~/.claude/projects/<encoded-old> ~/.claude/projects/<encoded-new>
+
+# 3. Enter on the project in owl
+```
+
+Step 3 is part of the procedure, not a check: the multiplexer workspace
+still carries the old title and the old working directory, which step 1
+has just deleted under it. Opening from owl renames it and resumes the
+conversation, because `hasConversationFor` now resolves at the new
+path. `owl project open <slug>` does the same from a shell.
+
+Verified on a 5.7 MB transcript: same session id, appended to, nothing
+rewritten. The old path's references inside the transcript stay as they
+are — that work did happen there.
+
+If a stray `proj-<new-slug>` worktree already exists because Enter came
+first, remove it with `git worktree remove` before step 1; it is empty.
+
+Renames are rare enough that this is a recipe rather than a fix. The
+fix, if they stop being rare: record the workspace name in
+`projects.json` beside the session id, which is already keyed by the
+UUID, and find the workspace by that rather than by the name.
+
 ## Open
 
 - **The project branch in `shared` mode.** Named after the project
