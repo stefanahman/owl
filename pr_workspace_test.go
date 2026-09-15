@@ -208,7 +208,7 @@ func ownFixture(t *testing.T, head string) *fixture {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	f.prIsYours(head)
-	f.cfg.Linear.Team = "BAR"
+	f.cfg.Linear = LinearWorkspaces{{Team: "BAR"}}
 	// The branch exists on the remote, as an open PR's head does.
 	f.git(f.origin, "branch", head, "refs/pull/42/head")
 	return f

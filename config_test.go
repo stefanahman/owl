@@ -366,3 +366,98 @@ func TestOnOpenDefaultsToAuto(t *testing.T) {
 		}
 	}
 }
+
+// TestLinearOneOrSeveral covers the two shapes `linear:` takes. A
+// mapping is one workspace, which is what every config said before a
+// second could be named; a list is several.
+func TestLinearOneOrSeveral(t *testing.T) {
+	one, err := parseConfig([]byte(`
+linear:
+  token: lin_key
+  team: BAR
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one.Linear) != 1 || one.Linear[0].Team != "BAR" || one.Linear[0].Token != "lin_key" {
+		t.Fatalf("a mapping parsed to %+v, want one workspace", one.Linear)
+	}
+	// A lone workspace keeps the cache file it already fetched into, so
+	// upgrading owl does not ask 1Password for a key it has.
+	if got := one.Linear.cacheName(0); got != "linear" {
+		t.Errorf("cacheName = %q, want linear", got)
+	}
+
+	several, err := parseConfig([]byte(`
+linear:
+  - name: stefanahman
+    token: op://Private/linear-stefanahman/credential
+    teams: [DEV, LIFE]
+  - name: norrbrunn
+    token: op://Private/linear-norrbrunn/credential
+    teams: [NOR]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(several.Linear) != 2 {
+		t.Fatalf("a list parsed to %d workspaces, want 2", len(several.Linear))
+	}
+	// The gate spans every workspace: a branch carrying either one's key
+	// is work of yours.
+	want := []string{"DEV", "LIFE", "NOR"}
+	if got := several.Linear.TeamKeys(); !reflect.DeepEqual(got, want) {
+		t.Errorf("TeamKeys() = %v, want %v", got, want)
+	}
+	// And they cache apart, or the second would write over the first.
+	if got := several.Linear.cacheName(1); got != "linear-norrbrunn" {
+		t.Errorf("cacheName(1) = %q, want linear-norrbrunn", got)
+	}
+}
+
+// TestLinearRefusesTheAmbiguous covers the two ways a list of
+// workspaces cannot be told apart.
+func TestLinearRefusesTheAmbiguous(t *testing.T) {
+	for _, c := range []struct{ name, yaml, want string }{
+		{"a workspace with no name", `
+linear:
+  - token: a
+    teams: [DEV]
+  - name: norrbrunn
+    token: b
+    teams: [NOR]
+`, "needs a name"},
+		{"two workspaces named alike", `
+linear:
+  - name: same
+    token: a
+    teams: [DEV]
+  - name: same
+    token: b
+    teams: [NOR]
+`, "named"},
+		{"one team in two workspaces", `
+linear:
+  - name: stefanahman
+    token: a
+    teams: [DEV, LIFE]
+  - name: norrbrunn
+    token: b
+    teams: [NOR, DEV]
+`, "claimed by both"},
+	} {
+		_, err := parseConfig([]byte(c.yaml))
+		if err == nil {
+			t.Errorf("%s: parsed fine, want an error", c.name)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: error %q does not say %q", c.name, err, c.want)
+		}
+	}
+
+	// A lone workspace is asked for neither a name nor a team.
+	if _, err := parseConfig([]byte("linear:\n  token: lin_key\n")); err != nil {
+		t.Errorf("one nameless workspace: %v", err)
+	}
+}

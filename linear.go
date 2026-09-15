@@ -513,7 +513,16 @@ func (l Linear) Create(title string) (Issue, error) {
 	return r.IssueCreate.Issue, nil
 }
 
-// newTracker is the tracker for this configuration.
+// newTracker is the tracker for this configuration. One workspace for
+// now, whatever the config holds: the set that reads them all is the
+// next commit, and the gate above already spans every one of them.
 func newTracker(cfg Config, notify func(string)) Tracker {
-	return Linear{Token: secret{name: "linear", ref: cfg.Linear.Token, account: cfg.Linear.Account, notify: notify}, Team: cfg.Linear.Team}
+	if len(cfg.Linear) == 0 {
+		return Linear{Token: secret{name: "linear", notify: notify}}
+	}
+	ws := cfg.Linear[0]
+	return Linear{
+		Token: secret{name: cfg.Linear.cacheName(0), ref: ws.Token, account: ws.Account, notify: notify},
+		Team:  ws.Team,
+	}
 }

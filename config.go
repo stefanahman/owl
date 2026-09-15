@@ -24,26 +24,26 @@ import (
 // key means. Obtain one via loadConfig (or defaultConfig in tests) so
 // it has been validated and the derived fields are set.
 type Config struct {
-	Mux          string         `yaml:"mux"`
-	Tmux         TmuxConfig     `yaml:"tmux"`
-	Herdr        HerdrConfig    `yaml:"herdr"`
-	Remote       string         `yaml:"remote"`
-	WorktreesDir string         `yaml:"worktrees_dir"`
-	DefaultRepo  string         `yaml:"default_repo"`
-	Agent        AgentConfig    `yaml:"agent"`
-	OpenCmd      string         `yaml:"open_cmd"`
-	OnOpen       string         `yaml:"on_open"`
-	Hooks        HooksConfig    `yaml:"hooks"`
-	Theme        ThemeConfig    `yaml:"theme"`
-	Keys         KeysConfig     `yaml:"keys"`
-	Bindings     BindingsConfig `yaml:"bindings"`
-	Linear       LinearConfig   `yaml:"linear"`
-	Issue        IssueConfig    `yaml:"issue"`
-	Mine         MineConfig     `yaml:"mine"`
-	Project      ProjectConfig  `yaml:"project"`
-	Groups       GroupsConfig   `yaml:"groups"`
-	MergedWindow Window         `yaml:"merged_window"`
-	DoneWindow   Window         `yaml:"done_window"`
+	Mux          string           `yaml:"mux"`
+	Tmux         TmuxConfig       `yaml:"tmux"`
+	Herdr        HerdrConfig      `yaml:"herdr"`
+	Remote       string           `yaml:"remote"`
+	WorktreesDir string           `yaml:"worktrees_dir"`
+	DefaultRepo  string           `yaml:"default_repo"`
+	Agent        AgentConfig      `yaml:"agent"`
+	OpenCmd      string           `yaml:"open_cmd"`
+	OnOpen       string           `yaml:"on_open"`
+	Hooks        HooksConfig      `yaml:"hooks"`
+	Theme        ThemeConfig      `yaml:"theme"`
+	Keys         KeysConfig       `yaml:"keys"`
+	Bindings     BindingsConfig   `yaml:"bindings"`
+	Linear       LinearWorkspaces `yaml:"linear"`
+	Issue        IssueConfig      `yaml:"issue"`
+	Mine         MineConfig       `yaml:"mine"`
+	Project      ProjectConfig    `yaml:"project"`
+	Groups       GroupsConfig     `yaml:"groups"`
+	MergedWindow Window           `yaml:"merged_window"`
+	DoneWindow   Window           `yaml:"done_window"`
 }
 
 // Window is how far back a "what just finished" section reaches, as
@@ -165,13 +165,106 @@ type MineConfig struct {
 	Prompt string `yaml:"prompt"`
 }
 
-// LinearConfig is the issue tracker: the key, as a reference, the team
-// new issues go to, and the teams a branch may file work under.
+// LinearConfig is one Linear workspace: the key, as a reference, the
+// team new issues go to, and the teams a branch may file work under.
 type LinearConfig struct {
+	Name    string   `yaml:"name"`
 	Token   string   `yaml:"token"`
 	Account string   `yaml:"account"`
 	Team    string   `yaml:"team"`
 	Teams   []string `yaml:"teams"`
+}
+
+// LinearWorkspaces is every Linear workspace owl reads. Written as one
+// mapping it is one workspace, which is what every config said before
+// a second could be named; written as a list it is several.
+//
+// Several is not a bigger version of one. Linear does not join
+// workspaces — no query, no view and no plan crosses that line — so a
+// company's tracker and a personal one are two accounts with two keys,
+// and the only place they can be seen together is here.
+type LinearWorkspaces []LinearConfig
+
+func (w *LinearWorkspaces) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.SequenceNode {
+		var list []LinearConfig
+		if err := n.Decode(&list); err != nil {
+			return err
+		}
+		*w = list
+		return nil
+	}
+	var one LinearConfig
+	if err := n.Decode(&one); err != nil {
+		return err
+	}
+	*w = LinearWorkspaces{one}
+	return nil
+}
+
+// TeamKeys is every team key across every workspace: the gate a
+// branch's issue key is checked against. A key belongs to whichever
+// workspace claims its team, and validate has already refused a config
+// where two claim the same one.
+func (w LinearWorkspaces) TeamKeys() []string {
+	var all []string
+	for _, ws := range w {
+		all = append(all, ws.TeamKeys()...)
+	}
+	return all
+}
+
+// Configured reports whether any workspace has a key to read with.
+func (w LinearWorkspaces) Configured() bool {
+	for _, ws := range w {
+		if ws.Token != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// cacheName is the file the workspace's token is cached under:
+// `linear` for a lone workspace, so a config that predates the list
+// keeps the token it has already fetched, and `linear-<name>` where
+// several would otherwise write over each other's.
+func (w LinearWorkspaces) cacheName(i int) string {
+	if len(w) == 1 {
+		return "linear"
+	}
+	return "linear-" + w[i].Name
+}
+
+// validate refuses the two configs a list of workspaces can be wrong
+// in. Both are about telling them apart: without a name a workspace
+// has no cache file of its own and nothing to call it by in an error,
+// and a team key claimed twice leaves no answer to which workspace
+// DEV-12 is in.
+//
+// A lone workspace needs neither, and is not asked for either.
+func (w LinearWorkspaces) validate() error {
+	if len(w) < 2 {
+		return nil
+	}
+	seenName := map[string]bool{}
+	seenTeam := map[string]string{}
+	for i, ws := range w {
+		if ws.Name == "" {
+			return fmt.Errorf("linear[%d]: every workspace needs a name once there is more than one", i)
+		}
+		if seenName[ws.Name] {
+			return fmt.Errorf("linear: two workspaces are named %q", ws.Name)
+		}
+		seenName[ws.Name] = true
+		for _, team := range ws.TeamKeys() {
+			team = strings.ToUpper(team)
+			if other, dup := seenTeam[team]; dup {
+				return fmt.Errorf("linear: team %s is claimed by both %q and %q; a key like %s-1 belongs to one workspace", team, other, ws.Name, team)
+			}
+			seenTeam[team] = ws.Name
+		}
+	}
+	return nil
 }
 
 // TeamKeys is every team a branch's issue key may belong to: `teams`
@@ -621,6 +714,9 @@ bindings:                        # your own keys on a row: a prompt handed to th
 func defaultConfig() Config {
 	var c Config
 	c.Mux = "auto"
+	// One workspace, unconfigured: the shape a config without a `linear:`
+	// block has always had, and what the template's own mapping parses to.
+	c.Linear = LinearWorkspaces{{}}
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
 	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
@@ -784,6 +880,9 @@ func (cfg *Config) validate() error {
 	}
 	if d := filepath.Clean(cfg.WorktreesDir); filepath.IsAbs(d) || d == "." || d == ".." || strings.HasPrefix(d, "../") {
 		return fmt.Errorf("worktrees_dir must be a relative path inside the repo, got %q", cfg.WorktreesDir)
+	}
+	if err := cfg.Linear.validate(); err != nil {
+		return err
 	}
 	switch cfg.OnOpen {
 	case "auto", "quit", "stay", "switch":

@@ -228,7 +228,7 @@ func TestProjectTable(t *testing.T) {
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
 	cfg := defaultConfig()
-	cfg.Linear = LinearConfig{Token: "lin_key", Team: "BAR"}
+	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
 
 	var out strings.Builder
 	if err := runProject(cfg, nil, &out); err != nil {
