@@ -1943,7 +1943,17 @@ func (m model) titleLine(repo string) string {
 		// The project, not the repo: while drilled that is where you are.
 		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
 	} else if m.kind != "pr" {
-		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), repo))
+		// The issue and project lists are not scoped by a repo — they are
+		// what is assigned to you and what you work in — so where several
+		// Linear workspaces answer, the workspaces are the honest scope.
+		// A repo there would name one of them while the rows come from
+		// both. With one workspace the repo stays: it is the context you
+		// are standing in, and a lone workspace is often not even named.
+		scope := repo
+		if names := m.workspaceNames(); names != "" {
+			scope = names
+		}
+		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), scope))
 	}
 	right := ""
 	if !m.lastFetched.IsZero() {

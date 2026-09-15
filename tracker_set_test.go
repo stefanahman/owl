@@ -278,6 +278,43 @@ func TestProjectColsShedWorkspaceLate(t *testing.T) {
 	}
 }
 
+// TestTitleNamesTheWorkspaces: the issue and project lists are not
+// scoped by a repo, so with several workspaces the title says which
+// ones answered rather than naming one repo the rows did not all come
+// from. `owl · projects · norrbrunn/norrbrunn` over a list holding
+// stefanahman's projects too is the bug this pins.
+func TestTitleNamesTheWorkspaces(t *testing.T) {
+	two := Config{Linear: LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}}
+	m := model{cfg: two, kind: "project", width: 120}
+	if got := m.workspaceNames(); got != "stefanahman + norrbrunn" {
+		t.Errorf("workspaceNames() = %q", got)
+	}
+	title := m.titleLine("norrbrunn/norrbrunn")
+	if strings.Contains(title, "norrbrunn/norrbrunn") {
+		t.Errorf("the title still names one repo for a list from two workspaces: %q", title)
+	}
+	for _, want := range []string{"stefanahman", "norrbrunn"} {
+		if !strings.Contains(title, want) {
+			t.Errorf("the title does not name %s: %q", want, title)
+		}
+	}
+
+	// One workspace keeps the repo: it is the context you are standing
+	// in, and a lone workspace is often not even named.
+	one := model{cfg: Config{Linear: LinearWorkspaces{{}}}, kind: "project", width: 120}
+	if got := one.workspaceNames(); got != "" {
+		t.Errorf("one workspace named itself: %q", got)
+	}
+	if got := one.titleLine("acme/app"); !strings.Contains(got, "acme/app") {
+		t.Errorf("one workspace lost the repo from its title: %q", got)
+	}
+
+	// And the PR list is repo-scoped whatever the tracker holds.
+	pr := model{cfg: two, kind: "pr", width: 120}
+	if got := pr.titleLine("acme/app"); !strings.Contains(got, "acme/app") {
+		t.Errorf("the PR list lost its repo: %q", got)
+	}
+}
 
 // TestProjectLegendHasNoGap: the workspace line is appended, not left
 // empty, because an empty string is still a line to JoinVertical — a

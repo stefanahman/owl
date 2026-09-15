@@ -201,6 +201,21 @@ func (m model) projectCols() projectCols {
 // is filed and vanishes when it is closed would be worse than none.
 func (m model) multiWorkspace() bool { return len(m.cfg.Linear) > 1 }
 
+// workspaceNames names the Linear workspaces the rows can come from,
+// for the title of a list that is scoped by them. "" where there is
+// only one, which the title answers with the repo instead.
+func (m model) workspaceNames() string {
+	if !m.multiWorkspace() {
+		return ""
+	}
+	names := make([]string, 0, len(m.cfg.Linear))
+	for _, ws := range m.cfg.Linear {
+		if ws.Name != "" {
+			names = append(names, ws.Name)
+		}
+	}
+	return strings.Join(names, " + ")
+}
 
 func (m model) projectNameWidth() int {
 	if m.width == 0 {
