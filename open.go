@@ -8,6 +8,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -637,7 +638,10 @@ func writePrompt(workspace, prompt string) (promptFile, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, workspace+".md")
+	// Base, because this is the one place a workspace name becomes a
+	// path. The shapes a name may take (`pr-<N>-<anything>`) do not
+	// forbid a separator, and nothing else would notice one.
+	path := filepath.Join(dir, filepath.Base(workspace)+".md")
 	if err := os.WriteFile(path, []byte(prompt), 0o600); err != nil {
 		return "", err
 	}
@@ -654,6 +658,21 @@ func namesAConversation(args []string) bool {
 		}
 	}
 	return false
+}
+
+// removePrompt takes the workspace's prompt file with the workspace.
+// It holds whatever the issue and the review held, and a workspace that
+// is gone has no use for it.
+func removePrompt(workspace string) error {
+	dir, err := stateDir()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(dir, "prompts", filepath.Base(workspace)+".md"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // never opened with a prompt, or already gone
+	}
+	return err
 }
 
 // oneLine folds a prompt onto one line, for the only path that still

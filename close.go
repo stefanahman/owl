@@ -171,6 +171,19 @@ func closeWorkspace(cfg Config, mx windows, label string, match func(name string
 			fmt.Fprintf(out, "deleted branch %s\n", br)
 		}
 	}
+	// The prompt file is named after the workspace, which is the window
+	// and the worktree's directory — not the label, which is the PR
+	// number or the issue key.
+	name := window
+	if name == "" && wt != "" {
+		name = filepath.Base(wt)
+	}
+	if name != "" {
+		if err := removePrompt(name); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			failed = append(failed, "prompt file")
+		}
+	}
 	if window != "" {
 		if err := mx.Close(window); err != nil {
 			fmt.Fprintln(os.Stderr, err)

@@ -816,6 +816,35 @@ func TestStartLine(t *testing.T) {
 	}
 }
 
+// TestClosingTakesThePromptFile: the prompt holds whatever the issue
+// and the review held, and a workspace that is gone has no use for it.
+// It is named after the workspace — not after the label close is
+// called with, which is the PR number — so this test is what tells the
+// two apart.
+func TestClosingTakesThePromptFile(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+
+	f.open("42", "--prompt", "look again")
+	file := filepath.Join(state, "owl", "prompts", "pr-42-fix-crash-on-startup.md")
+	if !f.exists(file) {
+		t.Fatalf("open wrote no prompt file at %s", file)
+	}
+	if err := runClose(f.cfg, []string{"--force", "42"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(file) {
+		t.Errorf("the prompt file outlived the workspace: %s", file)
+	}
+	// Closing again, with nothing left to remove, must not report a
+	// failure over a file that is already gone.
+	if err := runClose(f.cfg, []string{"--force", "42"}, io.Discard); err != nil && strings.Contains(err.Error(), "prompt file") {
+		t.Errorf("closing twice complained about the prompt file: %v", err)
+	}
+}
+
 // TestPromptSurvivesItsSize: the whole point. A prompt of any size
 // leaves the typed line the same short length, and reaches the file
 // byte for byte — newlines, quotes, backticks and all, none of which
