@@ -96,6 +96,10 @@ type Issue struct {
 	Team struct {
 		Key string `json:"key"` // BAR
 	} `json:"team"`
+	// Workspace is the Linear workspace this came from, stamped by the
+	// tracker set as it merges. Empty with one workspace configured,
+	// which is what most of them are: there is nothing to tell apart.
+	Workspace string `json:"-"`
 }
 
 // Milestone is a step inside a project. In a Linear workspace this is
@@ -141,6 +145,10 @@ type Project struct {
 	Milestones struct {
 		Nodes []Milestone `json:"nodes"`
 	} `json:"projectMilestones"`
+	// Workspace is the Linear workspace this came from. A project has
+	// no key to say so — an issue carries DEV-12 and a project carries
+	// a UUID — so the row is told by this or not at all.
+	Workspace string `json:"-"`
 }
 
 // Initiative is the initiative the project belongs to, or "".
@@ -513,16 +521,23 @@ func (l Linear) Create(title string) (Issue, error) {
 	return r.IssueCreate.Issue, nil
 }
 
-// newTracker is the tracker for this configuration. One workspace for
-// now, whatever the config holds: the set that reads them all is the
-// next commit, and the gate above already spans every one of them.
+// newTracker is the tracker for this configuration: one workspace's
+// client, or a set that reads every one of them as a single tracker.
+//
+// One workspace gets the client itself rather than a set of one. The
+// set is worth its indirection where there is something to merge, and
+// where there is not it would only stand between the list and the
+// error it is trying to report.
 func newTracker(cfg Config, notify func(string)) Tracker {
 	if len(cfg.Linear) == 0 {
 		return Linear{Token: secret{name: "linear", notify: notify}}
 	}
-	ws := cfg.Linear[0]
-	return Linear{
-		Token: secret{name: cfg.Linear.cacheName(0), ref: ws.Token, account: ws.Account, notify: notify},
-		Team:  ws.Team,
+	if len(cfg.Linear) == 1 {
+		ws := cfg.Linear[0]
+		return Linear{
+			Token: secret{name: cfg.Linear.cacheName(0), ref: ws.Token, account: ws.Account, notify: notify},
+			Team:  ws.Team,
+		}
 	}
+	return newTrackerSet(cfg, notify)
 }
