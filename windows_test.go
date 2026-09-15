@@ -132,8 +132,15 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	if fake.Focused() != w.ID {
 		t.Errorf("arriving should have focused the workspace, focused = %q", fake.Focused())
 	}
-	if got, want := fake.Typed(w.Pane()), []string{"true '/owl:review 42'<enter>"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("typed %v, want %v", got, want)
+	// The typed line names a prompt file; what the agent is handed is
+	// in it. That is the point of the file — the line stays this short
+	// whatever the prompt holds.
+	typed := fake.Typed(w.Pane())
+	if len(typed) != 1 || !strings.HasSuffix(typed[0], "<enter>") {
+		t.Fatalf("typed %v, want one line and an enter", typed)
+	}
+	if got := promptIn(t, typed[0]); !strings.Contains(got, "/owl:review 42") {
+		t.Errorf("the agent was handed %q", got)
 	}
 	f.waitFile(hookOut, "herdr|work|"+name+"\n")
 
@@ -170,6 +177,44 @@ func TestOpenAndCloseOnHerdr(t *testing.T) {
 	}
 }
 
+// TestABigPromptIsNotTyped: the line owl types must not grow with the
+// prompt. It used to carry the prompt quoted inside it, and a line of
+// thousands of characters typed into a terminal loses some of them —
+// not at a threshold but as a race, on cmux and tmux both. What was
+// left was a half-typed line whose quote never closed, so the shell sat
+// in continuation and the agent never started.
+//
+// Asserting the typed line rather than the screen is the point: the
+// screen would show whatever survived, and what owl handed over is the
+// thing under test.
+func TestABigPromptIsNotTyped(t *testing.T) {
+	f := newFixture(t)
+	t.Chdir(f.repo)
+	fake := muxtest.InstallFakeCmux(t)
+	f.cfg.Mux = "cmux"
+
+	prompt := "## Stacked PR\n\nIt puts `emissionFactor.grade` on the calculation's schema.\n\n    git fetch origin bar-4927\n\n"
+	prompt += strings.Repeat("A paragraph of instructions that makes this realistic. ", 400)
+	f.open("42", "--prompt", prompt)
+
+	w, ok := fake.Workspace("pr-42-fix-crash-on-startup")
+	if !ok {
+		t.Fatal("no workspace")
+	}
+	typed := fake.Typed(w.Panes[0].Surfaces[0].ID)
+	if len(typed) == 0 {
+		t.Fatal("nothing was typed")
+	}
+	if n := len(typed[0]); n > 200 {
+		t.Errorf("owl typed %d characters for a %d-character prompt; the prompt is in the line:\n%s", n, len(prompt), typed[0][:120])
+	}
+	// And the agent gets all of it, newlines included — nothing is
+	// flattened on the way to a file.
+	if got := promptIn(t, typed[0]); got != prompt {
+		t.Errorf("the prompt file holds %d bytes, the prompt was %d", len(got), len(prompt))
+	}
+}
+
 // The same flow on cmux: the fake CLI in the multiplexer's seat.
 func TestOpenAndCloseOnCmux(t *testing.T) {
 	f := newFixture(t)
@@ -193,8 +238,12 @@ func TestOpenAndCloseOnCmux(t *testing.T) {
 		t.Fatalf("workspace = %+v, %v; want cwd %s", w, ok, wt)
 	}
 	surface := w.Panes[0].Surfaces[0].ID
-	if got, want := fake.Typed(surface), []string{"true '/owl:review 42'", "<enter>"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("typed %v, want %v", got, want)
+	typed := fake.Typed(surface)
+	if len(typed) != 2 || typed[1] != "<enter>" {
+		t.Fatalf("typed %v, want one line and an enter", typed)
+	}
+	if got := promptIn(t, typed[0]); !strings.Contains(got, "/owl:review 42") {
+		t.Errorf("the agent was handed %q", got)
 	}
 	if fake.State().Selected != w.ID {
 		t.Errorf("arriving should have selected the workspace, selected = %q", fake.State().Selected)

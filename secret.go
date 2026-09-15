@@ -31,9 +31,9 @@ type secret struct {
 // errNoSecret is a reference left empty in the config.
 var errNoSecret = errors.New("no token configured")
 
-// cachePath is $XDG_STATE_HOME/owl/<name>.token, else
-// ~/.local/state/owl/<name>.token.
-func (s secret) cachePath() (string, error) {
+// stateDir is $XDG_STATE_HOME/owl, else ~/.local/state/owl: where owl
+// keeps what it needs between runs and no one else needs at all.
+func stateDir() (string, error) {
 	base := os.Getenv("XDG_STATE_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
@@ -42,7 +42,17 @@ func (s secret) cachePath() (string, error) {
 		}
 		base = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(base, "owl", s.name+".token"), nil
+	return filepath.Join(base, "owl"), nil
+}
+
+// cachePath is $XDG_STATE_HOME/owl/<name>.token, else
+// ~/.local/state/owl/<name>.token.
+func (s secret) cachePath() (string, error) {
+	dir, err := stateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, s.name+".token"), nil
 }
 
 // value resolves the reference: the cache when it holds the value,

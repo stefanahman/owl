@@ -78,7 +78,9 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	if _, err := tmux("has-session", "-t", mux.TmuxTarget("reviews", "")); err == nil {
 		t.Error("a feature created the reviews session")
 	}
-	f.waitPaneIn("features", name, "true '/owl:feature BAR-4160'")
+	if got := promptIn(t, f.waitPaneIn("features", name, "$(cat ")); !strings.Contains(got, "/owl:feature BAR-4160") {
+		t.Errorf("the agent was handed %q", got)
+	}
 	if cwd, _ := tmux("display-message", "-p", "-t", mux.TmuxTarget("features", name), "#{pane_current_path}"); cwd != wt {
 		t.Errorf("window cwd %q, want %q", cwd, wt)
 	}

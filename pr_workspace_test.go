@@ -136,8 +136,11 @@ func TestFirstPromptFollowsTheWorkspace(t *testing.T) {
 
 	// And none of it fires on a workspace that already holds a
 	// conversation: that resumes, and a resumed conversation is sent no
-	// prompt at all. The first prompt is for arriving somewhere new.
-	if line := startLine(cfg.Agent.Cmd, firstPrompt(cfg, 4290, yours), true, ""); line != cfg.Agent.Cmd+" -c" {
+	// prompt at all. The first prompt is for arriving somewhere new —
+	// which is why open writes no prompt file in that case, and why the
+	// path is a type of its own: handing this prompt to startLine is
+	// what a stale caller would do, and it no longer compiles.
+	if line := startLine(cfg.Agent.Cmd, "", true); line != cfg.Agent.Cmd+" -c" {
 		t.Errorf("resuming sent a prompt: %q", line)
 	}
 }

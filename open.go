@@ -85,7 +85,6 @@ type workspace struct {
 // the agent started in it, or the prompt handed to the agent already
 // there; with arrive, the window selected and the after_open hook run.
 func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive bool, out io.Writer) error {
-	prompt = oneLine(prompt)
 	if err := linkLocal(cfg.Agent.LinkLocal, repo, ws.dir); err != nil {
 		return err
 	}
@@ -95,9 +94,23 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 
 	resume := hasConversationFor(ws.dir)
 	where := mx.Describe(ws.name)
+	// The text the agent starts on: the caller's prompt, or the
+	// workspace's own first one when a fresh conversation has none. A
+	// resumed conversation with no prompt is sent nothing at all.
+	start := prompt
+	if !resume && start == "" {
+		start = ws.first
+	}
+	var file promptFile
+	if start != "" {
+		var err error
+		if file, err = writePrompt(ws.name, start); err != nil {
+			return fmt.Errorf("%s: writing the prompt: %w", ws.label, err)
+		}
+	}
 	switch {
 	case !slices.Contains(mx.Windows(), ws.name):
-		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, ws.first, resume, prompt, ws.args...)); err != nil {
+		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, file, resume, ws.args...)); err != nil {
 			return err
 		}
 		if resume {
@@ -111,12 +124,16 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, ws.first, resume, prompt, ws.args...)); err != nil {
+		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, file, resume, ws.args...)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)
 	case prompt != "":
-		if err := mx.Prompt(ws.name, prompt); err != nil {
+		// Flattened, because this one is typed into a running agent:
+		// there is no shell to read a file, a newline is Enter, and the
+		// agent would answer a half-written prompt. The start line above
+		// needs none of that — the file keeps its newlines.
+		if err := mx.Prompt(ws.name, oneLine(prompt)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "sent prompt to %s\n", where)
@@ -570,22 +587,61 @@ func linkLocal(globs []string, repo, wt string) error {
 // `-c` is skipped when the flags already say which conversation to
 // resume. A project names its session, and `-c` would reopen whatever
 // ran last in that worktree instead.
-func startLine(cmd, first string, resume bool, prompt string, args ...string) string {
+// startLine is the command line that starts the agent, with the prompt
+// read out of promptFile rather than written into the line.
+//
+// The prompt used to be quoted into the line itself, and the line is
+// typed into the workspace's shell one character at a time. Past a few
+// thousand characters that loses some of them — not at a threshold, but
+// as a race: the same 6000 characters failed and 10000 went through, on
+// cmux and on tmux both, each dropping something different. What the
+// shell is left holding is a half-typed line whose opening quote never
+// closes, so it sits in continuation and the agent never starts.
+//
+// `"$(cat …)"` types a fixed ~20 characters whatever the prompt holds,
+// and the shell reads the file at execution: nothing of the prompt is
+// typed, parsed by the line editor, or quoted. It also keeps the
+// prompt's own newlines, which the old path had to flatten to survive —
+// so an agent now gets the markdown it was written, headings and code
+// blocks and all.
+// promptFile is where a prompt was written, as a type of its own: the
+// parameter it fills used to hold the prompt itself, and text passed
+// where a path belongs would otherwise compile and quietly ask the
+// shell to `cat` the whole prompt as a filename.
+type promptFile string
+
+func startLine(cmd string, prompt promptFile, resume bool, args ...string) string {
 	line := cmd
 	for _, a := range args {
 		line += " " + a
 	}
-	if resume {
-		if !namesAConversation(args) {
-			line += " -c"
-		}
-	} else if prompt == "" {
-		prompt = first
+	if resume && !namesAConversation(args) {
+		line += " -c"
 	}
 	if prompt != "" {
-		line += " " + shellQuote(prompt)
+		line += ` "$(cat ` + shellQuote(string(prompt)) + `)"`
 	}
 	return line
+}
+
+// writePrompt puts the prompt where the shell can read it back: one
+// file per workspace, overwritten on every open, readable only by its
+// owner because a prompt carries whatever the issue and the review
+// carried.
+func writePrompt(workspace, prompt string) (promptFile, error) {
+	dir, err := stateDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "prompts")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, workspace+".md")
+	if err := os.WriteFile(path, []byte(prompt), 0o600); err != nil {
+		return "", err
+	}
+	return promptFile(path), nil
 }
 
 // namesAConversation reports whether the flags already pick the
@@ -600,8 +656,8 @@ func namesAConversation(args []string) bool {
 	return false
 }
 
-// oneLine folds newlines into spaces: the prompt is typed into the
-// window as keystrokes, and a newline would submit the first line.
+// oneLine folds a prompt onto one line, for the only path that still
+// types it: keystrokes to a running agent, where a newline submits.
 func oneLine(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }), " ")
 }

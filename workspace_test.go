@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -221,6 +222,23 @@ func (f *fixture) waitPane(window, want string) string {
 	return f.waitPaneIn(f.cfg.Tmux.Session, window, want)
 }
 
+// promptIn reads the prompt the agent line points at. The pane shows
+// `<cmd> "$(cat '<path>')"` whatever the prompt's size, so what the
+// agent was handed is in the file, not on the screen — and that is
+// what these tests are about.
+func promptIn(t *testing.T, screen string) string {
+	t.Helper()
+	m := regexp.MustCompile(`\$\(cat '([^']+)'\)`).FindStringSubmatch(screen)
+	if m == nil {
+		t.Fatalf("no prompt file in the agent line:\n%s", screen)
+	}
+	text, err := os.ReadFile(m[1])
+	if err != nil {
+		t.Fatalf("reading the prompt file: %v", err)
+	}
+	return string(text)
+}
+
 // waitPaneIn is waitPane for a window of any session.
 func (f *fixture) waitPaneIn(session, window, want string) string {
 	f.t.Helper()
@@ -300,7 +318,9 @@ func TestOpenCreatesWorkspace(t *testing.T) {
 	if cwd, _ := tmux("display-message", "-p", "-t", mux.TmuxTarget("reviews", name), "#{pane_current_path}"); cwd != wt {
 		t.Errorf("window cwd %q, want %q", cwd, wt)
 	}
-	f.waitPane(name, "true '/owl:review 42'")
+	if got := promptIn(t, f.waitPane(name, "$(cat ")); !strings.Contains(got, "/owl:review 42") {
+		t.Errorf("the agent was handed %q", got)
+	}
 
 	// The TUI overlay sees the window, without the keepalive one, and
 	// reads the state option tmux-claude-status writes.
@@ -367,7 +387,9 @@ func TestStartStaysPut(t *testing.T) {
 	if !f.exists(filepath.Join(f.repo, ".worktrees.local", name, "pr42.txt")) {
 		t.Error("start did not create the worktree")
 	}
-	f.waitPane(name, "true '/owl:review 42'")
+	if got := promptIn(t, f.waitPane(name, "$(cat ")); !strings.Contains(got, "/owl:review 42") {
+		t.Errorf("the agent was handed %q", got)
+	}
 	if got := f.activeWindow(); got != "scratch" {
 		t.Errorf("start selected the window (%q); it must stay where it was", got)
 	}
@@ -530,7 +552,9 @@ func TestOpenPromptHandling(t *testing.T) {
 	// Fresh window with an explicit prompt: it replaces agent.prompt.
 	f.open("42", "--prompt", "look again")
 	name := "pr-42-fix-crash-on-startup"
-	f.waitPane(name, "true 'look again'")
+	if got := promptIn(t, f.waitPane(name, "$(cat ")); got != "look again" {
+		t.Errorf("the agent was handed %q, want the explicit prompt", got)
+	}
 
 	// The agent exited (true returns at once) and a conversation exists
 	// on disk: a later prompt must restart the agent with -c, not be
@@ -541,12 +565,16 @@ func TestOpenPromptHandling(t *testing.T) {
 	if !strings.Contains(out, "restarted agent") {
 		t.Errorf("output: %q", out)
 	}
-	f.waitPane(name, `true -c 'it'\''s back'`)
+	if got := promptIn(t, f.waitPane(name, "-c \"$(cat ")); got != "it's back" {
+		t.Errorf("the restarted agent was handed %q", got)
+	}
 
 	// A running agent gets the prompt as keystrokes.
 	f.cfg.Agent.Cmd = "cat >/dev/null #" // stays in the foreground; everything after # is ignored
 	f.open("7")
-	f.waitPane("pr-7", "cat >/dev/null # '/owl:review 7'")
+	if got := promptIn(t, f.waitPane("pr-7", "$(cat ")); !strings.Contains(got, "/owl:review 7") {
+		t.Errorf("the agent was handed %q", got)
+	}
 	out = f.open("7", "--prompt", "ping")
 	if !strings.Contains(out, "sent prompt") {
 		t.Errorf("output: %q", out)
@@ -747,19 +775,26 @@ func TestSlugify(t *testing.T) {
 }
 
 func TestStartLine(t *testing.T) {
-	cmd, first := "claude --permission-mode auto", "/review 42"
+	cmd := "claude --permission-mode auto"
+	file := promptFile("/state/owl/prompts/pr-42.md")
 	cases := []struct {
 		resume bool
-		prompt string
+		prompt promptFile
 		want   string
 	}{
-		{false, "", "claude --permission-mode auto '/review 42'"},
-		{false, "hi", "claude --permission-mode auto 'hi'"},
+		// The prompt is read out of the file by the shell, so the typed
+		// line is the same length whatever the prompt holds.
+		{false, file, `claude --permission-mode auto "$(cat '/state/owl/prompts/pr-42.md')"`},
+		{true, file, `claude --permission-mode auto -c "$(cat '/state/owl/prompts/pr-42.md')"`},
+		// No prompt: a resumed conversation is sent nothing, and a fresh
+		// one without a prompt opens bare.
 		{true, "", "claude --permission-mode auto -c"},
-		{true, "it's", `claude --permission-mode auto -c 'it'\''s'`},
+		{false, "", "claude --permission-mode auto"},
+		// A path owl wrote is still quoted: it carries the workspace name.
+		{false, promptFile("/state/owl/prompts/it's.md"), `claude --permission-mode auto "$(cat '/state/owl/prompts/it'\''s.md')"`},
 	}
 	for _, c := range cases {
-		if got := startLine(cmd, first, c.resume, c.prompt); got != c.want {
+		if got := startLine(cmd, c.prompt, c.resume); got != c.want {
 			t.Errorf("startLine(resume=%v, %q) = %q, want %q", c.resume, c.prompt, got, c.want)
 		}
 	}
@@ -767,17 +802,47 @@ func TestStartLine(t *testing.T) {
 	// A project names its own conversation. The flags come before the
 	// prompt, and `-c` is not added on top: it would resume whatever ran
 	// last in the worktree instead of the session owl is holding.
-	fresh := startLine(cmd, first, false, "", "--session-id", "u-u-i-d")
-	if want := "claude --permission-mode auto --session-id u-u-i-d '/review 42'"; fresh != want {
+	fresh := startLine(cmd, file, false, "--session-id", "u-u-i-d")
+	if want := `claude --permission-mode auto --session-id u-u-i-d "$(cat '/state/owl/prompts/pr-42.md')"`; fresh != want {
 		t.Errorf("fresh project start = %q, want %q", fresh, want)
 	}
-	again := startLine(cmd, first, true, "", "--resume", "u-u-i-d")
+	again := startLine(cmd, "", true, "--resume", "u-u-i-d")
 	if want := "claude --permission-mode auto --resume u-u-i-d"; again != want {
 		t.Errorf("resumed project = %q, want %q", again, want)
 	}
 	// Without such a flag the old behaviour stands.
-	if got := startLine(cmd, first, true, "", "--add-dir", "/wt"); got != "claude --permission-mode auto --add-dir /wt -c" {
+	if got := startLine(cmd, "", true, "--add-dir", "/wt"); got != "claude --permission-mode auto --add-dir /wt -c" {
 		t.Errorf("flags that name no conversation = %q", got)
+	}
+}
+
+// TestPromptSurvivesItsSize: the whole point. A prompt of any size
+// leaves the typed line the same short length, and reaches the file
+// byte for byte — newlines, quotes, backticks and all, none of which
+// the shell ever parses.
+func TestPromptSurvivesItsSize(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	prompt := "## Stacked PR\n\nIt puts `emissionFactor.grade` on the calculation's schema.\n\n    git fetch origin bar-4927\n\n$(rm -rf /) and \"quotes\"\n"
+	prompt += strings.Repeat("A paragraph of instructions that makes this realistic.\n\n", 400)
+	if len(prompt) < 20000 {
+		t.Fatalf("the fixture is only %d bytes; the bug needs thousands", len(prompt))
+	}
+
+	file, err := writePrompt("pr-42-fix", prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The line's shape is TestABigPromptIsNotTyped's business; this is
+	// about what reaches the file.
+	got, err := os.ReadFile(string(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != prompt {
+		t.Errorf("the file holds %d bytes, the prompt was %d", len(got), len(prompt))
+	}
+	if info, err := os.Stat(string(file)); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("prompt file mode = %v, %v; want 0600 — it carries whatever the issue carried", info.Mode().Perm(), err)
 	}
 }
 
