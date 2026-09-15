@@ -323,3 +323,40 @@ func TestLinearForgetsARefusedKeyOnce(t *testing.T) {
 		t.Errorf("still refused: %v, op calls %d", err, calls())
 	}
 }
+
+// TestLinearScopeErrorNamesTheRemedy: `owl hoot` is the one write owl
+// ships, and on a read-only key it fails with a message that names a
+// scope rather than what to do about it. Confirmed against the live
+// API with a create that could not have succeeded — an invalid team —
+// which Linear refused on scope before it looked at the input.
+func TestLinearScopeErrorNamesTheRemedy(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if strings.Contains(req.Query, "issueCreate") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"errors": []any{map[string]any{"message": "Invalid scope: `write` or `issues:create` required"}},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"viewer": map[string]any{"id": "uuid-me"},
+			"teams":  map[string]any{"nodes": []any{map[string]any{"id": "uuid-team"}}},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "BAR", Endpoint: srv.URL}
+
+	_, err := l.Create("a title")
+	if err == nil {
+		t.Fatal("a read-only key filed an issue")
+	}
+	for _, want := range []string{"Invalid scope", "read-only", "Write"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}

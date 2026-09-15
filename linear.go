@@ -244,6 +244,13 @@ func (l Linear) post(q string, vars map[string]any, out any) error {
 		if e.Extensions.Code == "AUTHENTICATION_ERROR" {
 			return fmt.Errorf("%w: %s", errLinearAuth, e.Message)
 		}
+		// A key that can read but not write says so in a message that
+		// names a scope and not a remedy. `owl hoot` is the write owl
+		// ships, and on a read-only key it fails exactly here, so the
+		// message says what to do rather than which scope was absent.
+		if strings.Contains(e.Message, "Invalid scope") {
+			return fmt.Errorf("linear: %s — the key in linear.token is read-only. A personal API key is scoped when you make it (Linear: Settings → Account → Security & Access); this needs Write, and can be limited to one team", e.Message)
+		}
 		return fmt.Errorf("linear: %s", e.Message)
 	}
 	if resp.StatusCode != http.StatusOK {
