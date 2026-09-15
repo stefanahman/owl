@@ -235,3 +235,63 @@ func TestSetMergesProjectsNewestFirst(t *testing.T) {
 		t.Errorf("second project came from %q", got[1].Workspace)
 	}
 }
+
+// TestProjectColsShedWorkspaceLate: the column exists only where there
+// is more than one workspace, and when the window narrows it goes
+// second to last — before the priority and after everything else.
+func TestProjectColsShedWorkspaceLate(t *testing.T) {
+	one := model{cfg: Config{Linear: LinearWorkspaces{{}}}, width: 200}
+	if got := one.projectCols().workspace; got != 0 {
+		t.Errorf("one workspace gave the column %d cells, want none", got)
+	}
+
+	two := Config{Linear: LinearWorkspaces{{Name: "a"}, {Name: "b"}}}
+	if got := (model{cfg: two, width: 200}).projectCols().workspace; got != workspaceWidth {
+		t.Errorf("two workspaces gave the column %d cells, want %d", got, workspaceWidth)
+	}
+
+	// Narrowing sheds lead, then initiative, then due, then the
+	// workspace — and the priority outlasts them all.
+	var order []string
+	last := (model{cfg: two, width: 200}).projectCols()
+	for w := 200; w >= 30; w-- {
+		c := (model{cfg: two, width: w}).projectCols()
+		for _, f := range []struct {
+			name       string
+			was, isNow int
+		}{
+			{"lead", last.lead, c.lead},
+			{"initiative", last.initiative, c.initiative},
+			{"due", last.due, c.due},
+			{"workspace", last.workspace, c.workspace},
+			{"priority", last.priority, c.priority},
+		} {
+			if f.was > 0 && f.isNow == 0 {
+				order = append(order, f.name)
+			}
+		}
+		last = c
+	}
+	want := []string{"lead", "initiative", "due", "workspace", "priority"}
+	if !reflect.DeepEqual(order, want) {
+		t.Errorf("columns shed in order %v, want %v", order, want)
+	}
+}
+
+
+// TestProjectLegendHasNoGap: the workspace line is appended, not left
+// empty, because an empty string is still a line to JoinVertical — a
+// blank entry would open a gap in every single-workspace legend.
+func TestProjectLegendHasNoGap(t *testing.T) {
+	one := model{cfg: Config{Linear: LinearWorkspaces{{}}}}
+	if strings.Contains(one.projectLegend(), "\n\n\n") {
+		t.Errorf("one workspace: the legend has a double gap:\n%s", one.projectLegend())
+	}
+	two := model{cfg: Config{Linear: LinearWorkspaces{{Name: "a"}, {Name: "b"}}}}
+	if !strings.Contains(two.projectLegend(), "the Linear workspace the project is in") {
+		t.Error("two workspaces: the legend does not explain the column")
+	}
+	if strings.Contains(two.projectLegend(), "\n\n\n") {
+		t.Errorf("two workspaces: the legend has a double gap:\n%s", two.projectLegend())
+	}
+}

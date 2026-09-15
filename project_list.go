@@ -136,6 +136,7 @@ const (
 	dueWidth        = 8  // "10d late"
 	initiativeWidth = 16 // "Capture + Refine"
 	leadWidth       = 9  // a given name, as the issue row's assignee
+	workspaceWidth  = 12 // a Linear workspace's name, as configured
 	// projectFixed is everything on the row that is always there:
 	// cursor, the bar, the percentage, the counts, the milestones, the
 	// state, gaps.
@@ -151,7 +152,7 @@ const (
 // name is on most rows the same one; then the initiative; then the
 // date; and last the priority, which is three cells and the thing you
 // asked the list for.
-type projectCols struct{ priority, due, initiative, lead int }
+type projectCols struct{ priority, workspace, due, initiative, lead int }
 
 // width is what the optional columns cost, each with the gap before
 // it: two for the three that trail the row, one for the priority,
@@ -161,7 +162,7 @@ func (c projectCols) width() int {
 	if c.priority > 0 {
 		n += c.priority + 1
 	}
-	for _, w := range []int{c.due, c.initiative, c.lead} {
+	for _, w := range []int{c.workspace, c.due, c.initiative, c.lead} {
 		if w > 0 {
 			n += w + 2
 		}
@@ -170,11 +171,21 @@ func (c projectCols) width() int {
 }
 
 func (m model) projectCols() projectCols {
-	c := projectCols{priorityWidth, dueWidth, initiativeWidth, leadWidth}
+	c := projectCols{priority: priorityWidth, due: dueWidth, initiative: initiativeWidth, lead: leadWidth}
+	// The workspace column exists only where there is more than one to
+	// tell apart. With a single workspace every row carries the same
+	// answer, which is no answer at all.
+	if m.multiWorkspace() {
+		c.workspace = workspaceWidth
+	}
 	if m.width == 0 {
 		return c
 	}
-	for _, drop := range []*int{&c.lead, &c.initiative, &c.due, &c.priority} {
+	// Least telling first, and the workspace is not that: with two of
+	// them a row is either the company's work or your own, which outranks
+	// when it is due. It sheds before the priority and after everything
+	// else.
+	for _, drop := range []*int{&c.lead, &c.initiative, &c.due, &c.workspace, &c.priority} {
 		if projectFixed+c.width()+nameFloor <= m.width {
 			break
 		}
@@ -182,6 +193,14 @@ func (m model) projectCols() projectCols {
 	}
 	return c
 }
+
+// multiWorkspace reports whether the rows can come from more than one
+// Linear workspace. Read from the config rather than from the rows:
+// a list whose second workspace is empty today is still a list where
+// the column means something, and a column that appears when a project
+// is filed and vanishes when it is closed would be worse than none.
+func (m model) multiWorkspace() bool { return len(m.cfg.Linear) > 1 }
+
 
 func (m model) projectNameWidth() int {
 	if m.width == 0 {
@@ -312,6 +331,7 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 		width int
 		style lipgloss.Style
 	}{
+		{p.Workspace, cols.workspace, styleDim},
 		{due, cols.due, dueStyle},
 		{p.Initiative(), cols.initiative, styleDim},
 		{firstWord(p.Lead.Name), cols.lead, styleDim},
@@ -348,18 +368,27 @@ func (m model) projectCountsSummary() string {
 
 // projectLegend explains the project row's columns.
 func (m model) projectLegend() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
+	rows := []string{
 		styleHeader.Render("Legend"),
 		fmt.Sprintf("  %s   worktree and window for the project's conversation", styleWorktree.Render("⎇")),
 		fmt.Sprintf("  %s   Claude in it — working, blocked, done, idle as on the other lists", styleClaudeWorking.Render("©")),
 		fmt.Sprintf("  %s  Linear's own progress for the project", progressBar(0.6, false)),
 		"  12/127      your open issues in it, over every issue it holds",
 		"  11 ms       milestones: the project's own structure, and where its specs live",
+	}
+	// Only where there is more than one workspace, and appended rather
+	// than left empty: an empty line is still a line to JoinVertical, so
+	// a blank entry would open a gap in every other config's legend.
+	if m.multiWorkspace() {
+		rows = append(rows, "  norrbrunn    the Linear workspace the project is in")
+	}
+	rows = append(rows,
 		"",
 		styleHeader.Render("Which projects"),
 		"  the ones you lead, belong to, or have an open issue in — membership alone",
 		"  misses the project most of your work is in",
 	)
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 // fetchDrillIssues asks the tracker for every open issue of the
