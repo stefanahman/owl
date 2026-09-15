@@ -99,29 +99,42 @@ func issueKeysIn(name string) []string {
 	return keys
 }
 
-// issueKeysFor is every issue of your team that a branch carries,
-// newest first.
+// issueKeysFor is every issue of yours that a branch carries, newest
+// first.
 //
 // This is the link between a pull request and the work it does, and it
 // is structured rather than guessed at: Linear's own GitHub
 // integration generates `bar-4157-<slug>` from the key, so the key
-// travels in the one name both sides can see. The team is what keeps
+// travels in the one name both sides can see. The teams are what keep
 // it honest — issueKeysIn is deliberately permissive and reads
 // `deps/sharp-0.35.4` as SHARP-0, so without the gate a dependency
 // bump would be filed as a feature.
 //
+// Every team you file under, not one: a workspace with two teams
+// writes DEV-12 and LIFE-3 into branches alike, and a gate holding
+// only one of them drops the other's work on the floor — no chip on
+// the row, and no way back from the pull request to the feature it
+// belongs to. The gate is an allowlist rather than a pattern that
+// rejects version numbers, so a key it has never heard of is missing
+// rather than wrong.
+//
 // A branch may close several issues at once. Newest first because that
 // is the one being worked on, the same rule issueBranches applies when
 // several branches carry one key.
-func issueKeysFor(branch, team string) []string {
-	if branch == "" || team == "" {
+func issueKeysFor(branch string, teams []string) []string {
+	if branch == "" || len(teams) == 0 {
 		return nil
 	}
-	prefix := strings.ToUpper(team) + "-"
 	var keys []string
 	for _, key := range issueKeysIn(branch) {
-		if strings.HasPrefix(key, prefix) {
-			keys = append(keys, key)
+		for _, team := range teams {
+			if team == "" {
+				continue
+			}
+			if strings.HasPrefix(key, strings.ToUpper(team)+"-") {
+				keys = append(keys, key)
+				break
+			}
 		}
 	}
 	sort.SliceStable(keys, func(i, j int) bool { return issueNumberOf(keys[i]) > issueNumberOf(keys[j]) })
@@ -129,9 +142,9 @@ func issueKeysFor(branch, team string) []string {
 }
 
 // issueKeyFor is the issue a branch's workspace is filed under: the
-// newest it carries, or "" when it carries none of your team's.
-func issueKeyFor(branch, team string) string {
-	if keys := issueKeysFor(branch, team); len(keys) > 0 {
+// newest it carries, or "" when it carries none of yours.
+func issueKeyFor(branch string, teams []string) string {
+	if keys := issueKeysFor(branch, teams); len(keys) > 0 {
 		return keys[0]
 	}
 	return ""

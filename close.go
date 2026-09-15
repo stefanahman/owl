@@ -88,7 +88,7 @@ func featureWorkspaceOf(cfg Config, n int) string {
 	if !ok {
 		return ""
 	}
-	key := issueKeyFor(facts.HeadRefName, cfg.Linear.Team)
+	key := issueKeyFor(facts.HeadRefName, cfg.Linear.TeamKeys())
 	if key == "" {
 		return ""
 	}

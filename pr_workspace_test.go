@@ -12,34 +12,71 @@ import (
 
 func TestIssueKeysFor(t *testing.T) {
 	for _, c := range []struct {
-		name, branch, team string
-		want               []string
+		name, branch string
+		teams        []string
+		want         []string
 	}{
-		{"linear's own branch", "bar-4157-drop-legacy-tenant-shim", "BAR", []string{"BAR-4157"}},
-		{"the key anywhere in it", "fix/bar-4157-projection", "BAR", []string{"BAR-4157"}},
-		{"case does not matter", "BAR-4157-thing", "bar", []string{"BAR-4157"}},
+		{"linear's own branch", "bar-4157-drop-legacy-tenant-shim", []string{"BAR"}, []string{"BAR-4157"}},
+		{"the key anywhere in it", "fix/bar-4157-projection", []string{"BAR"}, []string{"BAR-4157"}},
+		{"case does not matter", "BAR-4157-thing", []string{"bar"}, []string{"BAR-4157"}},
 		// A branch may close several at once, and the newest is the one
 		// being worked on — not the one the branch happens to lead with.
-		{"two issues, newest first", "bar-4157-and-bar-4160-both", "BAR", []string{"BAR-4160", "BAR-4157"}},
+		{"two issues, newest first", "bar-4157-and-bar-4160-both", []string{"BAR"}, []string{"BAR-4160", "BAR-4157"}},
 		// The gate. issueKeysIn is permissive by design, so without the
 		// team a dependency bump reads as SHARP-0 and would be filed as a
 		// feature of yours.
-		{"a version is not an issue", "deps/sharp-0.35.4", "BAR", nil},
-		{"another team's issue", "foo-12-something", "BAR", nil},
-		{"no key at all", "refactor/tidy-imports", "BAR", nil},
+		{"a version is not an issue", "deps/sharp-0.35.4", []string{"BAR"}, nil},
+		{"another team's issue", "foo-12-something", []string{"BAR"}, nil},
+		{"no key at all", "refactor/tidy-imports", []string{"BAR"}, nil},
 		// Without a team configured there is nothing to check a key
 		// against, so nothing is inferred.
-		{"no team configured", "bar-4157-thing", "", nil},
+		{"no team configured", "bar-4157-thing", nil, nil},
+		// A second team is followed as readily as the first: a workspace
+		// with both writes either key into a branch, and a gate holding
+		// only one drops the other's work.
+		{"the second team counts too", "life-3-fix-typo", []string{"DEV", "LIFE"}, []string{"LIFE-3"}},
+		{"and the first still does", "dev-12-add-thing", []string{"DEV", "LIFE"}, []string{"DEV-12"}},
+		// The bug the set fixes: with one team configured, the other
+		// team's issue is dropped and the PR never finds its feature.
+		{"one team drops the other's", "life-3-fix-typo", []string{"DEV"}, nil},
+		// Two teams widen the gate; they do not open it.
+		{"two teams still reject a version", "deps/sharp-0.35.4", []string{"DEV", "LIFE"}, nil},
+		// Keys from two teams on one branch sort by number, not by the
+		// order the teams are configured in.
+		{"across teams, newest first", "dev-12-and-life-30", []string{"DEV", "LIFE"}, []string{"LIFE-30", "DEV-12"}},
+		{"an empty team is not a prefix", "bar-4157-thing", []string{""}, nil},
 	} {
-		if got := issueKeysFor(c.branch, c.team); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: issueKeysFor(%q, %q) = %v, want %v", c.name, c.branch, c.team, got, c.want)
+		if got := issueKeysFor(c.branch, c.teams); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: issueKeysFor(%q, %v) = %v, want %v", c.name, c.branch, c.teams, got, c.want)
 		}
 	}
-	if got := issueKeyFor("bar-4157-and-bar-4160-both", "BAR"); got != "BAR-4160" {
+	if got := issueKeyFor("bar-4157-and-bar-4160-both", []string{"BAR"}); got != "BAR-4160" {
 		t.Errorf("issueKeyFor took %q, want the newest BAR-4160", got)
 	}
-	if got := issueKeyFor("deps/sharp-0.35.4", "BAR"); got != "" {
+	if got := issueKeyFor("deps/sharp-0.35.4", []string{"BAR"}); got != "" {
 		t.Errorf("issueKeyFor(%q) = %q, want none", "deps/sharp-0.35.4", got)
+	}
+}
+
+// TestTeamKeys covers the fallback: `teams` when set, else the single
+// `team`, so every config written before `teams` existed gates exactly
+// as it did.
+func TestTeamKeys(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		cfg  LinearConfig
+		want []string
+	}{
+		{"neither", LinearConfig{}, nil},
+		{"team alone, as configs did before", LinearConfig{Team: "BAR"}, []string{"BAR"}},
+		{"teams alone", LinearConfig{Teams: []string{"DEV", "LIFE"}}, []string{"DEV", "LIFE"}},
+		// `team` stays the write target; `teams` answers the gate, and
+		// need not repeat it.
+		{"teams wins over team", LinearConfig{Team: "DEV", Teams: []string{"NOR"}}, []string{"NOR"}},
+	} {
+		if got := c.cfg.TeamKeys(); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: TeamKeys() = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

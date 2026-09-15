@@ -165,12 +165,31 @@ type MineConfig struct {
 	Prompt string `yaml:"prompt"`
 }
 
-// LinearConfig is the issue tracker: the key, as a reference, and the
-// team new issues go to.
+// LinearConfig is the issue tracker: the key, as a reference, the team
+// new issues go to, and the teams a branch may file work under.
 type LinearConfig struct {
-	Token   string `yaml:"token"`
-	Account string `yaml:"account"`
-	Team    string `yaml:"team"`
+	Token   string   `yaml:"token"`
+	Account string   `yaml:"account"`
+	Team    string   `yaml:"team"`
+	Teams   []string `yaml:"teams"`
+}
+
+// TeamKeys is every team a branch's issue key may belong to: `teams`
+// when it is set, else the single `team`, else none.
+//
+// The two fields answer different questions. `team` is where `owl
+// hoot` files a new issue, which can only be one place; `teams` is
+// which keys in a branch name are yours to follow, which is every team
+// you work in. A workspace with one team wants the same answer to both
+// and says `team` alone, as every config did before `teams` existed.
+func (c LinearConfig) TeamKeys() []string {
+	if len(c.Teams) > 0 {
+		return c.Teams
+	}
+	if c.Team != "" {
+		return []string{c.Team}
+	}
+	return nil
 }
 
 type TmuxConfig struct {
@@ -567,7 +586,8 @@ keys:                            # one key name or a list; names as bubbletea sp
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
   token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in
-  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues, and which keys in a branch name count as issues — unset, a PR of yours never resolves to its feature's workspace
+  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
+  # teams: [DEV, LIFE]           # every team you file work under, when one team is not the whole story: which keys in a branch name are yours to follow. Defaults to the single team above; with neither set, a PR of yours never resolves to its feature's workspace
 
 bindings:                        # your own keys on a row: a prompt handed to the agent, or a URL opened; ` + "`?`" + ` lists them by name
   pr:                            # on a PR; placeholders {pr}, {repo}, {branch}, {url}, and {id} — the first match of ` + "`pattern`" + ` in the title, body and branch (no match → the key does nothing)

@@ -1772,7 +1772,7 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		// The issues this branch closes, which is also where Enter takes
 		// you. The title gives up the width they need, down to a floor —
 		// a row with three keys on it still has to read as a title.
-		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.Team))
+		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.TeamKeys()))
 		width := max(68-lipgloss.Width(chips), 24)
 		return strings.TrimRight(fmt.Sprintf(
 			"%s#%-5d %s %s  %s %s%s%s",
