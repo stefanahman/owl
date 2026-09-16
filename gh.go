@@ -33,7 +33,13 @@ type PR struct {
 	// Repo is owner/name, the repository the pull request is in. The
 	// list can span several, and the number alone does not say which:
 	// #3 is a different pull request in every one of them.
-	Repo    string `json:"-"`
+	//
+	// Cached with the rest of the row. Every GraphQL answer names it
+	// `repository { nameWithOwner }` and is decoded into a struct of
+	// its own, so this tag is the cache's alone — and a row read back
+	// without it is a row whose number means nothing, on the one paint
+	// the reader sees before a fetch lands.
+	Repo    string `json:"repo"`
 	IsDraft bool   `json:"isDraft"`
 
 	Author struct {
