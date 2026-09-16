@@ -115,6 +115,13 @@ func (m *model) focusWhereTheRowsAre() {
 	if !m.panes() || m.paneChosen {
 		return
 	}
+	// Both fetches must have answered. They land in either order, and
+	// a pane that has not been fetched yet looks exactly like an empty
+	// one — deciding on that moved the focus to your own work whenever
+	// the review queue happened to be slower, and never moved it back.
+	if !m.prsAnswered || !m.mineAnswered {
+		return
+	}
 	if len(m.visibleRows()) == 0 && len(m.otherPaneRows()) > 0 {
 		m.mineFocus = !m.mineFocus
 		m.cursor, m.otherCursor = m.otherCursor, m.cursor

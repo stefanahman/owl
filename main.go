@@ -444,11 +444,17 @@ type model struct {
 	// reader has said which pane they want and a fetch landing must not
 	// move them.
 	paneChosen bool
-	me         string
-	prs        []PR
-	merged     []PR
-	mine       []PR // your own open PRs: the mine pane
-	mineMerged []PR // your own PRs merged inside merged_window
+	// prsAnswered and mineAnswered say which of the two fetches have
+	// come back. `ready` is set by whichever lands first, so it cannot
+	// tell an empty pane from one still being fetched — and the focus
+	// must not be decided on the difference.
+	prsAnswered  bool
+	mineAnswered bool
+	me           string
+	prs          []PR
+	merged       []PR
+	mine         []PR // your own open PRs: the mine pane
+	mineMerged   []PR // your own PRs merged inside merged_window
 	// mineFocus says the mine pane has the cursor and the keys. Only
 	// the PR list has two panes; the other lists leave it false.
 	// otherCursor holds the row the unfocused pane was left on, and the
@@ -1010,7 +1016,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.me != "" {
 			m.me = msg.me
 		}
-		m.ready = true
+		m.ready, m.prsAnswered = true, true
 		m.refreshing = false
 		m.err = nil
 		m.lastFetched = time.Now()
@@ -1097,7 +1103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.mine = msg.prs
 		m.mineMerged = msg.merged
-		m.ready = true
+		m.ready, m.mineAnswered = true, true
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()

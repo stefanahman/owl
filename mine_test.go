@@ -423,6 +423,7 @@ func TestPanesEmptyStates(t *testing.T) {
 		m.width, m.height = 100, 24
 		m.resizeViewport() // the real order: sized first, data after
 		m.ready, m.me = true, "stefanahman"
+		m.prsAnswered, m.mineAnswered = true, true // both fetches back
 		for i := 0; i < nReview; i++ {
 			m.prs = append(m.prs, PR{Number: 100 + i, Title: "review me", HeadRefName: "x", Repo: "acme/app"})
 		}
@@ -508,5 +509,48 @@ func TestPRTitleNamesWhatItSpans(t *testing.T) {
 	plain.width = 120
 	if got := stripANSI(plain.titleLine("acme/app")); !strings.Contains(got, "acme/app") {
 		t.Errorf("no owners = %q, want the repo", got)
+	}
+}
+
+// TestFocusWaitsForBothFetches: the two fetches land in either order,
+// and a pane that has not been fetched looks exactly like an empty
+// one. Deciding the focus on that moved it to your own work whenever
+// the review queue was the slower of the two, and never moved it back
+// — which is how CI caught it and a local run did not.
+func TestFocusWaitsForBothFetches(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.width, m.height = 100, 24
+	m.resizeViewport()
+	m.me = "stefanahman"
+
+	// The mine fetch comes back first, with rows; the review queue has
+	// not answered at all.
+	m.mine = []PR{ownPR(200, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
+	m.mineAnswered, m.ready = true, true
+	m.refreshList()
+	if m.mineFocus {
+		t.Error("the focus moved before the review queue had answered")
+	}
+
+	// Now it answers, and it has work in it: the focus belongs there,
+	// which is where it already is.
+	m.prs = []PR{{Number: 100, Title: "review me", HeadRefName: "x", Repo: "acme/app"}}
+	m.prsAnswered = true
+	m.refreshList()
+	if m.mineFocus {
+		t.Error("the focus left a review queue that has rows")
+	}
+
+	// And the case the move exists for: both answered, nothing to
+	// review, your own work below.
+	empty := newModel(defaultConfig(), "acme/app", nil)
+	empty.width, empty.height = 100, 24
+	empty.resizeViewport()
+	empty.me, empty.ready = "stefanahman", true
+	empty.mine = []PR{ownPR(200, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
+	empty.prsAnswered, empty.mineAnswered = true, true
+	empty.refreshList()
+	if !empty.mineFocus {
+		t.Error("both answered, the review queue is empty, and the focus stayed on it")
 	}
 }
