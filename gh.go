@@ -19,8 +19,11 @@ import (
 // there on Monday, short enough to keep the list from turning into a
 // firehose.
 
-// PR mirrors the JSON shape returned by `gh pr list --json ...`.
-// Fields intentionally kept minimal to keep the query fast.
+// PR is a pull request as owl shows it. The searches decode GitHub's
+// answers into structs of their own and fill this in field by field,
+// so the tags here are the cache's: this is the shape a row is written
+// and read back in. Kept minimal, because every field is one more
+// thing a query has to ask for.
 type PR struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
@@ -30,7 +33,17 @@ type PR struct {
 	HeadRefOid  string `json:"headRefOid,omitempty"` // populated by graphql fetch; drives staleness detection
 	UpdatedAt   string `json:"updatedAt"`
 	MergedAt    string `json:"mergedAt,omitempty"` // populated for merged PRs
-	IsDraft     bool   `json:"isDraft"`
+	// Repo is owner/name, the repository the pull request is in. The
+	// list can span several, and the number alone does not say which:
+	// #3 is a different pull request in every one of them.
+	//
+	// Cached with the rest of the row. Every GraphQL answer names it
+	// `repository { nameWithOwner }` and is decoded into a struct of
+	// its own, so this tag is the cache's alone — and a row read back
+	// without it is a row whose number means nothing, on the one paint
+	// the reader sees before a fetch lands.
+	Repo    string `json:"repo"`
+	IsDraft bool   `json:"isDraft"`
 
 	Author struct {
 		Login string `json:"login"`
@@ -75,10 +88,10 @@ type Review struct {
 	State       string `json:"state"`
 	SubmittedAt string `json:"submittedAt"`
 
-	// Commit.OID is populated only by the graphql fetch (fetchPRs). gh's
-	// `pr list --json reviews` returns commit.oid as empty string, so on
-	// merged rows (fetched via fetchMerged which stays on gh pr list)
-	// this stays empty — merged rows don't need staleness detection.
+	// Commit.OID is populated by the review search, which selects it;
+	// the search behind your own pull requests does not, since a row
+	// there is never checked for staleness — you know whether you have
+	// looked at your own work.
 	Commit struct {
 		OID string `json:"oid"`
 	} `json:"commit"`
@@ -293,10 +306,10 @@ const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
 // between qualifiers, ISSUE_ADVANCED returns the union.
 func (m model) fetchPRs() tea.Msg {
 	gen := m.fetchGen // the round this fetch belongs to
-	if m.repo == "" {
-		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote", m.cfg.Remote)}
+	if m.scope() == "" {
+		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote, and pr.owners is unset", m.cfg.Remote)}
 	}
-	prs, me, err := openPRs(m.repo)
+	prs, me, err := openPRs(m.scope(), "is:open")
 	if err != nil {
 		return errMsg{gen, err}
 	}
@@ -306,14 +319,15 @@ func (m model) fetchPRs() tea.Msg {
 // openPRs is the fetch itself, without the TUI around it: `owl pr
 // --check` runs the same query from a scheduler, where there is no
 // model and no fetch round.
-func openPRs(repo string) ([]PR, string, error) {
+func openPRs(scope, filter string) ([]PR, string, error) {
 	query := `
 query($q: String!) {
   viewer { login }
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
-        number title body url headRefName headRefOid updatedAt isDraft
+        number title body url headRefName headRefOid updatedAt mergedAt isDraft
+        repository { nameWithOwner }
         author { login }
         reviews(last: 100) {
           nodes { author { login } state submittedAt commit { oid } }
@@ -324,7 +338,7 @@ query($q: String!) {
 }`
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", fmt.Sprintf("q=repo:%s is:pr is:open %s", repo, prSearchQuery),
+		"-f", fmt.Sprintf("q=%s is:pr %s %s", scope, filter, prSearchQuery),
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -342,8 +356,12 @@ query($q: String!) {
 		HeadRefName string `json:"headRefName"`
 		HeadRefOid  string `json:"headRefOid"`
 		UpdatedAt   string `json:"updatedAt"`
+		MergedAt    string `json:"mergedAt"`
 		IsDraft     bool   `json:"isDraft"`
-		Author      struct {
+		Repository  struct {
+			NameWithOwner string `json:"nameWithOwner"`
+		} `json:"repository"`
+		Author struct {
 			Login string `json:"login"`
 		} `json:"author"`
 		Reviews struct {
@@ -367,6 +385,8 @@ query($q: String!) {
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
 	for _, n := range resp.Data.Search.Nodes {
 		pr := PR{
+			Repo:        n.Repository.NameWithOwner,
+			MergedAt:    n.MergedAt,
 			Number:      n.Number,
 			Title:       n.Title,
 			Body:        n.Body,
@@ -393,7 +413,8 @@ query($q: String!) {
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
-        number title body url headRefName headRefOid updatedAt isDraft
+        number title body url headRefName headRefOid updatedAt mergedAt isDraft
+        repository { nameWithOwner }
         mergeable reviewDecision
         author { login }
         reviewRequests(first: 1) { totalCount }
@@ -403,11 +424,13 @@ query($q: String!) {
   }
 }`
 
-// minePRs returns your own open pull requests in the repo.
-func minePRs(repo string) ([]PR, error) {
+// searchPRs is every pull request in scope that the filter matches:
+// your own open ones, your own merged ones, or every open one in a
+// repository — the caller says which. One search behind all of them.
+func searchPRs(scope, filter string) ([]PR, error) {
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+mineQuery,
-		"-f", fmt.Sprintf("q=repo:%s is:pr is:open author:@me", repo),
+		"-f", fmt.Sprintf("q=%s is:pr %s", scope, filter),
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -420,14 +443,18 @@ func minePRs(repo string) ([]PR, error) {
 		Data struct {
 			Search struct {
 				Nodes []struct {
-					Number         int    `json:"number"`
-					Title          string `json:"title"`
-					Body           string `json:"body"`
-					URL            string `json:"url"`
-					HeadRefName    string `json:"headRefName"`
-					HeadRefOid     string `json:"headRefOid"`
-					UpdatedAt      string `json:"updatedAt"`
-					IsDraft        bool   `json:"isDraft"`
+					Number      int    `json:"number"`
+					Title       string `json:"title"`
+					Body        string `json:"body"`
+					URL         string `json:"url"`
+					HeadRefName string `json:"headRefName"`
+					HeadRefOid  string `json:"headRefOid"`
+					UpdatedAt   string `json:"updatedAt"`
+					MergedAt    string `json:"mergedAt"`
+					IsDraft     bool   `json:"isDraft"`
+					Repository  struct {
+						NameWithOwner string `json:"nameWithOwner"`
+					} `json:"repository"`
 					Mergeable      string `json:"mergeable"`
 					ReviewDecision string `json:"reviewDecision"`
 					Author         struct {
@@ -457,9 +484,10 @@ func minePRs(repo string) ([]PR, error) {
 		pr := PR{
 			Number: n.Number, Title: n.Title, Body: n.Body, URL: n.URL,
 			HeadRefName: n.HeadRefName, HeadRefOid: n.HeadRefOid,
-			UpdatedAt: n.UpdatedAt, IsDraft: n.IsDraft,
+			UpdatedAt: n.UpdatedAt, MergedAt: n.MergedAt, IsDraft: n.IsDraft,
 			Mergeable: n.Mergeable, ReviewDecision: n.ReviewDecision,
 			Asked: n.ReviewRequests.TotalCount,
+			Repo:  n.Repository.NameWithOwner,
 		}
 		pr.Author.Login = n.Author.Login
 		if c := n.Commits.Nodes; len(c) > 0 {
@@ -475,8 +503,7 @@ func minePRs(repo string) ([]PR, error) {
 func (m model) fetchMerged() tea.Msg {
 	gen := m.fetchGen
 	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
-	q := fmt.Sprintf("%s merged:>=%s", prSearchQuery, cutoff)
-	prs, err := ghPRList(m.repo, "merged", q)
+	prs, _, err := openPRs(m.scope(), "is:merged merged:>="+cutoff)
 	if err != nil {
 		return errMsg{gen, fmt.Errorf("merged: %w", err)}
 	}
@@ -489,28 +516,4 @@ func ghIn(dir string, args ...string) *exec.Cmd {
 	cmd := exec.Command("gh", args...)
 	cmd.Dir = dir
 	return cmd
-}
-
-// ghPRList runs `gh pr list` against an explicit repo — gh's own
-// current-repo guess fails when a clone has several remotes.
-func ghPRList(repo, state, search string) ([]PR, error) {
-	cmd := exec.Command("gh", "pr", "list",
-		"--repo", repo,
-		"--search", search,
-		"--state", state,
-		"--json", "number,title,body,url,headRefName,author,updatedAt,mergedAt,isDraft,reviews",
-		"--limit", "100",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("%s", ee.Stderr)
-		}
-		return nil, err
-	}
-	var prs []PR
-	if err := json.Unmarshal(out, &prs); err != nil {
-		return nil, fmt.Errorf("parse: %w", err)
-	}
-	return prs, nil
 }

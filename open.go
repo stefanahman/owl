@@ -265,7 +265,7 @@ func existingPRWorkspace(cfg Config, repo string, n int) (prWorkspace, bool) {
 		p := prWorkspace{name: h, branch: wt.Branch,
 			own: wt.Branch != "" && !matchesPR(wt.Branch, n)}
 		if p.own {
-			p.key = issueKeyFor(wt.Branch, cfg.Linear.Team)
+			p.key = issueKeyFor(wt.Branch, cfg.Linear.TeamKeys())
 		}
 		return p, true
 	}
@@ -315,7 +315,7 @@ func planPRWorkspace(cfg Config, repo, slug string, n int) prWorkspace {
 		name := named()
 		return prWorkspace{name: name, branch: name}
 	}
-	key := issueKeyFor(facts.HeadRefName, cfg.Linear.Team)
+	key := issueKeyFor(facts.HeadRefName, cfg.Linear.TeamKeys())
 	if key == "" {
 		return prWorkspace{name: named(), branch: facts.HeadRefName, own: true}
 	}

@@ -22,7 +22,7 @@ func issueFixture(t *testing.T) (*fixture, *fakeLinear) {
 	orig := linearEndpoint
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
-	f.cfg.Linear = LinearConfig{Token: "lin_key", Team: "BAR"}
+	f.cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	// BAR-4159's branch exists on the origin, one commit past main.
 	f.git(f.origin, "checkout", "-q", "-b", "bar-4159-company-fuzzy-match")

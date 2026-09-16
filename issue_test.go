@@ -121,7 +121,7 @@ func TestIssueListAndHoot(t *testing.T) {
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
 	cfg := defaultConfig()
-	cfg.Linear = LinearConfig{Token: "lin_key", Team: "BAR"}
+	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
 	var out strings.Builder
 	if err := runIssue(cfg, nil, &out); err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestIssueListAndHoot(t *testing.T) {
 		t.Error("unknown issue command should fail")
 	}
 	// No token: the message says what to configure.
-	cfg.Linear.Token = ""
+	cfg.Linear = LinearWorkspaces{{Team: "BAR"}} // a team, no key: the tracker has nothing to read with
 	if err := runIssue(cfg, nil, &out); err == nil || !strings.Contains(err.Error(), "no token configured") {
 		t.Errorf("without a token: %v", err)
 	}

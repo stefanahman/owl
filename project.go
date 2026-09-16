@@ -40,12 +40,29 @@ func listProjects(tracker Tracker, out io.Writer) error {
 		fmt.Fprintln(out, "no open projects you work in")
 		return nil
 	}
+	// The workspace column appears only when the rows can come from more
+	// than one; with a single workspace every row carries the same answer.
+	multi := false
+	for _, p := range projects {
+		if p.Workspace != "" {
+			multi = true
+			break
+		}
+	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PROGRESS\tISSUES\tMS\tSTATE\tPROJECT")
+	if multi {
+		fmt.Fprintln(w, "PROGRESS\tISSUES\tMS\tSTATE\tWORKSPACE\tPROJECT")
+	} else {
+		fmt.Fprintln(w, "PROGRESS\tISSUES\tMS\tSTATE\tPROJECT")
+	}
 	for _, p := range projects {
 		milestones := ""
 		if n := len(p.Milestones.Nodes); n > 0 {
 			milestones = fmt.Sprintf("%d", n)
+		}
+		if multi {
+			fmt.Fprintf(w, "%.0f%%\t%d\t%s\t%s\t%s\t%s\n", p.Progress*100, p.Scope, milestones, p.State.Name, p.Workspace, trim(p.Name, 70))
+			continue
 		}
 		fmt.Fprintf(w, "%.0f%%\t%d\t%s\t%s\t%s\n", p.Progress*100, p.Scope, milestones, p.State.Name, trim(p.Name, 70))
 	}

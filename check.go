@@ -63,10 +63,11 @@ func arrived(before, now []PR, me string) []PR {
 // about a row you were looking at a moment ago is noise.
 func runCheck(cfg Config, out io.Writer) error {
 	repo := currentRepo(cfg.Remote)
-	if repo == "" {
-		return fmt.Errorf("no GitHub repo: the working directory has no %q remote", cfg.Remote)
+	scope := cfg.PR.Scope(repo, false)
+	if scope == "" {
+		return fmt.Errorf("no GitHub repo: the working directory has no %q remote, and pr.owners is unset", cfg.Remote)
 	}
-	prs, me, err := openPRs(repo)
+	prs, me, err := openPRs(scope, "is:open")
 	if err != nil {
 		return err
 	}

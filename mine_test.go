@@ -391,6 +391,7 @@ func TestFetchStatesKeepsTheWorktrees(t *testing.T) {
 func TestMinePaneSurvivesAnEmptyReviewList(t *testing.T) {
 	m := newModel(defaultConfig(), "acme/app", nil)
 	m.width, m.height = 120, 40
+	m.resizeViewport() // the real order: sized on WindowSizeMsg, data after
 	m.ready = true
 	m.prs = nil // nothing to review
 	m.mine = []PR{ownPR(1, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
@@ -409,5 +410,147 @@ func TestMinePaneSurvivesAnEmptyReviewList(t *testing.T) {
 	m.refreshList()
 	if out := m.render(); !strings.Contains(out, "no PRs need your review") {
 		t.Errorf("nothing anywhere and no message:\n%s", out)
+	}
+}
+
+// TestPanesEmptyStates walks the four ways the two panes can be filled.
+// Two of them were broken at once and only together: the review queue
+// empty and your own work below it — a solo repository, where every
+// pull request is yours.
+func TestPanesEmptyStates(t *testing.T) {
+	mk := func(nReview, nMine int) model {
+		m := newModel(defaultConfig(), "acme/app", nil)
+		m.width, m.height = 100, 24
+		m.resizeViewport() // the real order: sized first, data after
+		m.ready, m.me = true, "stefanahman"
+		m.prsAnswered, m.mineAnswered = true, true // both fetches back
+		for i := 0; i < nReview; i++ {
+			m.prs = append(m.prs, PR{Number: 100 + i, Title: "review me", HeadRefName: "x", Repo: "acme/app"})
+		}
+		for i := 0; i < nMine; i++ {
+			m.mine = append(m.mine, ownPR(200+i, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false))
+		}
+		m.refreshList()
+		return m
+	}
+	longestBlankRun := func(out string) int {
+		most, run := 0, 0
+		for _, ln := range strings.Split(out, "\n") {
+			if strings.TrimSpace(stripANSI(ln)) == "" {
+				run++
+				if run > most {
+					most = run
+				}
+			} else {
+				run = 0
+			}
+		}
+		return most
+	}
+
+	// resizeViewport hands the viewport the whole content height and
+	// leaves the narrowing to refreshList. Skipping that when the
+	// focused pane had no rows left it at full height: a screenful of
+	// blank lines, with the other pane pushed off the bottom.
+	for _, c := range []struct {
+		name         string
+		review, mine int
+	}{
+		{"both empty", 0, 0},
+		{"review empty, mine full", 0, 4},
+		{"review full, mine empty", 3, 0},
+		{"both full", 3, 4},
+	} {
+		if run := longestBlankRun(mk(c.review, c.mine).render()); run > 3 {
+			t.Errorf("%s: %d blank lines in a row — the empty pane is holding its full height", c.name, run)
+		}
+	}
+
+	// The counts and the cursor follow the focused pane, so opening on
+	// an empty one reported nothing while the rows sat below.
+	m := mk(0, 4)
+	if !m.mineFocus {
+		t.Error("the review queue is empty and the focus stayed on it")
+	}
+	if out := stripANSI(m.render()); !strings.Contains(out, "4 yours") {
+		t.Errorf("the summary does not count the pane it is focused on:\n%s", out)
+	}
+	// And the other way round: nothing of your own, something to review.
+	if m := mk(3, 0); m.mineFocus {
+		t.Error("the focus moved to an empty mine pane")
+	}
+	// Once Tab has been pressed the reader has chosen, and a fetch
+	// landing must not move them.
+	chosen := mk(0, 4)
+	chosen.paneChosen, chosen.mineFocus = true, false
+	chosen.refreshList()
+	if chosen.mineFocus {
+		t.Error("a chosen pane was overridden")
+	}
+}
+
+// TestPRTitleNamesWhatItSpans: a title reading `owl · stefanahman/owl`
+// over rows from three repositories names one of them.
+func TestPRTitleNamesWhatItSpans(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.PR.Owners = []string{"@me", "norrbrunn"}
+	m := newModel(cfg, "acme/app", nil)
+	m.width = 120
+	if got := stripANSI(m.titleLine("acme/app")); !strings.Contains(got, "@me + norrbrunn") {
+		t.Errorf("title = %q, want the owners it spans", got)
+	}
+	// --here is one repository again, and says so.
+	m.here = true
+	if got := stripANSI(m.titleLine("acme/app")); !strings.Contains(got, "acme/app") {
+		t.Errorf("--here title = %q, want the repo", got)
+	}
+	// No owners: unchanged, as every config had it.
+	plain := newModel(defaultConfig(), "acme/app", nil)
+	plain.width = 120
+	if got := stripANSI(plain.titleLine("acme/app")); !strings.Contains(got, "acme/app") {
+		t.Errorf("no owners = %q, want the repo", got)
+	}
+}
+
+// TestFocusWaitsForBothFetches: the two fetches land in either order,
+// and a pane that has not been fetched looks exactly like an empty
+// one. Deciding the focus on that moved it to your own work whenever
+// the review queue was the slower of the two, and never moved it back
+// — which is how CI caught it and a local run did not.
+func TestFocusWaitsForBothFetches(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.width, m.height = 100, 24
+	m.resizeViewport()
+	m.me = "stefanahman"
+
+	// The mine fetch comes back first, with rows; the review queue has
+	// not answered at all.
+	m.mine = []PR{ownPR(200, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
+	m.mineAnswered, m.ready = true, true
+	m.refreshList()
+	if m.mineFocus {
+		t.Error("the focus moved before the review queue had answered")
+	}
+
+	// Now it answers, and it has work in it: the focus belongs there,
+	// which is where it already is.
+	m.prs = []PR{{Number: 100, Title: "review me", HeadRefName: "x", Repo: "acme/app"}}
+	m.prsAnswered = true
+	m.refreshList()
+	if m.mineFocus {
+		t.Error("the focus left a review queue that has rows")
+	}
+
+	// And the case the move exists for: both answered, nothing to
+	// review, your own work below.
+	empty := newModel(defaultConfig(), "acme/app", nil)
+	empty.width, empty.height = 100, 24
+	empty.resizeViewport()
+	empty.me, empty.ready = "stefanahman", true
+	empty.mine = []PR{ownPR(200, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
+	empty.prsAnswered, empty.mineAnswered = true, true
+	empty.refreshList()
+	if !empty.mineFocus {
+		t.Error("both answered, the review queue is empty, and the focus stayed on it")
 	}
 }

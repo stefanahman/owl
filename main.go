@@ -15,7 +15,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -24,7 +23,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,7 +36,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/term"
 	"github.com/stefanahman/mux"
 )
 
@@ -437,13 +434,27 @@ type model struct {
 	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
-	repo       string // owner/name on GitHub
-	repoDir    string // the repository's main working tree; "" outside a repo
-	me         string
-	prs        []PR
-	merged     []PR
-	mine       []PR // your own open PRs: the mine pane
-	mineMerged []PR // your own PRs merged inside merged_window
+	repo    string // owner/name on GitHub, of the repo you are standing in
+	repoDir string // the repository's main working tree; "" outside a repo
+	// here narrows the list to m.repo even where owners would span more,
+	// for the times you want this repo and not the whole desk.
+	here bool
+	// paneChosen is set once Tab has been pressed. Until then the list
+	// may land the focus on whichever pane has rows; after it, the
+	// reader has said which pane they want and a fetch landing must not
+	// move them.
+	paneChosen bool
+	// prsAnswered and mineAnswered say which of the two fetches have
+	// come back. `ready` is set by whichever lands first, so it cannot
+	// tell an empty pane from one still being fetched — and the focus
+	// must not be decided on the difference.
+	prsAnswered  bool
+	mineAnswered bool
+	me           string
+	prs          []PR
+	merged       []PR
+	mine         []PR // your own open PRs: the mine pane
+	mineMerged   []PR // your own PRs merged inside merged_window
 	// mineFocus says the mine pane has the cursor and the keys. Only
 	// the PR list has two panes; the other lists leave it false.
 	// otherCursor holds the row the unfocused pane was left on, and the
@@ -522,6 +533,12 @@ type model struct {
 
 // initialModel gathers what the model needs from the environment —
 // the repo of the working directory and its cache — and builds it.
+// scope is the repository qualifier this model's PR searches carry:
+// the configured owners, or the one repo when `--here` asked for it or
+// no owners are configured. "" only outside a repo with no owners,
+// where there is nothing to search and the caller says so.
+func (m model) scope() string { return m.cfg.PR.Scope(m.repo, m.here) }
+
 func initialModel(cfg Config) model {
 	repo := currentRepo(cfg.Remote)
 	m := newModel(cfg, repo, loadCache(repo))
@@ -999,7 +1016,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.me != "" {
 			m.me = msg.me
 		}
-		m.ready = true
+		m.ready, m.prsAnswered = true, true
 		m.refreshing = false
 		m.err = nil
 		m.lastFetched = time.Now()
@@ -1086,7 +1103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.mine = msg.prs
 		m.mineMerged = msg.merged
-		m.ready = true
+		m.ready, m.mineAnswered = true, true
 		m.clampCursor()
 		m.refreshList()
 		m.persistCache()
@@ -1255,6 +1272,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// The cursors swap with the focus, so each pane comes back to
 			// the row you left it on.
 			m.mineFocus = !m.mineFocus
+			m.paneChosen = true // you have said which pane you want
 			m.cursor, m.otherCursor = m.otherCursor, m.cursor
 			m.keys = newKeyMap(m.cfg.Keys, m.bindings())
 			m.labelKeysForPane()
@@ -1283,6 +1301,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Enter), key.Matches(msg, m.keys.Start):
 		if row, ok := m.selectedRow(); ok {
+			if other := m.elsewhere(row); other != "" {
+				m.notice = fmt.Errorf("#%d is in %s and owl is in %s — open it from there", row.pr.Number, other, m.repo)
+				return m, nil
+			}
 			if key.Matches(msg, m.keys.Enter) {
 				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.noun(), row.id(), ""), true)
 			}
@@ -1319,6 +1341,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := m.localOf(row); ls.Worktree != "" || ls.Window != "" {
+				if other := m.elsewhere(row); other != "" {
+					m.notice = fmt.Errorf("#%d is in %s and owl is in %s — close it from there", row.pr.Number, other, m.repo)
+					return m, nil
+				}
 				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.noun(), row.id()), false)
 			}
 		}
@@ -1630,82 +1656,27 @@ func (m model) visibleRows() []visibleRow {
 	return m.visibleReviewRows()
 }
 
-// visibleReviewRows is the PR list's review pane: what needs your
-// review, grouped by where you sit on it.
-func (m model) visibleReviewRows() []visibleRow {
-	filter := m.search.Value()
-
-	matches := func(pr PR) bool {
-		if filter == "" {
-			return true
-		}
-		return strings.Contains(strconv.Itoa(pr.Number), filter)
-	}
-
-	groups := []struct {
-		title  string
-		style  lipgloss.Style
-		status ReviewStatus
-	}{
-		{"Todo", styleSectionTodo, StatusTodo},
-		{"Waiting for you", styleSectionTodo, StatusWaitingForYou}, // amber — same "you should act" bucket as Todo
-		{"Waiting for author", styleSectionWait, StatusWaitingForAuthor},
-		{"Approved", styleSectionOK, StatusApproved},
-	}
-
-	var out []visibleRow
-	for _, g := range groups {
-		var members []PR
-		for _, pr := range m.prs {
-			if pr.MyReviewStatus(m.me) != g.status {
-				continue
-			}
-			if !matches(pr) {
-				continue
-			}
-			members = append(members, pr)
-		}
-		if len(members) == 0 {
-			continue
-		}
-		out = append(out, visibleRow{sectionTitle: g.title, sectionStyle: g.style})
-		for i := range members {
-			out = append(out, visibleRow{pr: &members[i], status: g.status})
-		}
-	}
-
-	// Merged section is always last.
-	var mergedVisible []PR
-	for _, pr := range m.merged {
-		if matches(pr) {
-			mergedVisible = append(mergedVisible, pr)
-		}
-	}
-	if len(mergedVisible) > 0 {
-		title := "Merged (last " + m.cfg.MergedWindow.Text + ")"
-		out = append(out, visibleRow{sectionTitle: title, sectionStyle: styleSectionMerged, merged: true})
-		for i := range mergedVisible {
-			out = append(out, visibleRow{pr: &mergedVisible[i], merged: true})
-		}
-	}
-
-	return out
-}
-
 // refreshList slices the visible rows to fit the viewport and pushes
 // them into it via SetContent. Slice-based rendering matches the
 // pattern in bubbles/table.UpdateViewport: content in the viewport is
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
+	m.focusWhereTheRowsAre()
 	rows := m.visibleRows()
 	h := m.contentHeight
 	if m.panes() {
 		h = m.focusedPaneHeight()
 	}
-	if h > 0 {
-		m.list.SetHeight(h)
+	// Set it even at zero. resizeViewport gives the viewport the whole
+	// content height and leaves the narrowing to here, so skipping the
+	// call when the focused pane has no rows left it at full height —
+	// a screenful of blank lines, and the other pane pushed off the
+	// bottom. That is what an empty review queue looked like.
+	if h < 0 {
+		h = 0
 	}
-	if h <= 0 || len(rows) == 0 {
+	m.list.SetHeight(h)
+	if h == 0 || len(rows) == 0 {
 		m.list.SetContent("")
 		return
 	}
@@ -1772,27 +1743,31 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		// The issues this branch closes, which is also where Enter takes
 		// you. The title gives up the width they need, down to a floor —
 		// a row with three keys on it still has to read as a title.
-		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.Team))
-		width := max(68-lipgloss.Width(chips), 24)
+		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.TeamKeys()))
+		repo := m.repoCell(row.pr)
+		width := max(68-lipgloss.Width(chips)-lipgloss.Width(repo), 24)
 		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s%s",
+			"%s#%-5d %s %s  %s %s%s%s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
+			repo,
 			trim(row.pr.Title, width),
 			draft,
 			chips,
 		), " ")
 	}
+	repo := m.repoCell(row.pr)
 	return fmt.Sprintf(
-		"%s#%-5d %s %s  %s%s (%s)",
+		"%s#%-5d %s %s  %s%s%s (%s)",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
-		trim(row.pr.Title, 70),
+		repo,
+		trim(row.pr.Title, 70-lipgloss.Width(repo)),
 		draft,
 		row.pr.Author.Login,
 	)
@@ -1841,30 +1816,10 @@ func (m model) actionRowView() string {
 	}
 }
 
-// labelKeysForPane names the keys after what they do in the pane that
-// has them: the help line is the only place a key explains itself, and
-// "open review" is wrong on a pull request of your own.
-func (m *model) labelKeysForPane() {
-	enter, cleanup := "open review", "clean up worktree"
-	if m.mineFocus {
-		enter, cleanup = "open your PR", "clean up worktree"
-	}
-	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, enter)
-	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, cleanup)
-}
-
 // panes reports whether the list is the two-pane one. Only the PR
 // list is: a review queue and your own PRs are different questions
 // with different answers and different keys.
 func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
-
-// otherPaneRows is the pane that does not have the cursor.
-func (m model) otherPaneRows() []visibleRow {
-	if m.mineFocus {
-		return m.visibleReviewRows()
-	}
-	return m.visibleMineRows()
-}
 
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
@@ -1931,19 +1886,36 @@ func (m model) countsSummary() string {
 	))
 }
 
-// titleLine renders the header row: `owl · <repo>` left-aligned,
-// `updated Xm ago` right-aligned, padded to fill m.width. Timestamp
-// is omitted before the first fetch completes (lastFetched is zero).
+// titleLine renders the header row: what the list is scoped by,
+// left-aligned, `updated Xm ago` right-aligned, padded to fill
+// m.width. The timestamp is omitted before the first fetch completes
+// (lastFetched is zero).
 func (m model) titleLine(repo string) string {
-	// The PR list is owl's front door and says only the repo; the others
-	// name themselves, from the same noun the empty-search line uses, so
-	// the two can never disagree.
-	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
+	// Every list says what it is scoped by, and each is scoped by
+	// something different: the PR list by the repositories it spans,
+	// the others by the Linear workspaces they read. One of them is
+	// named, several are all named — a title naming one of several is
+	// worse than a title naming none.
+	//
+	// The PR list is owl's front door and leads with its scope alone;
+	// the others name themselves first, from the same noun the
+	// empty-search line uses, so the two can never disagree.
+	left := styleHeader.Render(fmt.Sprintf("owl · %s", m.prScopeLabel(repo)))
 	if m.drill != nil {
 		// The project, not the repo: while drilled that is where you are.
 		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
 	} else if m.kind != "pr" {
-		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), repo))
+		// The issue and project lists are not scoped by a repo — they are
+		// what is assigned to you and what you work in — so where several
+		// Linear workspaces answer, the workspaces are the honest scope.
+		// A repo there would name one of them while the rows come from
+		// both. With one workspace the repo stays: it is the context you
+		// are standing in, and a lone workspace is often not even named.
+		scope := repo
+		if names := m.workspaceNames(); names != "" {
+			scope = names
+		}
+		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), scope))
 	}
 	right := ""
 	if !m.lastFetched.IsZero() {
@@ -2106,161 +2078,9 @@ func (m model) render() string {
 	return b.String()
 }
 
-// focusedPaneHeight is how many rows the focused pane gets. The same
-// number sizes the viewport and slices the rows into it, so the cursor
-// cannot scroll out of a window narrower than the one it was measured
-// against.
-func (m model) focusedPaneHeight() int {
-	avail := m.contentHeight - 2 // one heading each
-	if avail < 2 {
-		avail = 2
-	}
-	h, _ := splitPaneHeights(avail, len(m.visibleRows()), len(m.otherPaneRows()))
-	return h
-}
-
-// panesView draws the two panes of the PR list.
-//
-// Their places are fixed — the review queue above, your own below —
-// and Tab moves only the highlight. Swapping them would put the rows
-// you were reading somewhere else every time you changed pane, which
-// is the eye movement the two panes exist to save.
-//
-// Only the focused pane scrolls: it has the viewport and the cursor.
-// The other shows what fits, dimmed, with a last line saying what it
-// cut; Tab is how you reach the rest, which is also how you get its
-// keys.
-func (m model) panesView() string {
-	other := m.otherPaneRows()
-	avail := m.contentHeight - 2 // one heading each
-	if avail < 2 {
-		avail = 2
-	}
-	_, otherH := splitPaneHeights(avail, len(m.visibleRows()), len(other))
-
-	// The focused pane is the viewport, already sized and filled by
-	// refreshList; the other is drawn here and dimmed.
-	focused := m.list.View()
-	inactive := m.inactivePane(other, otherH)
-	review := fmt.Sprintf("To review (%d)", len(m.prs))
-	mine := fmt.Sprintf("Mine (%d)", len(m.mine))
-
-	if m.mineFocus {
-		return dimBlock(review) + "\n" + inactive + "\n" +
-			styleHeader.Render(mine) + "\n" + focused
-	}
-	return styleHeader.Render(review) + "\n" + focused + "\n" +
-		dimBlock(mine) + "\n" + inactive
-}
-
-// inactivePane renders the rows of the pane without the cursor: as
-// many as it has room for, dimmed, and a last line naming what did not
-// fit rather than cutting silently.
-func (m model) inactivePane(rows []visibleRow, h int) string {
-	if h <= 0 || len(rows) == 0 {
-		return ""
-	}
-	lines := make([]string, 0, h)
-	for i := 0; i < h && i < len(rows); i++ {
-		lines = append(lines, m.renderRow(rows[i], false))
-	}
-	if cut := len(rows) - h; cut > 0 {
-		lines[len(lines)-1] = fmt.Sprintf("  … %d more, %s to go there", cut+1, m.keys.Pane.Help().Key)
-	}
-	return dimBlock(strings.Join(lines, "\n"))
-}
-
-// splitPaneHeights gives each pane the rows it wants where they fit,
-// and splits the shortfall so neither is squeezed to nothing by the
-// other having plenty.
-func splitPaneHeights(avail, want, otherWant int) (int, int) {
-	if want+otherWant <= avail {
-		return want, otherWant
-	}
-	half := avail / 2
-	switch {
-	case want <= half:
-		return want, avail - want
-	case otherWant <= avail-half:
-		return avail - otherWant, otherWant
-	}
-	return half, avail - half
-}
-
 // ------------------------------------------------------------
 // Badges & helpers
 // ------------------------------------------------------------
-
-// badges renders a fixed-width block of colored state glyphs.
-//
-//	Slot 1  ⎇   worktree present — or the spinner while a child starts,
-//	            opens or closes this PR's workspace
-//	Slot 2  ©*  Claude session — the trailing `*` (or space) is an unread marker:
-//	              ©   yellow = working (actively processing)
-//	              ©   amber  = blocked (waiting on permission / question / plan)
-//	              ©*  green  = done, unread (result to view)
-//	              ©   green  = idle (done and acknowledged)
-//	              ©   gray   = session exists, no state set (fresh window)
-//	Slot 3  ✓   I approved (green) — my current verdict is APPROVED
-//	            ·  engaged (dim) — I commented/CR'd but did not approve
-//	            either in amber when the author pushed after that review:
-//	            the glyph is what I did, the colour whether it still
-//	            covers the head (same grammar as the © slot)
-//	Slot 4  ⚠   any reviewer currently requesting changes (PR blocked)
-//
-// Absent = single space so column alignment stays. Slot 2 is always
-// 2 cells wide (glyph + `*`|space) because of the unread marker.
-func badges(ls LocalState, starting string, iApproved, iEngaged, stale, hasCR bool) string {
-	var parts []string
-
-	switch {
-	case starting != "":
-		parts = append(parts, starting)
-	case ls.Worktree != "":
-		parts = append(parts, styleWorktree.Render("⎇"))
-	default:
-		parts = append(parts, " ")
-	}
-
-	// Claude slot: © + unread marker (`*` for done, else space).
-	switch ls.ClaudeState {
-	case agentWorking:
-		parts = append(parts, styleClaudeWorking.Render("©")+" ")
-	case agentBlocked:
-		parts = append(parts, styleClaudeBlocked.Render("©")+" ")
-	case agentDone:
-		parts = append(parts, styleClaudeDone.Render("©")+styleClaudeDone.Render("*"))
-	case agentIdle:
-		parts = append(parts, styleClaudeDone.Render("©")+" ")
-	default:
-		if ls.Window != "" {
-			parts = append(parts, styleClaudeNeutral.Render("©")+" ")
-		} else {
-			parts = append(parts, "  ")
-		}
-	}
-
-	switch {
-	case iApproved && stale:
-		parts = append(parts, styleReviewStale.Render("✓"))
-	case iApproved:
-		parts = append(parts, styleApproved.Render("✓"))
-	case iEngaged && stale:
-		parts = append(parts, styleReviewStale.Render("·"))
-	case iEngaged:
-		parts = append(parts, styleDim.Render("·"))
-	default:
-		parts = append(parts, " ")
-	}
-
-	if hasCR {
-		parts = append(parts, styleChangesReqd.Render("⚠"))
-	} else {
-		parts = append(parts, " ")
-	}
-
-	return strings.Join(parts, " ")
-}
 
 // trim shortens s to at most n runes, replacing the tail with an
 // ellipsis if it was cut. Runes, not bytes: slicing a title on a byte
@@ -2298,6 +2118,23 @@ func relativeAge(iso string) string {
 	}
 }
 
+// scopeLabel names the sources a list spans, for its title. Joined by
+// a plus rather than a comma: a title saying two things is saying both
+// are in the list, not that it holds one or the other.
+//
+// Shared by the two lists that can span something — the PR list over
+// repository owners, the issue and project lists over Linear
+// workspaces — which are different enough not to share more than this.
+func scopeLabel(names []string) string {
+	kept := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != "" {
+			kept = append(kept, n)
+		}
+	}
+	return strings.Join(kept, " + ")
+}
+
 func clampInt(v, lo, hi int) int {
 	if v < lo {
 		return lo
@@ -2306,280 +2143,4 @@ func clampInt(v, lo, hi int) int {
 		return hi
 	}
 	return v
-}
-
-// ------------------------------------------------------------
-// Entry
-// ------------------------------------------------------------
-
-// version is set by the release build (-ldflags "-X main.version=…");
-// `go install …@vX.Y.Z` builds report the module version instead.
-var version = ""
-
-func versionString() string {
-	if version != "" {
-		return version
-	}
-	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-		return bi.Main.Version
-	}
-	return "dev"
-}
-
-// about is what bare owl says: what it is, before what it takes.
-const about = `owl — the pull requests waiting for your review, the issues waiting for
-your hands, and the projects they belong to, one keystroke from any
-terminal.
-
-Each becomes a workspace when you want it: a git worktree, a window in
-your multiplexer — tmux, herdr or cmux — and Claude Code inside it, on
-the review, the feature or the project. owl stores nothing of its own:
-the branch carries the ticket, the pull request carries the review, the
-window carries the agent, and the lists read all of it back from GitHub,
-Linear and the multiplexer. Four skills give the agent its manners —
-review never posts without you, feature never pushes without you,
-project plans and dispatches but writes no code itself, dependabot fixes
-on the bot's branch. What no ticket names yet, you hoot.
-`
-
-const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]
-       owl                              this introduction
-       owl pr                           the PR list (run inside a git repo, or with default_repo set)
-       owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
-       owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
-       owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
-       owl pr --check                   say what has arrived in your court since owl last looked, for a scheduler
-       owl issue                        the issues assigned to you, from Linear
-       owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
-       owl issue start <KEY> [--prompt TEXT] the same without going there
-       owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
-       owl issue new <title…>           file an issue in linear.team, assigned to you
-       owl issue --project <id|name>    a project's open issues by milestone, whoever they belong to
-       owl project                      the projects you work in, from Linear
-       owl project open <id> [--prompt TEXT] open (or focus) the project's conversation
-       owl project start <id> [--prompt TEXT] the same without going there
-       owl project close [--force] <id> remove the project's worktree and window
-       owl hoot <title…>                the same, from the owl
-       owl config init | path
-       owl --version`
-
-// usageError is a bad invocation: the message is printed with the
-// usage text and the process exits 64 (EX_USAGE).
-type usageError string
-
-func (e usageError) Error() string { return string(e) }
-
-func main() {
-	args, err := globalOptions(os.Args[1:])
-	exitOn(err)
-	// Bare owl says what it is; the lists are behind their nouns, so a
-	// verb never has to guess which kind of thing an id names.
-	if len(args) == 0 {
-		fmt.Print(about)
-		fmt.Println()
-		fmt.Println(usage)
-		return
-	}
-	// The noun is the scope. A verb without one is refused with the
-	// form it takes.
-	if len(args) > 0 {
-		switch args[0] {
-		case "config":
-			exitOn(runConfig(args[1:], os.Stdout))
-			return
-		case "--version", "version":
-			fmt.Println("owl", versionString())
-			return
-		case "--help", "-h", "help":
-			fmt.Println(usage)
-			return
-		case "pr":
-			args = args[1:]
-			if len(args) > 0 {
-				switch args[0] {
-				case "open", "start", "close", "--check":
-				default:
-					exitOn(usageError("pr: unknown command " + args[0]))
-				}
-			}
-		case "issue":
-			if len(args) > 1 && !strings.HasPrefix(args[1], "--project") {
-				switch args[1] {
-				case "open", "start", "close", "new":
-				default:
-					exitOn(usageError("issue: unknown command " + args[1]))
-				}
-			}
-		case "project":
-			if len(args) > 1 {
-				switch args[1] {
-				case "open", "start", "close":
-				default:
-					exitOn(usageError("project: unknown command " + args[1]))
-				}
-			}
-		case "hoot":
-		case "open", "start", "close":
-			exitOn(usageError(args[0] + " is a pr command: owl pr " + args[0]))
-		default:
-			exitOn(usageError("unknown command " + args[0]))
-		}
-	}
-
-	cfg, err := loadConfig()
-	exitOn(err)
-	if muxOverride != "" {
-		cfg.Mux = muxOverride
-	}
-	exitOn(enterDefaultRepo(cfg.DefaultRepo))
-	switch {
-	case len(args) > 0 && args[0] == "issue":
-		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
-			exitOn(newWindows(cfg, features).Ping())
-			tracker := newTracker(cfg, func(text string) {
-				fmt.Fprintln(os.Stderr, text)
-				newWindows(cfg, features).Notify(text)
-			})
-			runTUI(initialIssueModel(cfg, tracker))
-			return
-		}
-		exitOn(runIssue(cfg, args[1:], os.Stdout))
-		return
-	case len(args) > 0 && args[0] == "project":
-		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
-			exitOn(newWindows(cfg, projects).Ping())
-			tracker := newTracker(cfg, func(text string) {
-				fmt.Fprintln(os.Stderr, text)
-				newWindows(cfg, features).Notify(text)
-			})
-			runTUI(initialProjectModel(cfg, tracker))
-			return
-		}
-		exitOn(runProject(cfg, args[1:], os.Stdout))
-		return
-	case len(args) > 0 && args[0] == "hoot":
-		exitOn(runIssue(cfg, append([]string{"new"}, args[1:]...), os.Stdout))
-		return
-	case len(args) == 0:
-		// Before the list: states read from a tainted multiplexer never
-		// change, and the failure would surface on Enter, an hour in.
-		exitOn(newWindows(cfg, reviews).Ping())
-		runTUI(initialModel(cfg))
-	case args[0] == "--check":
-		err = runCheck(cfg, os.Stdout)
-	case args[0] == "open":
-		err = runOpen(cfg, args[1:], os.Stdout, true)
-	case args[0] == "start":
-		err = runOpen(cfg, args[1:], os.Stdout, false)
-	case args[0] == "close":
-		err = runClose(cfg, args[1:], os.Stdout)
-	}
-	exitOn(err)
-}
-
-// runTUI runs a list until it quits, keeps its cursor for the next
-// start, and prints what an open left for the terminal behind it.
-//
-// The context is the watch's: cmux's event stream is a child process
-// held open for as long as the list is watching, and cancelling here
-// kills it the moment the list ends rather than leaving it to notice
-// the broken pipe on its next heartbeat.
-func runTUI(m model) {
-	ctx, stop := context.WithCancel(context.Background())
-	defer stop()
-	m.ctx = ctx
-	final, err := tea.NewProgram(m).Run()
-	exitOn(err)
-	fm := final.(model)
-	fm.persistCache() // the cursor row, for the next start
-	if fm.farewell != "" {
-		fmt.Println(fm.farewell)
-	}
-}
-
-// muxOverride is the --mux flag, when given: the multiplexer to use
-// whatever the config says.
-var muxOverride string
-
-// globalOptions takes --config FILE and --mux KIND off the front of
-// the arguments — they apply to every command — and returns the rest.
-func globalOptions(args []string) ([]string, error) {
-	for len(args) > 0 {
-		name, value, joined := strings.Cut(args[0], "=")
-		if name != "--config" && name != "--mux" {
-			break
-		}
-		if !joined {
-			if len(args) < 2 {
-				return nil, usageError(name + " needs a value")
-			}
-			value, args = args[1], args[1:]
-		}
-		args = args[1:]
-		switch name {
-		case "--config":
-			configOverride = value
-		case "--mux":
-			switch value {
-			case "tmux", "herdr", "cmux":
-				muxOverride = value
-			default:
-				return nil, usageError("--mux must be tmux, herdr or cmux, got " + value)
-			}
-		}
-	}
-	return args, nil
-}
-
-// globalArgs is what a child owl needs in front of its command to
-// see the same --config and --mux as this process: a child parses its
-// own arguments.
-func globalArgs() []string {
-	var args []string
-	if configOverride != "" {
-		args = append(args, "--config", configOverride)
-	}
-	if muxOverride != "" {
-		args = append(args, "--mux", muxOverride)
-	}
-	return args
-}
-
-// enterDefaultRepo changes into `default_repo` when the working
-// directory isn't inside a git repo, so owl can be launched from
-// anywhere (a hotkey, a popup) and still act on the configured repo.
-func enterDefaultRepo(defaultRepo string) error {
-	if defaultRepo == "" || exec.Command("git", "rev-parse", "--git-dir").Run() == nil {
-		return nil
-	}
-	if err := os.Chdir(defaultRepo); err != nil {
-		return fmt.Errorf("default_repo: %w", err)
-	}
-	return nil
-}
-
-// exitOn prints err and exits: 64 for a usage error (with the usage
-// text), 2 when `close` found nothing to do, 1 otherwise.
-func exitOn(err error) {
-	if err == nil {
-		return
-	}
-	// Started by the TUI, which may already have quit (on_open: quit):
-	// the failure goes to the multiplexer the popup was in — before
-	// stderr, which may be a broken pipe by now and would end the
-	// process.
-	if mx, ok := windowsByKind(os.Getenv("OWL_MUX")); ok {
-		mx.Notify(err.Error())
-	}
-	fmt.Fprintf(os.Stderr, "owl: %v\n", err)
-	var ue usageError
-	var nothing nothingToCloseError
-	switch {
-	case errors.As(err, &ue):
-		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(64)
-	case errors.As(err, &nothing):
-		os.Exit(2)
-	}
-	os.Exit(1)
 }

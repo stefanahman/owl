@@ -330,9 +330,9 @@ the worktree holding `bar-4157-part-1`. Opening the other way round
 finds it too, because the branch inside still carries the key.
 
 The link between a PR and its issue is the key in the branch name —
-what Linear's own GitHub integration puts there — filtered by
-`linear.team`, so `deps/sharp-0.35.4` is a dependency bump and not
-SHARP-0. A branch closing several issues shows all of them, newest
+what Linear's own GitHub integration puts there — filtered by the
+teams you file under, so `deps/sharp-0.35.4` is a dependency bump and
+not SHARP-0. A branch closing several issues shows all of them, newest
 first, and opens into the newest one's workspace: one branch is one
 piece of work and gets one workspace.
 
@@ -600,6 +600,34 @@ open sequential`. A fragment matching two projects is an error naming
 both rather than a guess. `close` removes the worktree and the window
 and keeps the session id, so the next open resumes the conversation.
 
+### Which repositories
+
+`owl pr` holds the repository you are standing in. Say `pr.owners` and
+it holds every repository those accounts own instead:
+
+```yaml
+pr:
+  owners: ["@me", norrbrunn]
+```
+
+`user:` and `org:` are synonyms to GitHub's search, so one list covers
+people and organisations alike, and `"@me"` keeps your own username out
+of the file (quoted, because YAML reserves a leading `@`). `owl pr
+--here` narrows to this repository whatever the config says.
+
+It is an allowlist on purpose. A search with no repository qualifier
+spans every repository the account can see, so a machine that should
+only show personal work would show the company's too — declare the
+owners per context and the two can never mix.
+
+A row says which repository it is from, since a pull request number
+means nothing without one: #3 is a different pull request in each. The
+column appears only where the list spans several — with one, every row
+would carry the same answer — and names the repository without its
+owner, which the title bar has already given. Opening a row from
+another repository is refused rather than guessed at: `open` fetches
+`pull/<N>/head` from the repository owl is in.
+
 Linear is reached with a personal API key (Settings → Security &
 access), which the config holds as a **reference**, never as a value:
 
@@ -610,10 +638,66 @@ linear:
   team: BAR
 ```
 
-`team` earns its place twice: it is where `owl hoot` files an issue,
-and it is what makes a key in a branch name mean something. Leave it
-unset and `bar-4157-<slug>` is just a branch — a PR of yours will open
+`team` is where `owl hoot` files an issue, and — unless `teams` says
+otherwise — what makes a key in a branch name mean something. Leave
+both unset and `bar-4157-<slug>` is just a branch: a PR of yours opens
 a workspace of its own rather than the feature's.
+
+`teams` is that second job on its own, for a workspace where one team
+is not the whole story:
+
+```yaml
+linear:
+  token: op://Work/Linear API key/credential
+  team: DEV             # where `owl hoot` files
+  teams: [DEV, LIFE]    # which keys in a branch are yours to follow
+```
+
+With `team: DEV` alone, a `LIFE-3` branch reads as no issue at all —
+no chip on the row, and no way from the pull request back to the
+feature it belongs to. The issue list shows LIFE-3 regardless, since
+that query is not filtered by team, so the issue is in front of you
+and the link to it is quietly missing. The gate stays an allowlist
+rather than a rule that rejects things shaped like version numbers: a
+key from a team owl has not been told about is missing, never wrong.
+
+### Several workspaces
+
+Linear keeps workspaces apart on purpose — separate accounts, separate
+keys, and no query, view or plan that crosses between them. That is
+right for a company and a person who are legally two things, and wrong
+for the one desk they are both worked from. Written as a list,
+`linear:` is every workspace owl reads:
+
+```yaml
+linear:
+  - name: stefanahman
+    token: op://Developer/linear-stefanahman-owl/credential
+    teams: [DEV, LIFE]
+  - name: norrbrunn
+    token: op://Developer/linear-norrbrunn-owl/credential
+    teams: [NOR]
+```
+
+The lists merge, newest change first, and every row remembers where it
+came from: an issue says so already in `DEV-12`, and a project — which
+carries a UUID and a name — gets a column that appears only when there
+is more than one workspace to tell apart. `owl issue open DEV-12` is
+routed by the team its key names; a project, having no key, is asked
+of each workspace in turn.
+
+A list asks for a name per workspace and refuses two that claim the
+same team key: one names the file a token caches into
+(`linear-<name>.token`), the other answers which workspace `DEV-12` is
+in. A lone workspace needs neither, is asked for neither, and keeps
+caching into `linear.token` rather than being sent back to 1Password
+for a key it already has.
+
+A workspace that cannot be read does not blank the list. What answered
+is shown and what failed is said where the multiplexer shows messages;
+only a set where every workspace failed is an error, because an empty
+list and no error would read as "nothing assigned to you", which is a
+different thing entirely.
 
 An `op://` reference is read from 1Password the first time it is
 needed — owl says why before the prompt appears — and kept in
@@ -808,7 +892,8 @@ keys:                            # rebind any action: a key name or a list
 linear:                          # the issue tracker behind `owl issue`
   token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key
   account: ""                    # the 1Password account the item is in, when several are signed in
-  team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues
+  team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
+  # teams: [DEV, LIFE]           # every team you file work under; defaults to the single team above
 
 bindings:                        # your own keys on a row: a prompt for its agent, or a URL to open
   pr:

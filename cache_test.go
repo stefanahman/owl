@@ -57,3 +57,25 @@ func TestCursorResumes(t *testing.T) {
 		t.Errorf("cursor beyond the list: %d, want the last PR row %d", clamped.cursor, last)
 	}
 }
+
+// TestCacheKeepsTheRepo: the cache is the list's first paint, and a
+// row read back without its repository is a row whose number means
+// nothing — #3 is a different pull request in each of them.
+func TestCacheKeepsTheRepo(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	saveCache("acme/app", cacheFile{
+		Prs:  []PR{{Number: 1, Title: "theirs", Repo: "acme/app"}},
+		Mine: []PR{{Number: 3, Title: "yours", Repo: "acme/other"}},
+	})
+	got := loadCache("acme/app")
+	if got == nil {
+		t.Fatal("nothing came back")
+	}
+	if len(got.Prs) != 1 || got.Prs[0].Repo != "acme/app" {
+		t.Errorf("review row came back as %+v", got.Prs)
+	}
+	if len(got.Mine) != 1 || got.Mine[0].Repo != "acme/other" {
+		t.Errorf("mine row came back as %+v", got.Mine)
+	}
+}
