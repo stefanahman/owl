@@ -381,3 +381,33 @@ func TestFetchStatesKeepsTheWorktrees(t *testing.T) {
 		t.Error("a window-only entry outlived its window")
 	}
 }
+
+// TestMinePaneSurvivesAnEmptyReviewList: a repo where every pull
+// request is your own — which a solo project is — has nothing to
+// review and everything to show. The view used to return on the
+// focused pane being empty, drawing "no PRs need your review" over the
+// pane that was holding them, and tab cannot reach a pane that was
+// never rendered.
+func TestMinePaneSurvivesAnEmptyReviewList(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.width, m.height = 120, 40
+	m.ready = true
+	m.prs = nil // nothing to review
+	m.mine = []PR{ownPR(1, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 0, false)}
+	m.refreshList()
+
+	out := m.render()
+	if strings.Contains(out, "no PRs need your review") {
+		t.Errorf("the empty-review message hid a mine pane holding a PR:\n%s", out)
+	}
+	if !strings.Contains(out, "#1") {
+		t.Errorf("the mine pane's PR is not in the view:\n%s", out)
+	}
+
+	// Both empty is still empty, and still says so.
+	m.mine = nil
+	m.refreshList()
+	if out := m.render(); !strings.Contains(out, "no PRs need your review") {
+		t.Errorf("nothing anywhere and no message:\n%s", out)
+	}
+}
