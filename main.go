@@ -441,7 +441,12 @@ type model struct {
 	repoDir string // the repository's main working tree; "" outside a repo
 	// here narrows the list to m.repo even where owners would span more,
 	// for the times you want this repo and not the whole desk.
-	here       bool
+	here bool
+	// paneChosen is set once Tab has been pressed. Until then the list
+	// may land the focus on whichever pane has rows; after it, the
+	// reader has said which pane they want and a fetch landing must not
+	// move them.
+	paneChosen bool
 	me         string
 	prs        []PR
 	merged     []PR
@@ -1284,6 +1289,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// The cursors swap with the focus, so each pane comes back to
 			// the row you left it on.
 			m.mineFocus = !m.mineFocus
+			m.paneChosen = true // you have said which pane you want
 			m.cursor, m.otherCursor = m.otherCursor, m.cursor
 			m.keys = newKeyMap(m.cfg.Keys, m.bindings())
 			m.labelKeysForPane()
@@ -1729,20 +1735,48 @@ func (m model) visibleReviewRows() []visibleRow {
 	return out
 }
 
+// focusWhereTheRowsAre moves the focus to the pane that has something
+// in it, while the reader has not said otherwise.
+//
+// The PR list opens on the review queue, and the counts and the cursor
+// follow the focused pane. A repo where nothing is waiting on you —
+// a solo project, where every pull request is your own — opened on an
+// empty pane, counted it, and reported nothing while your own work sat
+// in the pane below.
+func (m *model) focusWhereTheRowsAre() {
+	if !m.panes() || m.paneChosen {
+		return
+	}
+	if len(m.visibleRows()) == 0 && len(m.otherPaneRows()) > 0 {
+		m.mineFocus = !m.mineFocus
+		m.cursor, m.otherCursor = m.otherCursor, m.cursor
+		m.keys = newKeyMap(m.cfg.Keys, m.bindings())
+		m.labelKeysForPane()
+		m.clampCursor()
+	}
+}
+
 // refreshList slices the visible rows to fit the viewport and pushes
 // them into it via SetContent. Slice-based rendering matches the
 // pattern in bubbles/table.UpdateViewport: content in the viewport is
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
+	m.focusWhereTheRowsAre()
 	rows := m.visibleRows()
 	h := m.contentHeight
 	if m.panes() {
 		h = m.focusedPaneHeight()
 	}
-	if h > 0 {
-		m.list.SetHeight(h)
+	// Set it even at zero. resizeViewport gives the viewport the whole
+	// content height and leaves the narrowing to here, so skipping the
+	// call when the focused pane has no rows left it at full height —
+	// a screenful of blank lines, and the other pane pushed off the
+	// bottom. That is what an empty review queue looked like.
+	if h < 0 {
+		h = 0
 	}
-	if h <= 0 || len(rows) == 0 {
+	m.list.SetHeight(h)
+	if h == 0 || len(rows) == 0 {
 		m.list.SetContent("")
 		return
 	}
@@ -1968,6 +2002,17 @@ func (m model) countsSummary() string {
 	))
 }
 
+// prScopeLabel is what the PR list's title names. One repository when
+// that is all it holds, and the owners when it spans them: a title
+// reading `owl · stefanahman/owl` over rows from three repositories
+// names one of them and misses the point of the list.
+func (m model) prScopeLabel(repo string) string {
+	if m.here || !m.cfg.PR.Spans() {
+		return repo
+	}
+	return strings.Join(m.cfg.PR.Owners, " + ")
+}
+
 // titleLine renders the header row: `owl · <repo>` left-aligned,
 // `updated Xm ago` right-aligned, padded to fill m.width. Timestamp
 // is omitted before the first fetch completes (lastFetched is zero).
@@ -1975,7 +2020,7 @@ func (m model) titleLine(repo string) string {
 	// The PR list is owl's front door and says only the repo; the others
 	// name themselves, from the same noun the empty-search line uses, so
 	// the two can never disagree.
-	left := styleHeader.Render(fmt.Sprintf("owl · %s", repo))
+	left := styleHeader.Render(fmt.Sprintf("owl · %s", m.prScopeLabel(repo)))
 	if m.drill != nil {
 		// The project, not the repo: while drilled that is where you are.
 		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
