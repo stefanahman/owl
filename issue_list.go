@@ -60,10 +60,14 @@ func (m model) fetchCancelled() tea.Msg {
 // row shows the PRs opened for it.
 func (m model) fetchIssuePRs() tea.Msg {
 	gen := m.fetchGen
-	if m.repo == "" {
-		return issuePRsMsg{gen, nil} // no GitHub repo: the rows just have no PR
+	scope := m.cfg.PR.Scope(m.repo, m.here)
+	if scope == "" {
+		return issuePRsMsg{gen, nil} // nothing to search: the rows just have no PR
 	}
-	prs, err := ghPRList(m.repo, "open", "")
+	// Every repo the list spans, not the one you are standing in: the
+	// issues above these come from every Linear workspace, so a branch
+	// closing one of them can be in any repo owl can see.
+	prs, err := searchPRs(scope, "is:open")
 	if err != nil {
 		return issuePRsMsg{gen, nil} // gh down or offline: the issues still list
 	}

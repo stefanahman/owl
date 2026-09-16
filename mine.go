@@ -32,10 +32,10 @@ import (
 // the second it lands.
 func (m model) fetchMine() tea.Msg {
 	gen := m.fetchGen
-	if m.repo == "" {
+	if m.scope() == "" {
 		return mineMsg{gen: gen}
 	}
-	prs, err := minePRs(m.repo)
+	prs, err := searchPRs(m.scope(), "is:open author:@me")
 	if err != nil {
 		return errMsg{gen, err}
 	}
@@ -43,7 +43,7 @@ func (m model) fetchMine() tea.Msg {
 	// failing the pane: the open PRs are the pane's job, and what
 	// landed is the footnote.
 	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
-	merged, err := ghPRList(m.repo, "merged", fmt.Sprintf("author:@me merged:>=%s", cutoff))
+	merged, err := searchPRs(m.scope(), "is:merged author:@me merged:>="+cutoff)
 	if err != nil {
 		merged = nil
 	}

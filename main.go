@@ -437,8 +437,11 @@ type model struct {
 	tracker Tracker // the issue list's source; nil on the PR list
 
 	// domain data
-	repo       string // owner/name on GitHub
-	repoDir    string // the repository's main working tree; "" outside a repo
+	repo    string // owner/name on GitHub, of the repo you are standing in
+	repoDir string // the repository's main working tree; "" outside a repo
+	// here narrows the list to m.repo even where owners would span more,
+	// for the times you want this repo and not the whole desk.
+	here       bool
 	me         string
 	prs        []PR
 	merged     []PR
@@ -522,6 +525,12 @@ type model struct {
 
 // initialModel gathers what the model needs from the environment —
 // the repo of the working directory and its cache — and builds it.
+// scope is the repository qualifier this model's PR searches carry:
+// the configured owners, or the one repo when `--here` asked for it or
+// no owners are configured. "" only outside a repo with no owners,
+// where there is nothing to search and the caller says so.
+func (m model) scope() string { return m.cfg.PR.Scope(m.repo, m.here) }
+
 func initialModel(cfg Config) model {
 	repo := currentRepo(cfg.Remote)
 	m := newModel(cfg, repo, loadCache(repo))
@@ -756,6 +765,26 @@ func (m model) onOpen() string {
 		return "quit"
 	}
 	return "stay"
+}
+
+// elsewhere is the repository a row belongs to when that is not the
+// one owl is standing in, and "" when it is.
+//
+// The list spans every repo pr.owners covers, and a pull request number
+// means nothing without its repository: #3 is a different pull request
+// in each of them. `open` fetches `pull/<N>/head` from the repo owl is
+// in, so opening a row from elsewhere would quietly check out the
+// wrong work — or fail, on a repo where that number is not taken yet.
+// Until a row can be opened in its own repo, saying so is the honest
+// answer.
+func (m model) elsewhere(row visibleRow) string {
+	if row.pr == nil || row.pr.Repo == "" || m.repo == "" {
+		return ""
+	}
+	if strings.EqualFold(row.pr.Repo, m.repo) {
+		return ""
+	}
+	return row.pr.Repo
 }
 
 // launch starts an open, start or close child for a row in the
@@ -1283,6 +1312,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.Enter), key.Matches(msg, m.keys.Start):
 		if row, ok := m.selectedRow(); ok {
+			if other := m.elsewhere(row); other != "" {
+				m.notice = fmt.Errorf("#%d is in %s and owl is in %s — open it from there", row.pr.Number, other, m.repo)
+				return m, nil
+			}
 			if key.Matches(msg, m.keys.Enter) {
 				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.noun(), row.id(), ""), true)
 			}
@@ -1319,6 +1352,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// tear down — otherwise it's a no-op and the errMsg would
 			// just noise the UI.
 			if ls := m.localOf(row); ls.Worktree != "" || ls.Window != "" {
+				if other := m.elsewhere(row); other != "" {
+					m.notice = fmt.Errorf("#%d is in %s and owl is in %s — close it from there", row.pr.Number, other, m.repo)
+					return m, nil
+				}
 				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.noun(), row.id()), false)
 			}
 		}
@@ -2407,7 +2444,7 @@ func main() {
 			args = args[1:]
 			if len(args) > 0 {
 				switch args[0] {
-				case "open", "start", "close", "--check":
+				case "open", "start", "close", "--check", "--here":
 				default:
 					exitOn(usageError("pr: unknown command " + args[0]))
 				}
@@ -2475,6 +2512,12 @@ func main() {
 		// change, and the failure would surface on Enter, an hour in.
 		exitOn(newWindows(cfg, reviews).Ping())
 		runTUI(initialModel(cfg))
+	case args[0] == "--here":
+		// This repo, whatever pr.owners spans.
+		exitOn(newWindows(cfg, reviews).Ping())
+		m := initialModel(cfg)
+		m.here = true
+		runTUI(m)
 	case args[0] == "--check":
 		err = runCheck(cfg, os.Stdout)
 	case args[0] == "open":

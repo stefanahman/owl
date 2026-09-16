@@ -29,7 +29,7 @@ func TestOpenPRsAnswersWhoYouAre(t *testing.T) {
 	fakeGHOnPath(t, `#!/bin/sh
 printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"search":{"nodes":[{"number":7,"title":"a change","author":{"login":"alice"},"reviews":{"nodes":[]}}]}}}'
 `)
-	prs, me, err := openPRs("acme/app")
+	prs, me, err := openPRs("repo:acme/app", "is:open")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +45,10 @@ printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"search":{"nodes":[{"numb
 // reads it to decide whose court a PR is in.
 func TestOpenPRsFailsRatherThanGuessing(t *testing.T) {
 	fakeGHOnPath(t, "#!/bin/sh\necho 'gh: nope' >&2\nexit 1\n")
-	if _, me, err := openPRs("acme/app"); err == nil || me != "" {
+	if _, me, err := openPRs("repo:acme/app", "is:open"); err == nil || me != "" {
 		t.Errorf("openPRs = %q, %v; want an error and no login", me, err)
 	}
-	if _, _, err := openPRs("acme/app"); err != nil && !strings.Contains(err.Error(), "gh api graphql") {
+	if _, _, err := openPRs("repo:acme/app", "is:open"); err != nil && !strings.Contains(err.Error(), "gh api graphql") {
 		t.Errorf("error does not say what failed: %v", err)
 	}
 }
@@ -106,5 +106,29 @@ func TestScopeORsOwners(t *testing.T) {
 	}
 	if got := blank.Scope("", false); got != "" {
 		t.Errorf("blank owners and no repo = %q, want nothing to search", got)
+	}
+}
+
+// TestOpeningElsewhereIsRefused: a pull request number means nothing
+// without its repository — #3 is a different one in each — and `open`
+// fetches pull/<N>/head from the repo owl is in.
+func TestOpeningElsewhereIsRefused(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	here := visibleRow{pr: &PR{Number: 3, Repo: "acme/app"}}
+	if got := m.elsewhere(here); got != "" {
+		t.Errorf("a row from this repo reads as elsewhere: %q", got)
+	}
+	away := visibleRow{pr: &PR{Number: 3, Repo: "acme/other"}}
+	if got := m.elsewhere(away); got != "acme/other" {
+		t.Errorf("a row from another repo = %q, want acme/other", got)
+	}
+	// Case is GitHub's business, not a difference.
+	mixed := visibleRow{pr: &PR{Number: 3, Repo: "ACME/App"}}
+	if got := m.elsewhere(mixed); got != "" {
+		t.Errorf("case alone made a row foreign: %q", got)
+	}
+	// Nothing known: no repo on the row, or owl outside a repo.
+	if got := m.elsewhere(visibleRow{pr: &PR{Number: 3}}); got != "" {
+		t.Errorf("a row with no repo = %q", got)
 	}
 }

@@ -287,6 +287,10 @@ func fakeGH(t *testing.T, root string) {
 case "$1 $2" in
   "api graphql")
     case "$*" in
+      # The merged halves of both panes search the same endpoint as the
+      # open ones; nothing here has merged, so they answer empty rather
+      # than echoing the open rows back into the Merged section.
+      *is:merged*) echo '{"data":{"search":{"nodes":[]}}}' ;;
       # open asks for one PR's facts before it decides which workspace it gets
       *viewerDidAuthor*) echo '{"data":{"repository":{"pullRequest":{"title":"Add Billing Migration","headRefName":"alice/billing","isCrossRepository":false,"viewerDidAuthor":false}}}}' ;;
       *reviewDecision*) cat "$(dirname "$0")/mine.json" ;;   # only the mine query selects it; matching the search string would catch -author:@me too
