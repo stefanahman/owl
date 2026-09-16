@@ -38,6 +38,7 @@ type Config struct {
 	Keys         KeysConfig       `yaml:"keys"`
 	Bindings     BindingsConfig   `yaml:"bindings"`
 	Linear       LinearWorkspaces `yaml:"linear"`
+	PR           PRConfig         `yaml:"pr"`
 	Issue        IssueConfig      `yaml:"issue"`
 	Mine         MineConfig       `yaml:"mine"`
 	Project      ProjectConfig    `yaml:"project"`
@@ -164,6 +165,60 @@ func (p ProjectConfig) dimmed(status string) bool {
 type MineConfig struct {
 	Prompt string `yaml:"prompt"`
 }
+
+// PRConfig is the pull request list: which repositories it spans.
+//
+// Without owners it spans the one repo you are standing in, which is
+// what owl did before there was a choice. With them it spans every
+// repo those accounts own, and the directory you happen to be in stops
+// deciding what you can see.
+type PRConfig struct {
+	Owners []string `yaml:"owners"`
+}
+
+// Scope is the repository qualifier the PR searches carry: every owner
+// when the list spans them, and the one repo when it does not — no
+// owners configured, or `--here` asked for this one.
+//
+// `user:` and not `org:` for all of them: GitHub treats the two as
+// synonyms for the account that owns a repo, so a list of owners needs
+// no note of which are people and which are organisations.
+//
+// Parenthesised, and OR between them, because that is the only spelling
+// GitHub's code search reads as a union. Written plainly — `user:a
+// user:b` — the qualifiers are ANDed, and a pull request belongs to one
+// owner, so the answer is always nothing. The REST search API ORs the
+// same string, which is how a query can be verified and still be wrong:
+// owl asks GraphQL. Boolean operators and five levels of parentheses
+// are documented; the AND is not.
+//
+// An empty answer would be a search across every repo the account can
+// see, which is how work ends up in a personal list — callers must not
+// run a PR query without a scope.
+func (c PRConfig) Scope(repo string, here bool) string {
+	if here || len(c.Owners) == 0 {
+		if repo == "" {
+			return ""
+		}
+		return "repo:" + repo
+	}
+	qs := make([]string, 0, len(c.Owners))
+	for _, o := range c.Owners {
+		if o != "" {
+			qs = append(qs, "user:"+o)
+		}
+	}
+	if len(qs) == 0 {
+		if repo == "" {
+			return ""
+		}
+		return "repo:" + repo
+	}
+	return "(" + strings.Join(qs, " OR ") + ")"
+}
+
+// Spans reports whether the list covers more than the repo you are in.
+func (c PRConfig) Spans() bool { return len(c.Owners) > 0 }
 
 // LinearConfig is one Linear workspace: the key, as a reference, the
 // team new issues go to, and the teams a branch may file work under.
