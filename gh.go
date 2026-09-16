@@ -19,8 +19,11 @@ import (
 // there on Monday, short enough to keep the list from turning into a
 // firehose.
 
-// PR mirrors the JSON shape returned by `gh pr list --json ...`.
-// Fields intentionally kept minimal to keep the query fast.
+// PR is a pull request as owl shows it. The searches decode GitHub's
+// answers into structs of their own and fill this in field by field,
+// so the tags here are the cache's: this is the shape a row is written
+// and read back in. Kept minimal, because every field is one more
+// thing a query has to ask for.
 type PR struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
@@ -85,10 +88,10 @@ type Review struct {
 	State       string `json:"state"`
 	SubmittedAt string `json:"submittedAt"`
 
-	// Commit.OID is populated only by the graphql fetch (fetchPRs). gh's
-	// `pr list --json reviews` returns commit.oid as empty string, so on
-	// merged rows (fetched via fetchMerged which stays on gh pr list)
-	// this stays empty — merged rows don't need staleness detection.
+	// Commit.OID is populated by the review search, which selects it;
+	// the search behind your own pull requests does not, since a row
+	// there is never checked for staleness — you know whether you have
+	// looked at your own work.
 	Commit struct {
 		OID string `json:"oid"`
 	} `json:"commit"`
@@ -421,7 +424,9 @@ query($q: String!) {
   }
 }`
 
-// minePRs returns your own open pull requests in the repo.
+// searchPRs is every pull request in scope that the filter matches:
+// your own open ones, your own merged ones, or every open one in a
+// repository — the caller says which. One search behind all of them.
 func searchPRs(scope, filter string) ([]PR, error) {
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+mineQuery,
@@ -445,6 +450,7 @@ func searchPRs(scope, filter string) ([]PR, error) {
 					HeadRefName string `json:"headRefName"`
 					HeadRefOid  string `json:"headRefOid"`
 					UpdatedAt   string `json:"updatedAt"`
+					MergedAt    string `json:"mergedAt"`
 					IsDraft     bool   `json:"isDraft"`
 					Repository  struct {
 						NameWithOwner string `json:"nameWithOwner"`
@@ -478,7 +484,7 @@ func searchPRs(scope, filter string) ([]PR, error) {
 		pr := PR{
 			Number: n.Number, Title: n.Title, Body: n.Body, URL: n.URL,
 			HeadRefName: n.HeadRefName, HeadRefOid: n.HeadRefOid,
-			UpdatedAt: n.UpdatedAt, IsDraft: n.IsDraft,
+			UpdatedAt: n.UpdatedAt, MergedAt: n.MergedAt, IsDraft: n.IsDraft,
 			Mergeable: n.Mergeable, ReviewDecision: n.ReviewDecision,
 			Asked: n.ReviewRequests.TotalCount,
 			Repo:  n.Repository.NameWithOwner,
