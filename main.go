@@ -1738,26 +1738,30 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		// you. The title gives up the width they need, down to a floor —
 		// a row with three keys on it still has to read as a title.
 		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.TeamKeys()))
-		width := max(68-lipgloss.Width(chips), 24)
+		repo := m.repoCell(row.pr)
+		width := max(68-lipgloss.Width(chips)-lipgloss.Width(repo), 24)
 		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s%s",
+			"%s#%-5d %s %s  %s %s%s%s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
+			repo,
 			trim(row.pr.Title, width),
 			draft,
 			chips,
 		), " ")
 	}
+	repo := m.repoCell(row.pr)
 	return fmt.Sprintf(
-		"%s#%-5d %s %s  %s%s (%s)",
+		"%s#%-5d %s %s  %s%s%s (%s)",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
-		trim(row.pr.Title, 70),
+		repo,
+		trim(row.pr.Title, 70-lipgloss.Width(repo)),
 		draft,
 		row.pr.Author.Login,
 	)

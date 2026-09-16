@@ -155,6 +155,29 @@ func (m model) prScopeLabel(repo string) string {
 	return scopeLabel(m.cfg.PR.Owners)
 }
 
+// repoWidth is the repository column: enough for the names a personal
+// desk holds (owl, thevake, fortoj, norrbrunn) and trimmed past that.
+const repoWidth = 12
+
+// repoCell is the column saying which repository a row is from, and ""
+// where the list holds only one — then every row carries the same
+// answer, which is no answer, and the title bar has already given it.
+//
+// The name without its owner: the owners are in the title, and it is
+// the name that tells owl from thevake. Two owners with a repository
+// named alike would read the same here, which costs a glance at a
+// title bar that is already on screen.
+func (m model) repoCell(pr *PR) string {
+	if !m.cfg.PR.Spans() || m.here || pr == nil || pr.Repo == "" {
+		return ""
+	}
+	name := pr.Repo
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	return cell(name, repoWidth, styleDim) + " "
+}
+
 // focusedPaneHeight is how many rows the focused pane gets. The same
 // number sizes the viewport and slices the rows into it, so the cursor
 // cannot scroll out of a window narrower than the one it was measured

@@ -1001,3 +1001,49 @@ func TestOnOpenAutoFollowsTheMultiplexer(t *testing.T) {
 		t.Errorf("explicit switch under cmux = %q", got)
 	}
 }
+
+// TestRepoColumn: a pull request number means nothing without its
+// repository — #3 is a different one in each — so a list spanning
+// several says which. A list holding one does not: every row would
+// carry the same answer, and the title bar has already given it.
+func TestRepoColumn(t *testing.T) {
+	rows := func(owners []string) string {
+		cfg := defaultConfig()
+		cfg.PR.Owners = owners
+		m := newModel(cfg, "stefanahman/owl", nil)
+		m.width, m.height = 120, 24
+		m.resizeViewport()
+		m.ready, m.me = true, "stefanahman"
+		m.mine = []PR{
+			{Number: 1, Title: "read several workspaces as one", Repo: "stefanahman/owl"},
+			{Number: 3, Title: "Level 1 playable", Repo: "stefanahman/thevake"},
+		}
+		m.refreshList()
+		return stripANSI(m.render())
+	}
+
+	spanning := rows([]string{"@me", "norrbrunn"})
+	for _, want := range []string{"owl", "thevake"} {
+		if !strings.Contains(spanning, want) {
+			t.Errorf("a list spanning owners does not name %s:\n%s", want, spanning)
+		}
+	}
+	// The name without its owner: the owners are in the title already.
+	if strings.Contains(spanning, "stefanahman/thevake") {
+		t.Errorf("the column repeats the owner:\n%s", spanning)
+	}
+
+	// One repository: no column, and no width spent on it.
+	if one := rows(nil); strings.Contains(one, "thevake ") {
+		t.Errorf("one repository still drew the column:\n%s", one)
+	}
+
+	// --here narrows to this repository, so the column goes with it.
+	cfg := defaultConfig()
+	cfg.PR.Owners = []string{"@me", "norrbrunn"}
+	m := newModel(cfg, "stefanahman/owl", nil)
+	m.here = true
+	if got := m.repoCell(&PR{Repo: "stefanahman/thevake"}); got != "" {
+		t.Errorf("--here drew the column: %q", got)
+	}
+}

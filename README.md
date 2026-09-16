@@ -612,9 +612,12 @@ spans every repository the account can see, so a machine that should
 only show personal work would show the company's too — declare the
 owners per context and the two can never mix.
 
-A row carries its repository, since a pull request number means nothing
-without one: #3 is a different pull request in each. Opening a row from
-another repository is refused rather than guessed at — `open` fetches
+A row says which repository it is from, since a pull request number
+means nothing without one: #3 is a different pull request in each. The
+column appears only where the list spans several — with one, every row
+would carry the same answer — and names the repository without its
+owner, which the title bar has already given. Opening a row from
+another repository is refused rather than guessed at: `open` fetches
 `pull/<N>/head` from the repository owl is in.
 
 Linear is reached with a personal API key (Settings → Security &
