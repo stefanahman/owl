@@ -731,6 +731,11 @@ keys:                            # one key name or a list; names as bubbletea sp
   help: "?"
   quit: [q, ctrl+c]
 
+# Which repositories the PR list holds. Unset, it is the one you are
+# standing in, so the list is scoped by your working directory.
+# pr:
+#   owners: ["@me", acme]        # your own namespace and the orgs you opt into, which GitHub ORs; owl pr --here narrows to this repo whatever this says. An allowlist on purpose: a search with no repository qualifier spans every repo your account can see
+
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
   token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in

@@ -592,6 +592,31 @@ open sequential`. A fragment matching two projects is an error naming
 both rather than a guess. `close` removes the worktree and the window
 and keeps the session id, so the next open resumes the conversation.
 
+### Which repositories
+
+`owl pr` holds the repository you are standing in. Say `pr.owners` and
+it holds every repository those accounts own instead:
+
+```yaml
+pr:
+  owners: ["@me", norrbrunn]
+```
+
+`user:` and `org:` are synonyms to GitHub's search, so one list covers
+people and organisations alike, and `"@me"` keeps your own username out
+of the file (quoted, because YAML reserves a leading `@`). `owl pr
+--here` narrows to this repository whatever the config says.
+
+It is an allowlist on purpose. A search with no repository qualifier
+spans every repository the account can see, so a machine that should
+only show personal work would show the company's too — declare the
+owners per context and the two can never mix.
+
+A row carries its repository, since a pull request number means nothing
+without one: #3 is a different pull request in each. Opening a row from
+another repository is refused rather than guessed at — `open` fetches
+`pull/<N>/head` from the repository owl is in.
+
 Linear is reached with a personal API key (Settings → Security &
 access), which the config holds as a **reference**, never as a value:
 
