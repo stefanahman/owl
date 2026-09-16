@@ -210,11 +210,9 @@ func (m model) workspaceNames() string {
 	}
 	names := make([]string, 0, len(m.cfg.Linear))
 	for _, ws := range m.cfg.Linear {
-		if ws.Name != "" {
-			names = append(names, ws.Name)
-		}
+		names = append(names, ws.Name)
 	}
-	return strings.Join(names, " + ")
+	return scopeLabel(names)
 }
 
 func (m model) projectNameWidth() int {

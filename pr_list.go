@@ -152,7 +152,7 @@ func (m model) prScopeLabel(repo string) string {
 	if m.here || !m.cfg.PR.Spans() {
 		return repo
 	}
-	return strings.Join(m.cfg.PR.Owners, " + ")
+	return scopeLabel(m.cfg.PR.Owners)
 }
 
 // focusedPaneHeight is how many rows the focused pane gets. The same

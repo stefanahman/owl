@@ -1876,13 +1876,20 @@ func (m model) countsSummary() string {
 	))
 }
 
-// titleLine renders the header row: `owl · <repo>` left-aligned,
-// `updated Xm ago` right-aligned, padded to fill m.width. Timestamp
-// is omitted before the first fetch completes (lastFetched is zero).
+// titleLine renders the header row: what the list is scoped by,
+// left-aligned, `updated Xm ago` right-aligned, padded to fill
+// m.width. The timestamp is omitted before the first fetch completes
+// (lastFetched is zero).
 func (m model) titleLine(repo string) string {
-	// The PR list is owl's front door and says only the repo; the others
-	// name themselves, from the same noun the empty-search line uses, so
-	// the two can never disagree.
+	// Every list says what it is scoped by, and each is scoped by
+	// something different: the PR list by the repositories it spans,
+	// the others by the Linear workspaces they read. One of them is
+	// named, several are all named — a title naming one of several is
+	// worse than a title naming none.
+	//
+	// The PR list is owl's front door and leads with its scope alone;
+	// the others name themselves first, from the same noun the
+	// empty-search line uses, so the two can never disagree.
 	left := styleHeader.Render(fmt.Sprintf("owl · %s", m.prScopeLabel(repo)))
 	if m.drill != nil {
 		// The project, not the repo: while drilled that is where you are.
@@ -2099,6 +2106,23 @@ func relativeAge(iso string) string {
 	default:
 		return fmt.Sprintf("%dw", int(d.Hours()/(24*7)))
 	}
+}
+
+// scopeLabel names the sources a list spans, for its title. Joined by
+// a plus rather than a comma: a title saying two things is saying both
+// are in the list, not that it holds one or the other.
+//
+// Shared by the two lists that can span something — the PR list over
+// repository owners, the issue and project lists over Linear
+// workspaces — which are different enough not to share more than this.
+func scopeLabel(names []string) string {
+	kept := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != "" {
+			kept = append(kept, n)
+		}
+	}
+	return strings.Join(kept, " + ")
 }
 
 func clampInt(v, lo, hi int) int {
