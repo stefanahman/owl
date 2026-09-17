@@ -61,6 +61,17 @@ func ensureIssueWorktree(cfg Config, repo, key, base string, tracker Tracker, ou
 		if !own {
 			fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", w.Branch, cfg.WorktreesDir, w.Path)
 		}
+		// The branch point is behind us — this worktree exists and has
+		// commits on it — but the base is still worth recording: a layer
+		// is often recognised after the work has started, and the record
+		// is what a later session reads before it rebases. Say which
+		// half happened, so nobody reads this as the branch being re-cut.
+		if base != "" && w.Branch != "" {
+			if err := recordBase(repo, w.Branch, base); err != nil {
+				return "", "", err
+			}
+			fmt.Fprintf(out, "%s already exists: recorded %s as its base, but the branch is not re-cut from it\n", w.Branch, base)
+		}
 		return filepath.Base(w.Path), w.Path, nil
 	}
 	if _, err := git(repo, "fetch", "--quiet", cfg.Remote); err != nil {

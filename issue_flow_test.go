@@ -94,6 +94,35 @@ func TestIssueOpenOnABase(t *testing.T) {
 	}
 }
 
+// TestIssueOpenOnABaseAfterTheFact: a layer is often recognised once
+// the work has started. The branch point is behind us then, but the
+// record is not — it is what the next session reads before it rebases
+// — so --base still writes it, and says which half happened.
+func TestIssueOpenOnABaseAfterTheFact(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	f.write(filepath.Join(f.origin, "below.txt"), "the layer below\n")
+	f.git(f.origin, "checkout", "-q", "-b", "stack-below")
+	f.git(f.origin, "add", ".")
+	f.git(f.origin, "commit", "-q", "-m", "the layer below")
+	f.git(f.origin, "checkout", "-q", "main")
+
+	f.openIssue("bar-4160") // an ordinary open first
+	name := "bar-4160-per-tenant-override"
+	if got := baseOf(f.repo, name); got != "" {
+		t.Fatalf("baseOf = %q before any base was given", got)
+	}
+
+	out := f.openIssue("bar-4160", "--base", "stack-below")
+
+	if got := baseOf(f.repo, name); got != "stack-below" {
+		t.Errorf("baseOf = %q, want the base given after the fact", got)
+	}
+	if !strings.Contains(out, "not re-cut") {
+		t.Errorf("output does not say the branch was left where it was: %q", out)
+	}
+}
+
 // TestIssueOpenRejectsAMissingBase: the layer below may simply not be
 // pushed yet, and that is worth saying.
 func TestIssueOpenRejectsAMissingBase(t *testing.T) {
