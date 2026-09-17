@@ -55,8 +55,8 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
        owl pr --check                   say what has arrived in your court since owl last looked, for a scheduler
        owl issue                        the issues assigned to you, from Linear
-       owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
-       owl issue start <KEY> [--prompt TEXT] the same without going there
+       owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY; --base starts it on another branch, for a layer of a stack
+       owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
        owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
        owl issue new <title…>           file an issue in linear.team, assigned to you
        owl issue --project <id|name>    a project's open issues by milestone, whoever they belong to

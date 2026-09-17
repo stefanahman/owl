@@ -13,7 +13,7 @@ import (
 )
 
 func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arrive bool) error {
-	id, prompt, err := parseOpenArgs("issue", "issue key", args)
+	id, prompt, base, err := parseOpenArgs("issue", "issue key", args)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		return err
 	}
 	defer unlock()
-	name, wt, err := ensureIssueWorktree(cfg, repo, key, tracker, out)
+	name, wt, err := ensureIssueWorktree(cfg, repo, key, base, tracker, out)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 //     and creating a fresh branch beside it strands the real one.
 //  3. Only when nothing carries the key, the branch Linear names,
 //     started from the remote's default branch.
-func ensureIssueWorktree(cfg Config, repo, key string, tracker Tracker, out io.Writer) (name, wt string, err error) {
+func ensureIssueWorktree(cfg Config, repo, key, base string, tracker Tracker, out io.Writer) (name, wt string, err error) {
 	if w, own, ok := findIssueWorktree(repo, cfg.WorktreesDir, key); ok {
 		if !own {
 			fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", w.Branch, cfg.WorktreesDir, w.Path)
@@ -89,14 +89,59 @@ func ensureIssueWorktree(cfg Config, repo, key string, tracker Tracker, out io.W
 		fmt.Fprintf(out, "fetching %s/%s into %s\n", cfg.Remote, branch, wt)
 		_, err = git(repo, "worktree", "add", "--track", "-b", branch, wt, cfg.Remote+"/"+branch)
 	default:
-		base := defaultBranch(repo, cfg.Remote)
-		fmt.Fprintf(out, "creating %s from %s/%s into %s\n", branch, cfg.Remote, base, wt)
-		_, err = git(repo, "worktree", "add", "--no-track", "-b", branch, wt, cfg.Remote+"/"+base)
+		from := base
+		if from == "" {
+			from = defaultBranch(repo, cfg.Remote)
+		} else if !refExists(repo, "refs/remotes/"+cfg.Remote+"/"+from) {
+			// Named by a project agent stacking this issue on another's
+			// work, so the branch below may simply not be pushed yet —
+			// which is worth saying, rather than git's complaint about a
+			// missing commit-ish.
+			return "", "", fmt.Errorf("--base %s: no such branch on %s (is the layer below pushed?)", from, cfg.Remote)
+		}
+		fmt.Fprintf(out, "creating %s from %s/%s into %s\n", branch, cfg.Remote, from, wt)
+		_, err = git(repo, "worktree", "add", "--no-track", "-b", branch, wt, cfg.Remote+"/"+from)
 	}
 	if err != nil {
 		return "", "", err
 	}
+	if err := recordBase(repo, branch, base); err != nil {
+		return "", "", err
+	}
 	return name, wt, nil
+}
+
+// recordBase writes the layer's base into git's own config, under the
+// branch it belongs to.
+//
+// The base has to outlive the sentence that set it. A briefing is one
+// prompt in one conversation, and the session that picks the work up
+// tomorrow — after a restart, after `close`, after the user comes back
+// to it — never read it. That session is exactly the one that must not
+// rebase onto the trunk or force-push over the layer below, so what it
+// can ask git for is what it has to be:
+//
+//	git config --get branch.<branch>.owlBase
+//
+// Empty base, nothing written: an ordinary feature keeps no key, and
+// the absence is the answer.
+func recordBase(repo, branch, base string) error {
+	if base == "" {
+		return nil
+	}
+	_, err := git(repo, "config", "branch."+branch+".owlBase", base)
+	return err
+}
+
+// baseOf is the branch this one was stacked on, or "" for an ordinary
+// one. Read it before rebasing or force-pushing: the answer decides
+// whether the trunk or the layer below is what this branch follows.
+func baseOf(repo, branch string) string {
+	out, err := git(repo, "config", "--get", "branch."+branch+".owlBase")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // issueBranch picks the branch the feature works on: the newest of

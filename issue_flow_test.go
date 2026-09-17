@@ -52,6 +52,60 @@ func (f *fixture) featureWindows() []string {
 	return strings.Split(out, "\n")
 }
 
+// TestIssueOpenOnABase: an issue that is a layer of a stack starts
+// from the layer below, not from the trunk, and says so where the next
+// session can find it.
+//
+// The saying is the point. A briefing is one prompt in one
+// conversation; the session that picks this branch up tomorrow never
+// read it, and that session is exactly the one that must not rebase
+// onto main or force-push over the layer below.
+func TestIssueOpenOnABase(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+
+	// The layer below: a branch on the origin with a commit main lacks.
+	f.write(filepath.Join(f.origin, "below.txt"), "the layer below\n")
+	f.git(f.origin, "checkout", "-q", "-b", "stack-below")
+	f.git(f.origin, "add", ".")
+	f.git(f.origin, "commit", "-q", "-m", "the layer below")
+	f.git(f.origin, "checkout", "-q", "main")
+	f.git(f.repo, "fetch", "-q", "origin")
+
+	out := f.openIssue("bar-4160", "--base", "stack-below")
+
+	name := "bar-4160-per-tenant-override"
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	if !strings.Contains(out, "creating "+name+" from origin/stack-below") {
+		t.Errorf("output: %q", out)
+	}
+	// It carries the layer below's commit, which main does not have.
+	if !f.exists(filepath.Join(wt, "below.txt")) {
+		t.Error("the worktree does not hold the layer below's work")
+	}
+	// And git itself answers what this branch follows.
+	if got := baseOf(f.repo, name); got != "stack-below" {
+		t.Errorf("baseOf = %q, want the base it was opened on", got)
+	}
+	// An ordinary feature records nothing, and its absence is the answer.
+	f.openIssue("BAR-4159")
+	if got := baseOf(f.repo, "bar-4159-company-fuzzy-match"); got != "" {
+		t.Errorf("an ordinary feature recorded a base: %q", got)
+	}
+}
+
+// TestIssueOpenRejectsAMissingBase: the layer below may simply not be
+// pushed yet, and that is worth saying.
+func TestIssueOpenRejectsAMissingBase(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	var out strings.Builder
+	err := runIssue(f.cfg, []string{"open", "bar-4160", "--base", "no-such-branch"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "no such branch on origin") {
+		t.Errorf("got %v, want a word about the branch not being there", err)
+	}
+}
+
 func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)

@@ -461,7 +461,24 @@ work that already exists before making any of its own:
 3. **The branch Linear names** (`bar-4159-company-fuzzy-match`), only
    when nothing carries the key, started from the remote's default
    branch with no upstream set, so a `git push` cannot land it on main
-   by accident.
+   by accident — or from `--base <branch>`, when the issue is a layer
+   of a [stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs).
+
+`--base` is for one change split across issues, where the second needs
+what the first adds. The worktree starts from that branch rather than
+the trunk, so the layer's diff is its own, and owl records the base
+under `branch.<branch>.owlBase` in git's config. That record is the
+point: a briefing is one prompt in one conversation, and the session
+that picks the branch up next week never read it — while it is exactly
+the one that must not rebase onto the trunk or force-push over the
+layer below. It can ask git instead:
+
+```sh
+git config --get branch.$(git branch --show-current).owlBase
+```
+
+The base has to be on the remote already, since the layer is cut from
+it; owl says so plainly rather than passing git's complaint along.
 
 Claude starts in the worktree on `/owl:feature <KEY>`, resuming a prior
 conversation with `-c`. `close` removes the worktree, the local branch
@@ -784,8 +801,8 @@ owl pr open <N> [--prompt TEXT]       open (or focus) PR N's workspace; with --p
 owl pr start <N> [--prompt TEXT]      the same without going there: no window selection, no after_open
 owl pr close [--force] [<N>]          remove the worktree, branch and window; N is inferred from inside a workspace
 owl issue                             the open issues assigned to you; a table when stdout is not a terminal
-owl issue open <KEY> [--prompt TEXT]  open (or focus) the feature workspace of issue KEY
-owl issue start <KEY> [--prompt TEXT] the same without going there
+owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY
+owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
 owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
 owl issue new <title…>                file an issue in linear.team, assigned to you
 owl project                           the projects you work in; a table when stdout is not a terminal

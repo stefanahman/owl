@@ -125,9 +125,12 @@ func findProject(tracker Tracker, id string) (Project, error) {
 }
 
 func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arrive bool) error {
-	id, prompt, err := parseOpenArgs("project", "project", args)
+	id, prompt, base, err := parseOpenArgs("project", "project", args)
 	if err != nil {
 		return err
+	}
+	if base != "" {
+		return usageError("project open: --base is the issue side's; a project's conversation has no branch")
 	}
 	p, err := findProject(tracker, id)
 	if err != nil {

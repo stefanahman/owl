@@ -22,9 +22,12 @@ import (
 )
 
 func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
-	num, prompt, err := parseOpenArgs("pr", "PR number", args)
+	num, prompt, base, err := parseOpenArgs("pr", "PR number", args)
 	if err != nil {
 		return err
+	}
+	if base != "" {
+		return usageError("pr open: --base is the issue side's; a pull request's base is the one it was opened against")
 	}
 	n, err := parsePRNumber(num)
 	if err != nil {
@@ -165,31 +168,41 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	return runAfterOpen(hook, out, env)
 }
 
-// parseOpenArgs accepts `<id> [--prompt TEXT]` in either order; noun
-// and what name the id in the usage errors (pr, "PR number").
-func parseOpenArgs(noun, what string, args []string) (id, prompt string, err error) {
+// parseOpenArgs accepts `<id> [--prompt TEXT] [--base BRANCH]` in any
+// order; noun and what name the id in the usage errors (pr, "PR
+// number"). --base is the issue side's: a PR's branch point is
+// whatever the PR says.
+func parseOpenArgs(noun, what string, args []string) (id, prompt, base string, err error) {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "--prompt":
 			if i+1 == len(args) {
-				return "", "", usageError(noun + " open: --prompt needs a value")
+				return "", "", "", usageError(noun + " open: --prompt needs a value")
 			}
 			prompt = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--prompt="):
 			prompt = strings.TrimPrefix(a, "--prompt=")
+		case a == "--base":
+			if i+1 == len(args) {
+				return "", "", "", usageError(noun + " open: --base needs a branch")
+			}
+			base = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--base="):
+			base = strings.TrimPrefix(a, "--base=")
 		case strings.HasPrefix(a, "-"):
-			return "", "", usageError(noun + " open: unknown flag " + a)
+			return "", "", "", usageError(noun + " open: unknown flag " + a)
 		case id == "":
 			id = a
 		default:
-			return "", "", usageError(noun + " open: unexpected argument " + a)
+			return "", "", "", usageError(noun + " open: unexpected argument " + a)
 		}
 	}
 	if id == "" {
-		return "", "", usageError(noun + " open: " + what + " required")
+		return "", "", "", usageError(noun + " open: " + what + " required")
 	}
-	return id, prompt, nil
+	return id, prompt, base, nil
 }
 
 // firstPrompt is what a *fresh* conversation in the workspace opens
