@@ -51,7 +51,8 @@ With no project file, run the core workflow only.
 ## Step 1: Gather context
 
 1. **The ticket.** With the `linear` module: `get_issue $issue` - title, description, acceptance criteria, comments, labels, the parent issue and the project when there is one, and every document it links (`get_document`). Read all of it; the comments often hold the decision the description lacks. Without a tracker module, ask the user for the ticket's text.
-2. **Where you are.** `owl issue open` started you in a worktree on the branch Linear names for the issue - `git status`, `git branch --show-current`, `git log --oneline <remote>/<default>..HEAD` say whether work already exists here. `gh pr list --head <branch> --json number,title,isDraft,url` says whether a pull request already exists; if one does, this is a continuation: read it and its review comments before anything else.
+2. **Where you are.** `owl issue open` started you in a worktree on the branch Linear names for the issue - `git status`, `git branch --show-current`, `git log --oneline <base>..HEAD` say whether work already exists here. `gh pr list --head <branch> --json number,title,isDraft,url` says whether a pull request already exists; if one does, this is a continuation: read it and its review comments before anything else.
+3. **Whether you are a layer.** `git config --get branch.$(git branch --show-current).owlBase` answers it. A branch name means this issue was opened on another one's unmerged work (`owl issue open $issue --base <branch>`), and *that* branch is your `<base>` everywhere this skill says `<base>` — the trunk is not. Nothing printed, exit 1: an ordinary feature, which is the common case and needs none of what follows. For a branch already in a GitHub stack, `gh stack view` says so too; outside one it exits non-zero with "current branch … is not part of a stack", which is the same answer in a different voice.
 3. **The codebase.** From the ticket's terms, find where the change lands: Grep for the names it uses, read the whole files around them and their callers, and note the tests that cover that area today. The project file's `## Design brief` says where routes, contracts, schemas and migrations live.
 
 ## Step 2: Agree the approach
@@ -120,7 +121,25 @@ Pushing and opening are deliberately not among this skill's pre-approved tools: 
 1. **Re-read the draft file first** - the user may have edited it after you printed it. The file is the single source of truth.
 2. `git push -u <remote> <branch>`.
 3. `gh pr create --title <title> --body-file <the body, from the draft> --draft` (omit `--draft` when the file says `draft: false`), then print the pull request's URL. Linear picks it up through the branch name; the issue's state follows the integration's rules - there is nothing to post on the ticket.
-4. The user closes the workspace with `owl issue close $issue` when the pull request has merged; leave the worktree in place.
+4. **A layer opens against the layer below** (Step 1.3 found a base): add `--base <base>` to that same command, then join the stack on GitHub:
+
+   ```sh
+   gh stack link <the bottom PR> … <this PR>   # bottom to top; numbers, URLs or branch names
+   gh stack link <stack number> <this PR>      # or grow an existing stack from the top
+   ```
+
+   Not `gh stack submit`: it opens an editor no agent can drive, and `--auto` invents a title — which would throw away the draft the user approved. `gh stack link` exists for branches another tool manages, reuses the PRs that exist, and skips any already in the stack.
+5. The user closes the workspace with `owl issue close $issue` when the pull request has merged; leave the worktree in place.
+
+## When you are a layer and the ground moves
+
+Only for a branch with a base (Step 1.3). Everything here is about not rewriting someone else's work:
+
+- **The layer below changed.** `git fetch <remote> && git rebase <remote>/<base>`, then `git push --force-with-lease`. Rebase onto the *base*, never onto the trunk: onto the trunk you would drop the layer below's commits out from under your own.
+- **The bottom merged.** GitHub rebases the remaining branches server-side, so your remote branch was rewritten while you were not looking. `git fetch <remote>` and rebase onto what is there now *before* touching anything — a force-push over it would undo GitHub's rebase and take the other layers with it.
+- **Something sits above you.** Your force-push moves the ground under it. Say so, and let whoever owns that layer rebase; `gh stack view` lists what is above.
+
+When the base branch is gone from the remote and your PR now targets the trunk, the stack is behind you: the base key is stale, and `git config --unset branch.<branch>.owlBase` retires it.
 
 ## Writing style
 

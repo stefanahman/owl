@@ -87,6 +87,33 @@ The briefing is what the milestone requires of this issue, what has already been
 
 One at a time unless the user asks for more. Each dispatched agent is another concurrent session on the same repository.
 
+## Chained work: one change split across issues
+
+Sometimes two issues are one change cut in half — the second needs a field, a migration or a rename the first adds, and reviewing them together means reviewing a pile. This conversation is the only one that can see that: each issue's agent knows its own worktree and nothing else. So the chaining is decided here, or not at all.
+
+Say the order out loud before dispatching anything. "BAR-4927 puts the field on the schema; BAR-4931 reads it in the report" is the whole design, and it is also what the user corrects if you have it backwards.
+
+Then dispatch in that order, bottom first:
+
+1. **The bottom is an ordinary issue.** `owl issue start BAR-4927`, briefing as usual. It reaches its own pull request through the feature workflow and, crucially, **pushes its branch** — a layer cannot be started on a branch that is not on the remote yet, and `--base` says so rather than guessing.
+2. **Each layer above names its base**, and is told what it sits on:
+
+   ```sh
+   owl issue start BAR-4931 --base bar-4927-put-the-grade-on-the-calculation
+   owl issue start BAR-4931 --prompt "…builds on BAR-4927 (PR #4422), already open…"
+   ```
+
+   The `--base` is the tool half: the worktree starts from that branch instead of the trunk, and owl records it under `branch.<branch>.owlBase` so the layer's agent — and any session that comes after it — can ask git what it follows. The briefing is the human half: which PR is below, what it established, and what this layer must not re-do.
+3. **The layer's own agent opens and links its PR.** It has what it needs; do not open pull requests from here.
+
+While a stack is in flight:
+
+- **It merges bottom-up, in one go.** Merging a layer takes every unmerged PR below it with it, atomically. **Auto-merge does not work on a stack**, so nobody can set it and walk away — the merge is someone's deliberate act.
+- **A force-push low in the stack moves the ground under every layer above.** When a lower layer takes review changes, the layers above need a rebase onto it before they are readable again. Their agents do that; this conversation is where the order is known, so it is where the word comes from.
+- **Ask GitHub, not your memory of it.** `gh stack view` in any of the worktrees prints the stack and each layer's state.
+
+A chain of two is usually not worth it. Split into layers when a reviewer would otherwise read one pile, or when the second half cannot start until the first lands — not because the work has two parts.
+
 ## Step 5: Take back what comes in
 
 When an issue's agent finishes, its worktree and PR are the record; this conversation is not automatically told. Ask `owl issue` what changed, read the PR, and fold the result into what you know about the project — especially anything that invalidates a milestone's stated plan.
