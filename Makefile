@@ -3,7 +3,11 @@ BIN ?= $(HOME)/.local/bin
 .PHONY: build install test lint update-snapshots
 
 # The version a local build reports; releases set it from the tag.
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# --match 'v*': the repository also carries owl--vX.Y.Z tags for the
+# Claude Code plugin, and when both land on one commit git describe
+# picks whichever was made last — which is how `owl --version` came to
+# answer "owl--v0.7.0", a plugin version reported as the CLI's.
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 
 # Into bin/: the plugin directory at the root is named owl too.
 build:
