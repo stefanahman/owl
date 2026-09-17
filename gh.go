@@ -108,21 +108,33 @@ func (p PR) askedYou(me string) bool {
 	return false
 }
 
-// teamAskedNotYou reports that this pull request is waiting on a team
-// you are in and not on you.
+// teamAskedNotYou reports that this pull request is an FYI: open work
+// you have not engaged with, that a team you are in was asked about
+// and you were not.
 //
-// Three shapes have to come apart here and only one of them is this
-// one. Asked of a team *and* of you is a request like any other — the
-// team request does not dilute your own. Asked of nobody outstanding
-// is a pull request you have already reviewed, which is why it is
-// still on the list at all; that is not an FYI either. Only requests
-// that exist, none of them yours, at least one a team's.
+// All three conditions carry weight, and leaving any of them out shows
+// up on screen.
+//
+//   - Open. A merged pull request keeps whatever requests were never
+//     answered — one on this list had five — and there is nothing left
+//     to review, so greying it says nothing.
+//   - Not engaged. Once you have reviewed, the pull request is yours
+//     whatever is still outstanding: two rows you had approved were
+//     greying beside identical ones that had no leftover team request.
+//   - Not asked of you. Asked of a team *and* of you is a request like
+//     any other; the team request does not dilute your own. And asked
+//     of nobody outstanding is a pull request you already reviewed,
+//     which is why it is on the list at all.
+//
+// Not knowing who you are is the fourth: `me` is empty until the first
+// fetch lands, and a cache written before owl recorded it paints rows
+// without one. Answering true there would grey out requests made of
+// you personally, so not knowing is not evidence.
 func (p PR) teamAskedNotYou(me string) bool {
-	// Not knowing who you are is not evidence that this is not yours.
-	// `me` is empty until the first fetch lands — a cache written before
-	// owl recorded it will paint rows without one — and answering true
-	// there would grey out requests made of you personally.
-	if me == "" || len(p.Requested) == 0 || p.askedYou(me) {
+	if me == "" || p.MergedAt != "" || len(p.Requested) == 0 {
+		return false
+	}
+	if p.askedYou(me) || p.IReviewed(me) {
 		return false
 	}
 	for _, r := range p.Requested {

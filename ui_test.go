@@ -1064,6 +1064,21 @@ func asked(n int, who ...string) PR {
 	return pr
 }
 
+// merged marks a PR as landed.
+func merged(pr PR) PR {
+	pr.MergedAt = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	return pr
+}
+
+// reviewedByMe gives the PR a review of mine, which is what makes it
+// engaged-with rather than an FYI.
+func reviewedByMe(pr PR) PR {
+	r := Review{State: "APPROVED", SubmittedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)}
+	r.Author.Login = "me"
+	pr.Reviews = append(pr.Reviews, r)
+	return pr
+}
+
 // TestTeamAskedNotYou: three shapes come apart here and only one is an
 // FYI. Every one of them is on the live list this was built from.
 func TestTeamAskedNotYou(t *testing.T) {
@@ -1087,6 +1102,12 @@ func TestTeamAskedNotYou(t *testing.T) {
 		// Someone else entirely, no team: not yours to be told about,
 		// but not a team FYI — it is on the list because you reviewed it.
 		{"someone else only", asked(4407, "@carol"), false},
+		// Merged, with team requests nobody ever answered. One row on the
+		// live list carried five. There is nothing left to review.
+		{"merged with team requests", merged(asked(4453, "report-domain", "compile-domain")), false},
+		// You reviewed it; the team's leftover request does not make your
+		// own work an FYI. Two approved rows were greying for this.
+		{"you reviewed it", reviewedByMe(asked(4455, "compile-domain")), false},
 	} {
 		if got := c.pr.teamAskedNotYou("me"); got != c.want {
 			t.Errorf("%s: teamAskedNotYou = %v, want %v", c.name, got, c.want)
