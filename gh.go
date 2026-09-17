@@ -69,6 +69,15 @@ type PR struct {
 	// answered. Zero on a finished PR means nobody has been asked.
 	Asked int `json:"asked,omitempty"`
 
+	// Requested is who is still being waited on: the reviewers asked
+	// who have not answered. A reviewer's own review consumes their
+	// request, so this empties as they answer.
+	//
+	// Filled by the review search alone. The mine fetch counts them
+	// instead (Asked), because on your own pull request how many are
+	// outstanding is the whole of what matters; here it is *which*.
+	Requested []Requested `json:"requested,omitempty"`
+
 	// Reviews is the full review history for this PR (chronological).
 	// We use the full history rather than `latestReviews` because
 	// `latestReviews` is truly the latest per user — including COMMENTED
@@ -77,6 +86,51 @@ type PR struct {
 	// derivation requires walking history and ignoring COMMENTED when
 	// determining verdict state.
 	Reviews []Review `json:"reviews"`
+}
+
+// Requested is one outstanding review request: a person, or a team the
+// person belongs to. GitHub answers `__typename` for which, and the
+// difference is not cosmetic — a team request reaches everyone in it
+// and asks nobody in particular.
+type Requested struct {
+	Team bool   `json:"team"`
+	Name string `json:"name"` // the login, or the team's slug
+}
+
+// askedYou reports whether you, personally, are among the outstanding
+// requests.
+func (p PR) askedYou(me string) bool {
+	for _, r := range p.Requested {
+		if !r.Team && me != "" && r.Name == me {
+			return true
+		}
+	}
+	return false
+}
+
+// teamAskedNotYou reports that this pull request is waiting on a team
+// you are in and not on you.
+//
+// Three shapes have to come apart here and only one of them is this
+// one. Asked of a team *and* of you is a request like any other — the
+// team request does not dilute your own. Asked of nobody outstanding
+// is a pull request you have already reviewed, which is why it is
+// still on the list at all; that is not an FYI either. Only requests
+// that exist, none of them yours, at least one a team's.
+func (p PR) teamAskedNotYou(me string) bool {
+	// Not knowing who you are is not evidence that this is not yours.
+	// `me` is empty until the first fetch lands — a cache written before
+	// owl recorded it will paint rows without one — and answering true
+	// there would grey out requests made of you personally.
+	if me == "" || len(p.Requested) == 0 || p.askedYou(me) {
+		return false
+	}
+	for _, r := range p.Requested {
+		if r.Team {
+			return true
+		}
+	}
+	return false
 }
 
 // Review is a subset of a GitHub PR review. State values: APPROVED,
@@ -332,6 +386,9 @@ query($q: String!) {
         reviews(last: 100) {
           nodes { author { login } state submittedAt commit { oid } }
         }
+        reviewRequests(first: 20) {
+          nodes { requestedReviewer { __typename ... on User { login } ... on Team { slug } } }
+        }
       }
     }
   }
@@ -367,6 +424,15 @@ query($q: String!) {
 		Reviews struct {
 			Nodes []Review `json:"nodes"`
 		} `json:"reviews"`
+		ReviewRequests struct {
+			Nodes []struct {
+				RequestedReviewer struct {
+					Typename string `json:"__typename"`
+					Login    string `json:"login"`
+					Slug     string `json:"slug"`
+				} `json:"requestedReviewer"`
+			} `json:"nodes"`
+		} `json:"reviewRequests"`
 	}
 	var resp struct {
 		Data struct {
@@ -398,6 +464,14 @@ query($q: String!) {
 			Reviews:     n.Reviews.Nodes,
 		}
 		pr.Author.Login = n.Author.Login
+		for _, r := range n.ReviewRequests.Nodes {
+			switch r.RequestedReviewer.Typename {
+			case "Team":
+				pr.Requested = append(pr.Requested, Requested{Team: true, Name: r.RequestedReviewer.Slug})
+			case "User":
+				pr.Requested = append(pr.Requested, Requested{Name: r.RequestedReviewer.Login})
+			}
+		}
 		prs = append(prs, pr)
 	}
 	return prs, resp.Data.Viewer.Login, nil

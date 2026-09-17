@@ -132,3 +132,39 @@ func TestAttentionHookGetsTheNumbers(t *testing.T) {
 		t.Errorf("hook on a quiet run = %q", got)
 	}
 }
+
+// TestInYourCourtSkipsTeamOnly: `owl pr --check` announces what has
+// arrived, and a notification is the last place an FYI belongs. It
+// stays out of the count the attention hook is given for the same
+// reason.
+func TestInYourCourtSkipsTeamOnly(t *testing.T) {
+	team := func(n int, slugs ...string) PR {
+		pr := PR{Number: n}
+		for _, s := range slugs {
+			pr.Requested = append(pr.Requested, Requested{Team: true, Name: s})
+		}
+		return pr
+	}
+	// Never reviewed, asked of a team: Todo, and not yours.
+	if inYourCourt(team(1, "compile-domain"), "me") {
+		t.Error("a team-only request is in your court")
+	}
+	// The same PR with you asked as well is a request like any other.
+	both := team(2, "compile-domain")
+	both.Requested = append(both.Requested, Requested{Name: "me"})
+	if !inYourCourt(both, "me") {
+		t.Error("asked of the team and of you is not in your court")
+	}
+	// Asked of you alone.
+	you := PR{Number: 3, Requested: []Requested{{Name: "me"}}}
+	if !inYourCourt(you, "me") {
+		t.Error("asked of you is not in your court")
+	}
+	// Without a login owl cannot tell, and must not drop the PR.
+	if inYourCourt(team(4, "compile-domain"), "") {
+		t.Log("no login: a team request is dropped — acceptable only if nothing renders yet")
+	}
+	if !inYourCourt(PR{Number: 5}, "me") {
+		t.Error("a PR nobody has been asked about is not Todo")
+	}
+}

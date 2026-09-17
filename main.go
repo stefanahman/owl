@@ -1555,7 +1555,13 @@ func (m *model) jumpToNextAttention() {
 		if r.header() {
 			return false
 		}
-		if r.pr != nil && r.status == StatusTodo && !r.merged {
+		// Todo is what `n` is for — except where the request is the
+		// team's and not yours. By this team's convention that is an FYI,
+		// and a key that means "next thing that needs me" walking you
+		// into one is the key doing the opposite of its job. The row
+		// stays in the list and stays reachable with j/k; only the
+		// attention key stops treating it as attention.
+		if r.pr != nil && r.status == StatusTodo && !r.merged && !r.pr.teamAskedNotYou(m.me) {
 			return true
 		}
 		ls := m.localOf(r)
@@ -1771,6 +1777,13 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		draft,
 		row.pr.Author.Login,
 	)
+	// Asked of your team and not of you: present, with a lower claim on
+	// you, which is what dim means everywhere else in owl. Stripped of
+	// its colours first — dimming over them leaves the escape codes
+	// fighting and the row bright.
+	if row.pr.teamAskedNotYou(m.me) {
+		out = dimBlock(out)
+	}
 	return out
 }
 
@@ -2004,6 +2017,8 @@ func (m model) legend() string {
 		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
 		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
 		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
+		"",
+		styleDim.Render("  a dim row was asked of a team you are in, not of you — `n` walks past it"),
 	)
 }
 

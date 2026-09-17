@@ -22,9 +22,19 @@ import (
 )
 
 // inYourCourt reports whether a PR is waiting on the user: theirs to
-// review, or theirs to look at again since the author pushed. The same
-// two buckets the list puts at the top and `n` jumps to.
+// review, or theirs to look at again since the author pushed. Those
+// are the two buckets the list puts at the top.
+//
+// Not the same set as `n`, which stops only on the first: a re-review
+// is already on your screen when you are looking at the list, and a
+// notification about one is worth having. A pull request asked of a
+// team you are in and not of you is out of both — by this workspace's
+// convention that is an FYI, and a notification is the last place an
+// FYI belongs.
 func inYourCourt(pr PR, me string) bool {
+	if pr.teamAskedNotYou(me) {
+		return false
+	}
 	switch pr.MyReviewStatus(me) {
 	case StatusTodo, StatusWaitingForYou:
 		return true

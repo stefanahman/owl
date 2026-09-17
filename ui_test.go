@@ -1047,3 +1047,134 @@ func TestRepoColumn(t *testing.T) {
 		t.Errorf("--here drew the column: %q", got)
 	}
 }
+
+// asked builds a PR with the outstanding review requests named: a
+// leading "@" is a person, anything else a team.
+func asked(n int, who ...string) PR {
+	pr := PR{Number: n, Title: "a change", HeadRefName: "x",
+		UpdatedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)}
+	pr.Author.Login = "someone"
+	for _, w := range who {
+		if strings.HasPrefix(w, "@") {
+			pr.Requested = append(pr.Requested, Requested{Name: strings.TrimPrefix(w, "@")})
+			continue
+		}
+		pr.Requested = append(pr.Requested, Requested{Team: true, Name: w})
+	}
+	return pr
+}
+
+// TestTeamAskedNotYou: three shapes come apart here and only one is an
+// FYI. Every one of them is on the live list this was built from.
+func TestTeamAskedNotYou(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		pr   PR
+		want bool
+	}{
+		// Asked of a team you are in, and of nobody else: the FYI.
+		{"team only", asked(4455, "compile-domain"), true},
+		{"two teams", asked(4409, "compile-domain", "backstage-domain"), true},
+		// Asked of the team *and* of you. The team request does not
+		// dilute your own — this is a request like any other.
+		{"team and you", asked(4456, "studio-domain", "@me", "@guerillacoder"), false},
+		// Asked of you, or of you and another person.
+		{"you only", asked(4454, "@me"), false},
+		{"you and someone", asked(4355, "@mr-sandstorm", "@me"), false},
+		// Nobody outstanding: you already reviewed it, which is why it
+		// is still on the list. Not an FYI either.
+		{"nobody outstanding", asked(4412), false},
+		// Someone else entirely, no team: not yours to be told about,
+		// but not a team FYI — it is on the list because you reviewed it.
+		{"someone else only", asked(4407, "@carol"), false},
+	} {
+		if got := c.pr.teamAskedNotYou("me"); got != c.want {
+			t.Errorf("%s: teamAskedNotYou = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestAttentionSkipsTeamOnlyRequests: `n` means "next thing that needs
+// me", and by this team's convention a team request does not.
+func TestAttentionSkipsTeamOnlyRequests(t *testing.T) {
+	m := testModel(t)
+	m.me = "me"
+	m.prs = []PR{
+		asked(1, "@me"),                  // yours
+		asked(2, "compile-domain"),       // FYI
+		asked(3, "studio-domain", "@me"), // yours, team also asked
+	}
+	m.width, m.height, m.ready = 140, 30, true
+	m.resizeViewport()
+	m.refreshList()
+
+	seen := map[int]bool{}
+	for i := 0; i < 6; i++ {
+		m.jumpToNextAttention()
+		if row, ok := m.selectedRow(); ok && row.pr != nil {
+			seen[row.pr.Number] = true
+		}
+	}
+	if !seen[1] || !seen[3] {
+		t.Errorf("n missed a PR you were asked for: %v", seen)
+	}
+	if seen[2] {
+		t.Error("n stopped on a PR only your team was asked for")
+	}
+}
+
+// TestTeamOnlyRowIsDim: the row recedes rather than disappearing —
+// same words, same place, lower claim on you.
+func TestTeamOnlyRowIsDim(t *testing.T) {
+	m := testModel(t)
+	m.me = "me"
+	m.prs = []PR{asked(1, "@me"), asked(2, "compile-domain")}
+	m.width, m.height, m.ready = 140, 30, true
+	m.resizeViewport()
+
+	var yours, fyi string
+	for _, row := range m.visibleRows() {
+		if row.pr == nil {
+			continue
+		}
+		if row.pr.Number == 1 {
+			yours = m.renderRow(row, false)
+		} else {
+			fyi = m.renderRow(row, false)
+		}
+	}
+	if yours == "" || fyi == "" {
+		t.Fatal("both rows should render")
+	}
+	// Nothing is hidden: the row says the same things.
+	if !strings.Contains(stripANSI(fyi), "#2") || !strings.Contains(stripANSI(fyi), "a change") {
+		t.Errorf("the dimmed row lost its content: %q", stripANSI(fyi))
+	}
+	// And it is dim where yours is not.
+	if !strings.Contains(fyi, "\x1b[") {
+		t.Errorf("the team-only row carries no styling at all: %q", fyi)
+	}
+	if fyi == yours {
+		t.Error("a team-only row renders identically to one asked of you")
+	}
+}
+
+// TestNoLoginDimsNothing: `me` is empty until the first fetch lands —
+// a cache written before owl recorded it paints rows without one — and
+// not knowing who you are is no reason to grey out a request made of
+// you.
+func TestNoLoginDimsNothing(t *testing.T) {
+	for _, pr := range []PR{
+		asked(1, "compile-domain"),
+		asked(2, "compile-domain", "@me"),
+		asked(3, "@me"),
+	} {
+		if pr.teamAskedNotYou("") {
+			t.Errorf("#%d recedes with no login to compare against", pr.Number)
+		}
+	}
+	// And with a login, the first of those does recede.
+	if !asked(1, "compile-domain").teamAskedNotYou("me") {
+		t.Error("with a login, a team-only request should recede")
+	}
+}

@@ -229,7 +229,20 @@ func fakeGH(t *testing.T, root string) {
 			"number": n, "title": title, "body": "Closes PROJ-" + fmt.Sprint(n), "url": fmt.Sprintf("https://github.com/acme/app/pull/%d", n),
 			"headRefName": "feat/" + fmt.Sprint(n), "headRefOid": oid, "updatedAt": ago(at), "isDraft": false,
 			"author": map[string]string{"login": author}, "reviews": map[string]any{"nodes": reviews},
+			"reviewRequests": map[string]any{"nodes": []any{
+				map[string]any{"requestedReviewer": map[string]any{"__typename": "User", "login": "stefanahman"}},
+			}},
 		}
+	}
+	// Asked of a team and not of you: the row recedes, and `n` walks
+	// past it. Same shape GitHub sends — the requested reviewer is a
+	// Team rather than a User.
+	teamAsked := func(n int, title, author, oid string, at time.Duration) map[string]any {
+		p := pr(n, title, author, oid, at)
+		p["reviewRequests"] = map[string]any{"nodes": []any{
+			map[string]any{"requestedReviewer": map[string]any{"__typename": "Team", "slug": "compile-domain"}},
+		}}
+		return p
 	}
 	graphql := map[string]any{"data": map[string]any{
 		// The same request answers who you are: the rows need it to say
@@ -238,6 +251,7 @@ func fakeGH(t *testing.T, root string) {
 		"search": map[string]any{"nodes": []any{
 			pr(3543, "add billing migration", "alice", "aaa", 2*time.Hour),
 			pr(3550, "fix retry ordering", "bob", "bbb", 5*time.Hour),
+			teamAsked(3561, "widen the ingest window", "frank", "fff", 4*time.Hour),
 			pr(3491, "split ingestion worker", "carol", "ccc", 26*time.Hour, review("stefanahman", "COMMENTED", "old", 30*time.Hour)),
 			pr(3502, "bump node to 22", "dave", "ddd", 3*24*time.Hour, review("stefanahman", "APPROVED", "ddd", 3*24*time.Hour)),
 			pr(3510, "retry on 429", "erin", "eee", 8*time.Hour, review("stefanahman", "CHANGES_REQUESTED", "eee", 9*time.Hour)),

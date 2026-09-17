@@ -222,6 +222,27 @@ on.
 | amber `✓` / `·` | the author pushed after that review; it no longer covers the head |
 | `⚠` | someone requested changes |
 | `[draft]` | a draft PR |
+| a dim row | your **team** was asked, you were not |
+
+### Asked of you, or of your team
+
+GitHub's review request is one of two things wearing the same face: a
+request to **you**, and a request to a **team you are in**. The second
+reaches everybody in the team and asks nobody in particular, which is
+why many teams treat it as an FYI and a direct request as a real ask.
+
+owl tells them apart because GitHub does: a requested reviewer is a
+`User` or a `Team`, so this is read rather than guessed. A team-only
+request **renders dim** — present, with a lower claim on you, the same
+thing dim means on a paused project — and **`n` walks past it**. The
+row stays where it was and `j`/`k` still reach it; only the key that
+means "next thing that needs me" stops treating it as one.
+
+Three shapes have to come apart and only one is an FYI. Asked of the
+team *and* of you is a request like any other — the team request does
+not dilute your own. Asked of nobody outstanding is a PR you have
+already reviewed, which is why it is still listed at all. Only
+requests that exist, none of them yours, at least one a team's.
 
 ## Two panes (`tab`)
 
