@@ -246,7 +246,7 @@ func TestStaleBadgeColour(t *testing.T) {
 		{"no review", false, false, false, " "},
 	}
 	for _, c := range cases {
-		got := badges(LocalState{}, "", c.approved, c.engaged, c.stale, false)
+		got := badges(LocalState{}, "", verdict{approved: c.approved, engaged: c.engaged, stale: c.stale})
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: badges = %q, want it to contain %q", c.name, got, c.want)
 		}

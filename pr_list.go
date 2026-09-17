@@ -285,54 +285,59 @@ func splitPaneHeights(avail, want, otherWant int) (int, int) {
 //
 // Absent = single space so column alignment stays. Slot 2 is always
 // 2 cells wide (glyph + `*`|space) because of the unread marker.
-func badges(ls LocalState, starting string, iApproved, iEngaged, stale, hasCR bool) string {
+// verdict is what this list says about your own review of a pull
+// request: the glyph is what you did, the colour whether it still
+// covers the head.
+//
+// Named fields rather than the four positional booleans this replaces.
+// One of them is the reason: `stale` was handed `row.status ==
+// StatusWaitingForYou` at the call site, which is not the same
+// question as "is my review stale" and must not become it. A merged
+// row carries no status at all, so that expression is false for every
+// one of them — and a finished pull request going amber for a push
+// nobody can re-review would be wrong.
+type verdict struct{ approved, engaged, stale, changesRequested bool }
+
+// verdictOf reads the row's verdict. The status comes from the row
+// because the sections already computed it; everything else the pull
+// request answers itself.
+func verdictOf(row visibleRow, me string) verdict {
+	return verdict{
+		approved:         row.pr.IApproved(me),
+		engaged:          row.pr.IReviewed(me),
+		stale:            row.status == StatusWaitingForYou,
+		changesRequested: row.pr.HasChangesRequested(),
+	}
+}
+
+// render is slots 3 and 4: my verdict, and whether anyone is blocking.
+func (v verdict) render() string {
 	var parts []string
-
 	switch {
-	case starting != "":
-		parts = append(parts, starting)
-	case ls.Worktree != "":
-		parts = append(parts, styleWorktree.Render("⎇"))
-	default:
-		parts = append(parts, " ")
-	}
-
-	// Claude slot: © + unread marker (`*` for done, else space).
-	switch ls.ClaudeState {
-	case agentWorking:
-		parts = append(parts, styleClaudeWorking.Render("©")+" ")
-	case agentBlocked:
-		parts = append(parts, styleClaudeBlocked.Render("©")+" ")
-	case agentDone:
-		parts = append(parts, styleClaudeDone.Render("©")+styleClaudeDone.Render("*"))
-	case agentIdle:
-		parts = append(parts, styleClaudeDone.Render("©")+" ")
-	default:
-		if ls.Window != "" {
-			parts = append(parts, styleClaudeNeutral.Render("©")+" ")
-		} else {
-			parts = append(parts, "  ")
-		}
-	}
-
-	switch {
-	case iApproved && stale:
+	case v.approved && v.stale:
 		parts = append(parts, styleReviewStale.Render("✓"))
-	case iApproved:
+	case v.approved:
 		parts = append(parts, styleApproved.Render("✓"))
-	case iEngaged && stale:
+	case v.engaged && v.stale:
 		parts = append(parts, styleReviewStale.Render("·"))
-	case iEngaged:
+	case v.engaged:
 		parts = append(parts, styleDim.Render("·"))
 	default:
 		parts = append(parts, " ")
 	}
-
-	if hasCR {
+	if v.changesRequested {
 		parts = append(parts, styleChangesReqd.Render("⚠"))
 	} else {
 		parts = append(parts, " ")
 	}
-
 	return strings.Join(parts, " ")
+}
+
+// badges is the review row's four slots: the two every list shows for
+// a workspace, then the two that are this list's own.
+//
+// The first two were a verbatim copy of workspaceBadges — thirty lines
+// of which twenty had to be changed in two places or drift apart.
+func badges(ls LocalState, starting string, v verdict) string {
+	return workspaceBadges(ls, starting) + " " + v.render()
 }

@@ -1760,17 +1760,18 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		), " ")
 	}
 	repo := m.repoCell(row.pr)
-	return fmt.Sprintf(
+	out := fmt.Sprintf(
 		"%s#%-5d %s %s  %s%s%s (%s)",
 		cursor,
 		row.pr.Number,
-		badges(local, starting, row.pr.IApproved(m.me), row.pr.IReviewed(m.me), row.status == StatusWaitingForYou, row.pr.HasChangesRequested()),
+		badges(local, starting, verdictOf(row, m.me)),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
 		repo,
 		trim(row.pr.Title, 70-lipgloss.Width(repo)),
 		draft,
 		row.pr.Author.Login,
 	)
+	return out
 }
 
 // ------------------------------------------------------------
