@@ -867,6 +867,12 @@ inside Claude).
 respected). `owl config init` writes this, with longer comments; every key is
 optional, and these are the defaults.
 
+Several configs, picked with `--config` or `$OWL_CONFIG` — a work one and a
+personal one, say, each with its own repositories and Linear workspaces —
+keep their lists apart: each caches in `~/.cache/owl/<file name>/`, named
+after links are followed, so neither shows nor `owl pr --check` announces
+the other's rows. `config.yaml` caches in `~/.cache/owl/` itself.
+
 ```yaml
 mux: auto                        # tmux, herdr, cmux, or auto: herdr or cmux when owl runs inside one, else tmux
 

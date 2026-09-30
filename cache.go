@@ -7,6 +7,11 @@
 // don't stomp on each other. The issue list's is issues.json beside
 // them: the issues are the user's, not a repo's.
 //
+// Each config caches in a folder of its own, named for its file:
+// work.yaml's lists in owl/work/, so a work config and a personal one,
+// each with its own Linear workspaces and repositories, never show or
+// announce each other's rows. config.yaml keeps owl/ itself.
+//
 // Freshness is user-visible via the "updated Xm ago" indicator in
 // the title bar (driven by cache.FetchedAt on load, then m.lastFetched
 // once the live fetch lands); `r` spins while a refresh runs.
@@ -52,8 +57,8 @@ type projectCacheFile struct {
 	Cursor       int       `json:"cursor"`
 }
 
-// cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl; "" when neither
-// can be found.
+// cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl, followed by the
+// config's own folder; "" when neither base can be found.
 func cacheDir() string {
 	base := os.Getenv("XDG_CACHE_HOME")
 	if base == "" {
@@ -63,7 +68,28 @@ func cacheDir() string {
 		}
 		base = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(base, "owl")
+	return filepath.Join(base, "owl", configCacheName())
+}
+
+// configCacheName is the folder the config in use caches in: its file's
+// name without the extension, found after following links, so a link to
+// a config (config.yaml pointing at work.yaml) shares that config's
+// cache rather than keeping a second copy. config.yaml itself, the one
+// config most setups have, caches in the top folder: "".
+func configCacheName() string {
+	path, err := configPath()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	switch name {
+	case "config", "", ".", "..":
+		return ""
+	}
+	return name
 }
 
 // cachePath returns the per-repo cache file path. `repo` is owner/name;

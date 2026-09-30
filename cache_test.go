@@ -79,3 +79,74 @@ func TestCacheKeepsTheRepo(t *testing.T) {
 		t.Errorf("mine row came back as %+v", got.Mine)
 	}
 }
+
+// useConfig points owl at a config file of that name in dir, as
+// $OWL_CONFIG does, creating the file.
+func useConfig(t *testing.T, dir, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OWL_CONFIG", path)
+	return path
+}
+
+// TestEachConfigCachesApart: two configs — a work one and a personal
+// one, each with its own Linear workspaces and repositories — keep
+// their lists, and so --check's baseline, in folders of their own.
+func TestEachConfigCachesApart(t *testing.T) {
+	cache, configs := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+
+	useConfig(t, configs, "work.yaml")
+	saveIssueCache(issueCacheFile{Issues: []Issue{{Key: "WRK-1"}}})
+	saveCache("acme/app", cacheFile{Me: "work"})
+	if want := filepath.Join(cache, "owl", "work", "issues.json"); issueCachePath() != want {
+		t.Errorf("issue cache %s, want %s", issueCachePath(), want)
+	}
+
+	useConfig(t, configs, "personal.yaml")
+	if got := loadIssueCache(); got != nil {
+		t.Errorf("personal config read the work config's issues: %+v", got.Issues)
+	}
+	if got := loadCache("acme/app"); got != nil {
+		t.Errorf("personal config read the work config's PR cache (me %q)", got.Me)
+	}
+
+	useConfig(t, configs, "work.yaml")
+	if got := loadIssueCache(); got == nil || len(got.Issues) != 1 || got.Issues[0].Key != "WRK-1" {
+		t.Errorf("work config lost its own issues: %+v", got)
+	}
+}
+
+// TestALinkedConfigSharesItsCache: a config reached through a link —
+// config.yaml pointing at whichever config is in use — caches with the
+// file it points at, so the link and the file never keep two copies.
+func TestALinkedConfigSharesItsCache(t *testing.T) {
+	cache, configs := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	target := useConfig(t, configs, "work.yaml")
+	link := filepath.Join(configs, "config.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OWL_CONFIG", link)
+	if want := filepath.Join(cache, "owl", "work", "projects.json"); projectCachePath() != want {
+		t.Errorf("project cache %s, want %s", projectCachePath(), want)
+	}
+}
+
+// TestConfigYamlKeepsTheTopFolder: the one config most setups have
+// caches where it always has.
+func TestConfigYamlKeepsTheTopFolder(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	useConfig(t, t.TempDir(), "config.yaml")
+	if want := filepath.Join(cache, "owl", "issues.json"); issueCachePath() != want {
+		t.Errorf("issue cache %s, want %s", issueCachePath(), want)
+	}
+	if want := filepath.Join(cache, "owl", "acme-app.json"); cachePath("acme/app") != want {
+		t.Errorf("PR cache %s, want %s", cachePath("acme/app"), want)
+	}
+}
