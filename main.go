@@ -539,9 +539,10 @@ type model struct {
 // where there is nothing to search and the caller says so.
 func (m model) scope() string { return m.cfg.PR.Scope(m.repo, m.here) }
 
-func initialModel(cfg Config) model {
+func initialModel(cfg Config, here bool) model {
 	repo := currentRepo(cfg.Remote)
-	m := newModel(cfg, repo, loadCache(repo))
+	m := newModel(cfg, repo, loadCache(prCacheKey(cfg.PR, repo, here)))
+	m.here = here
 	m.repoDir, _ = mainRepo(".") // "" outside a repo: nothing to resume
 	return m
 }
@@ -712,7 +713,7 @@ func (m model) persistCache() {
 		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, CancelledIssues: m.cancelledIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
 		return
 	}
-	saveCache(m.repo, cacheFile{
+	saveCache(prCacheKey(m.cfg.PR, m.repo, m.here), cacheFile{
 		Prs:        m.prs,
 		Merged:     m.merged,
 		Mine:       m.mine,

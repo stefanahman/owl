@@ -93,7 +93,8 @@ func runCheck(cfg Config, out io.Writer) error {
 	// count is still true, though, so the hook still hears it — a badge
 	// should be right from the first run, and only the announcement is
 	// suppressed.
-	cached := loadCache(repo)
+	key := prCacheKey(cfg.PR, repo, false)
+	cached := loadCache(key)
 	updated := cacheFile{Prs: prs, Me: me, FetchedAt: time.Now()}
 	var news []PR
 	if cached != nil {
@@ -108,7 +109,7 @@ func runCheck(cfg Config, out io.Writer) error {
 	// The baseline moves whether or not anything arrived, and before
 	// the hook runs: a hook that fails should not make owl announce the
 	// same PR again on the next run.
-	saveCache(repo, updated)
+	saveCache(key, updated)
 
 	waiting := 0
 	for _, pr := range prs {

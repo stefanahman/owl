@@ -140,7 +140,8 @@ last look is not news, and announcing the standing set every five
 minutes is how a notification becomes something you ignore. The
 baseline is the same cache the list reads, so **opening owl counts as
 having seen it**, and a first run on a cold cache is silent rather than
-a morning's worth at once.
+a morning's worth at once. `owl pr --here` shows one repo and keeps a
+cache of its own, so it moves no baseline.
 
 What comes out is yours to decide:
 
@@ -210,8 +211,8 @@ Rows are grouped by **where you sit on the PR**: todo, waiting for you
 approved — plus what merged in the last day, so a PR that merged
 without your review doesn't vanish unseen. Newest change first within
 a section. The list comes back as you left it: the last fetch from a
-per-repo cache until the live one lands, the cursor on the row it was
-on.
+cache until the live one lands (one per repo, or one for the list across
+`pr.owners`), the cursor on the row it was on.
 
 | badge | meaning |
 |---|---|

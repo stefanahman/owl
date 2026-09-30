@@ -150,3 +150,51 @@ func TestConfigYamlKeepsTheTopFolder(t *testing.T) {
 		t.Errorf("PR cache %s, want %s", cachePath("acme/app"), want)
 	}
 }
+
+// spanning is a config whose PR list spans owners, as pr.owners does.
+func spanning() Config {
+	cfg := defaultConfig()
+	cfg.PR.Owners = []string{"@me", "acme"}
+	return cfg
+}
+
+// TestHereKeepsItsOwnCache: the list --here shows (this repo alone) is
+// not the one that spans the owners, so it must not overwrite that
+// cache, which is also owl pr --check's baseline: a baseline holding
+// one repo's rows would announce every other repo's as arrived.
+func TestHereKeepsItsOwnCache(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := spanning()
+
+	all := newModel(cfg, "acme/app", nil)
+	all.prs = fixturePRs()
+	all.persistCache()
+
+	here := newModel(cfg, "acme/app", nil)
+	here.here = true
+	here.prs = fixturePRs()[:1]
+	here.persistCache()
+
+	if got := loadCache(prCacheKey(cfg.PR, "acme/app", false)); got == nil || len(got.Prs) != len(fixturePRs()) {
+		t.Fatalf("the list across the owners holds %v, want its own %d rows", got, len(fixturePRs()))
+	}
+	if got := loadCache(prCacheKey(cfg.PR, "acme/app", true)); got == nil || len(got.Prs) != 1 {
+		t.Fatalf("the --here list holds %v, want its 1 row", got)
+	}
+}
+
+// TestASpanningListIsOneCache: the list across the owners is the same
+// from any repo, so it caches once, not once per repo it was opened in.
+func TestASpanningListIsOneCache(t *testing.T) {
+	cfg := spanning()
+	if a, b := prCacheKey(cfg.PR, "acme/app", false), prCacheKey(cfg.PR, "acme/other", false); a != b {
+		t.Errorf("spanning list keyed %q in one repo and %q in another", a, b)
+	}
+	if prCacheKey(cfg.PR, "", false) == "" {
+		t.Error("a spanning list needs no repo to be cached")
+	}
+	plain := defaultConfig()
+	if got := prCacheKey(plain.PR, "acme/app", false); got != "acme/app" {
+		t.Errorf("without owners the list is the repo's: keyed %q, want acme/app", got)
+	}
+}

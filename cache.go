@@ -4,8 +4,9 @@
 //
 // The PR list's cache is $XDG_CACHE_HOME/owl/<owner>-<name>.json
 // (falls back to ~/.cache/owl/…), one file per repo — different repos
-// don't stomp on each other. The issue list's is issues.json beside
-// them: the issues are the user's, not a repo's.
+// don't stomp on each other — or prs.json when the list spans pr.owners
+// (prCacheKey). The issue list's is issues.json beside them: the issues
+// are the user's, not a repo's.
 //
 // Each config caches in a folder of its own, named for its file:
 // work.yaml's lists in owl/work/, so a work config and a personal one,
@@ -196,4 +197,22 @@ func writeJSON(p string, c any) {
 	if err := os.Rename(f.Name(), p); err != nil {
 		os.Remove(f.Name())
 	}
+}
+
+// spanningCache is the key of the PR list across pr.owners: prs.json,
+// beside issues.json. A repo's key always holds a slash, so the two
+// never meet.
+const spanningCache = "prs"
+
+// prCacheKey is what the PR list caches under: the repo, when the list
+// is that repo's (--here, or no pr.owners); prs.json when it spans the
+// owners, which is the same list from any repo and is also owl pr
+// --check's baseline. Keyed by the repo either way, a --here list would
+// overwrite that baseline, and the next check announce every other
+// repo's rows as arrived.
+func prCacheKey(pr PRConfig, repo string, here bool) string {
+	if pr.Spans() && !here {
+		return spanningCache
+	}
+	return repo
 }

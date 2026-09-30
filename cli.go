@@ -169,13 +169,11 @@ func main() {
 		// Before the list: states read from a tainted multiplexer never
 		// change, and the failure would surface on Enter, an hour in.
 		exitOn(newWindows(cfg, reviews).Ping())
-		runTUI(initialModel(cfg))
+		runTUI(initialModel(cfg, false))
 	case args[0] == "--here":
 		// This repo, whatever pr.owners spans.
 		exitOn(newWindows(cfg, reviews).Ping())
-		m := initialModel(cfg)
-		m.here = true
-		runTUI(m)
+		runTUI(initialModel(cfg, true))
 	case args[0] == "--check":
 		err = runCheck(cfg, os.Stdout)
 	case args[0] == "open":
