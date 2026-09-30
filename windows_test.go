@@ -14,12 +14,32 @@ import (
 )
 
 // TestMain lets the test binary stand in for the cmux CLI (see
-// muxtest.FakeCmuxMain).
+// muxtest.FakeCmuxMain), and keeps the tests away from the user's own
+// folders: a desktop session that exports XDG_STATE_HOME and the rest
+// would otherwise get prompt files written into its state, and its owl
+// config read, whatever HOME a fixture sets. Tests that need their own
+// set it with t.Setenv as before.
 func TestMain(m *testing.M) {
 	if filepath.Base(os.Args[0]) == "cmux" {
 		os.Exit(muxtest.FakeCmuxMain(os.Args[1:]))
 	}
-	os.Exit(m.Run())
+	os.Exit(isolated(m))
+}
+
+// isolated runs the tests with XDG_CONFIG_HOME, XDG_CACHE_HOME,
+// XDG_STATE_HOME and XDG_DATA_HOME in a folder of their own, and no
+// OWL_CONFIG.
+func isolated(m *testing.M) int {
+	root, err := os.MkdirTemp("", "owl-test-xdg-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(root)
+	for _, name := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME"} {
+		os.Setenv(name, filepath.Join(root, strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(name, "XDG_"), "_HOME"))))
+	}
+	os.Unsetenv("OWL_CONFIG")
+	return m.Run()
 }
 
 func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
