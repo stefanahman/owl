@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -102,9 +103,13 @@ func findProject(tracker Tracker, id string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
+	// The slug of a project's first name resolves as well as its
+	// current one: it is what its workspace is still called after a
+	// rename, and so what the user reads in the window list.
+	states := loadProjectStates()
 	var byName []Project
 	for _, p := range all {
-		if p.SlugID == id || projectSlug(p.Name) == id {
+		if p.SlugID == id || slices.Contains(projectNames(p, states[p.ID]), "proj-"+id) {
 			return p, nil
 		}
 		if strings.Contains(strings.ToLower(p.Name), strings.ToLower(id)) {
@@ -140,13 +145,18 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	if err != nil {
 		return err
 	}
-	name := "proj-" + projectSlug(p.Name)
-	unlock, err := lockWorkspace(repo, name)
+	// The state comes first: it holds the name the project had when it
+	// was first opened, which is what its worktree is called if it has
+	// been renamed in Linear since. Read after the lookup, it was there
+	// and unused, and the open made a second worktree beside the first.
+	st := loadProjectStates()[p.ID]
+	names := projectNames(p, st)
+	unlock, err := lockWorkspace(repo, names[0])
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	wt, err := ensureProjectWorktree(cfg, repo, name, out)
+	wt, name, err := ensureProjectWorktree(cfg, repo, names, out)
 	if err != nil {
 		return err
 	}
@@ -154,8 +164,6 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	// The session id is owl's, not Claude's to pick: a project resumes
 	// as the same conversation every time, and the forks below it will
 	// resume from a known parent.
-	states := loadProjectStates()
-	st := states[p.ID]
 	if st.Session == "" {
 		session, err := newSessionID()
 		if err != nil {
@@ -190,35 +198,48 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	return ws.open(cfg, newWindows(cfg, projects), repo, prompt, arrive, out)
 }
 
-// ensureProjectWorktree returns the project's worktree, creating it
-// detached at the remote's default branch when it is not there.
+// ensureProjectWorktree returns the project's worktree and the name it
+// goes by: the first of names a worktree already carries, in order, or
+// else one created detached at the remote's default branch — under the
+// first of names Claude holds a conversation for, and names[0] when it
+// holds none. A conversation moved to the new name by hand, with its
+// worktree, is where the worktree comes back.
 //
 // Detached, because the default branch is checked out in the main
 // worktree already and git refuses the same branch twice — and because
 // a project's agent reads, plans and dispatches. The work goes on the
 // issues' branches; this one has nothing to commit.
-func ensureProjectWorktree(cfg Config, repo, name string, out io.Writer) (string, error) {
+func ensureProjectWorktree(cfg Config, repo string, names []string, out io.Writer) (string, string, error) {
 	if list, err := listWorktrees(repo); err == nil {
-		for _, w := range list {
-			if !w.Prunable && filepath.Base(w.Path) == name {
-				return w.Path, nil
+		for _, name := range names {
+			for _, w := range list {
+				if !w.Prunable && filepath.Base(w.Path) == name {
+					return w.Path, name, nil
+				}
 			}
 		}
 	}
 	if _, err := git(repo, "fetch", "--quiet", cfg.Remote); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := excludeFromStatus(repo, cfg.WorktreesDir); err != nil {
-		return "", err
+		return "", "", err
 	}
 	_, _ = git(repo, "worktree", "prune")
+	name := names[0]
+	for _, n := range names {
+		if hasConversationFor(filepath.Join(repo, cfg.WorktreesDir, n)) {
+			name = n
+			break
+		}
+	}
 	wt := filepath.Join(repo, cfg.WorktreesDir, name)
 	base := defaultBranch(repo, cfg.Remote)
 	fmt.Fprintf(out, "creating %s detached at %s/%s\n", wt, cfg.Remote, base)
 	if _, err := git(repo, "worktree", "add", "--detach", wt, cfg.Remote+"/"+base); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return wt, nil
+	return wt, name, nil
 }
 
 // runProjectClose removes a project's worktree and window. Its
@@ -233,7 +254,9 @@ func runProjectClose(cfg Config, tracker Tracker, args []string, out io.Writer) 
 	if err != nil {
 		return err
 	}
-	name := "proj-" + projectSlug(p.Name)
-	isIt := func(n string) bool { return n == name }
-	return closeWorkspace(cfg, newWindows(cfg, projects), name, isIt, force, out)
+	// Either of its names, so a project renamed since it was opened is
+	// still found; the lock is the one open takes.
+	names := projectNames(p, loadProjectStates()[p.ID])
+	isIt := func(n string) bool { return slices.Contains(names, n) }
+	return closeWorkspace(cfg, newWindows(cfg, projects), names[0], isIt, force, out)
 }

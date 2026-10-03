@@ -904,6 +904,43 @@ func TestProjectSlug(t *testing.T) {
 	}
 }
 
+func TestMatchesProject(t *testing.T) {
+	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign"}
+	current, first := "proj-sequential-capture-redesign", "proj-capture-redesign-draft"
+
+	// Never opened: only the name it has.
+	if got := projectNames(p, projectState{}); !reflect.DeepEqual(got, []string{current}) {
+		t.Errorf("never opened: %v", got)
+	}
+	// Opened under the name it still has: one name, not the same twice.
+	if got := projectNames(p, projectState{Name: p.Name}); !reflect.DeepEqual(got, []string{current}) {
+		t.Errorf("not renamed: %v", got)
+	}
+	// Renamed since: the first name before the current one.
+	renamed := projectState{Name: "Capture redesign draft"}
+	if got := projectNames(p, renamed); !reflect.DeepEqual(got, []string{first, current}) {
+		t.Errorf("renamed: %v", got)
+	}
+	for _, name := range []string{first, current} {
+		if !matchesProject(name, p, renamed) {
+			t.Errorf("%s is not the renamed project's", name)
+		}
+	}
+	if matchesProject("proj-sequential", p, renamed) {
+		t.Error("a prefix of the name matches")
+	}
+
+	// A name with no letter or digit slugs to "", as projectSlugOf
+	// answers for every name that is not a project's: comparing slugs,
+	// every review and feature was this project's.
+	blank := Project{ID: "uuid-blank", Name: "  "}
+	for _, name := range []string{"pr-42", "bar-4159-thing", current} {
+		if matchesProject(name, blank, projectState{}) {
+			t.Errorf("%s matches a project whose name has no letters", name)
+		}
+	}
+}
+
 func TestParseOpenArgs(t *testing.T) {
 	ok := map[string][]string{
 		"42":           {"42"},

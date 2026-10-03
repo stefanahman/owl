@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -324,10 +325,34 @@ func projectSlug(name string) string {
 	return slug
 }
 
-// matchesProject reports whether name is the workspace name for the
-// project.
-func matchesProject(name string, p Project) bool {
-	return projectSlugOf(name) == projectSlug(p.Name)
+// projectNames are the names a project's workspace may go by, in the
+// order to look for it: the name it had when owl first opened it, then
+// the name it has now. A project renamed in Linear keeps the first —
+// renaming a workspace is what strands its worktree and its
+// conversation, which Claude keys by the directory — so the first is
+// where an open looks first, and what it creates when there is nothing
+// to find and no conversation under the current name either. A review
+// gets the same from priorWorkspaceName; a project has no number in its
+// name to find it by, so the name of its first open comes from the
+// state, keyed by its id. A project owl has never opened has only its
+// current name.
+func projectNames(p Project, st projectState) []string {
+	current := "proj-" + projectSlug(p.Name)
+	if st.Name == "" {
+		return []string{current}
+	}
+	if first := "proj-" + projectSlug(st.Name); first != current {
+		return []string{first, current}
+	}
+	return []string{current}
+}
+
+// matchesProject reports whether name is one of the project's
+// workspace names. Whole names, not slugs: a project whose name has no
+// letter or digit in it slugs to "", which is also what projectSlugOf
+// returns for every name that is not a project's.
+func matchesProject(name string, p Project, st projectState) bool {
+	return slices.Contains(projectNames(p, st), name)
 }
 
 // isWorkspaceName reports whether a name is a review's, a feature's or

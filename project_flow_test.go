@@ -131,3 +131,112 @@ func TestProjectOpenRefusesAnAmbiguousName(t *testing.T) {
 		t.Errorf("unknown name: %v", err)
 	}
 }
+
+// seedRenamed records the fixture project as first opened under an
+// older name, as it is after a rename in Linear, and gives the
+// worktree at name a conversation on disk.
+func seedRenamed(t *testing.T, f *fixture, name string) string {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if err := saveProjectState("uuid-a76d38ca8527", projectState{Session: "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47", Name: "Capture redesign draft"}); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	conv := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", encodeProjectPath(wt))
+	if err := os.MkdirAll(conv, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(conv, "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return wt
+}
+
+func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	// Opened as "Capture redesign draft", renamed in Linear since: the
+	// fake serves it as Sequential Capture redesign.
+	first := "proj-capture-redesign-draft"
+	wt := seedRenamed(t, f, first)
+	f.git(f.repo, "worktree", "add", "--detach", wt, "origin/main")
+
+	var out strings.Builder
+	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	// The worktree it already has, and the conversation in it: a second
+	// one under the new name would start that conversation over.
+	if strings.Contains(out.String(), "creating") || !strings.Contains(out.String(), "started projects:"+first+", resuming the conversation") {
+		t.Errorf("open: %q", out.String())
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", "proj-sequential-capture-redesign")) {
+		t.Error("open made a second worktree under the new name")
+	}
+	if got, want := f.projectWindows(), []string{"scratch", first}; !reflect.DeepEqual(got, want) {
+		t.Errorf("windows %v, want %v", got, want)
+	}
+
+	// The name in the window list resolves, though it no longer matches
+	// the project's name.
+	out.Reset()
+	if err := runProject(f.cfg, []string{"start", "capture-redesign-draft"}, &out); err != nil || out.String() != "ready projects:"+first+"\n" {
+		t.Errorf("open by the first name: %v, %q", err, out.String())
+	}
+
+	out.Reset()
+	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"removed worktree " + wt, "closed window projects:" + first} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("close output lacks %q:\n%s", want, out.String())
+		}
+	}
+
+	// Closed, then opened again: the worktree comes back under the name
+	// Claude keeps the conversation by, and the conversation resumes.
+	out.Reset()
+	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "resuming the conversation") {
+		t.Errorf("reopen: %q", out.String())
+	}
+}
+
+// A worktree renamed by hand to the project's current name is found
+// there, though the state still holds the first.
+func TestProjectOpenFindsAWorktreeUnderItsCurrentName(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	current := "proj-sequential-capture-redesign"
+	wt := seedRenamed(t, f, current)
+	f.git(f.repo, "worktree", "add", "--detach", wt, "origin/main")
+
+	var out strings.Builder
+	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "creating") || !strings.Contains(out.String(), "started projects:"+current+", resuming the conversation") {
+		t.Errorf("open: %q", out.String())
+	}
+	out.Reset()
+	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "removed worktree "+wt) {
+		t.Errorf("close: %q", out.String())
+	}
+
+	// Closed, then opened again: the conversation was moved with the
+	// worktree, so the worktree comes back under the current name, not
+	// the first, or the conversation would be left behind.
+	out.Reset()
+	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "resuming the conversation") {
+		t.Errorf("reopen: %q", out.String())
+	}
+}

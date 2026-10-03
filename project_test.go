@@ -317,3 +317,24 @@ func TestProjectRowShedsColumnsRatherThanWrapping(t *testing.T) {
 		}
 	}
 }
+
+// A project renamed in Linear keeps its ⎇ in the list: the row finds
+// its workspace under the name in the state file, which is the name the
+// project had when it was first opened.
+func TestProjectRowFindsItsRenamedWorkspace(t *testing.T) {
+	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
+	m := model{
+		localState: map[string]LocalState{
+			"proj-capture-redesign-draft": {Worktree: "/repo/.worktrees.local/proj-capture-redesign-draft", Window: "proj-capture-redesign-draft"},
+		},
+		projectStates: map[string]projectState{p.ID: {Session: "s", Name: "Capture redesign draft"}},
+	}
+	if ls := m.localOf(visibleRow{project: &p}); ls.Worktree == "" || ls.Window == "" {
+		t.Errorf("the renamed project's row lost its workspace: %+v", ls)
+	}
+	// Without the state there is only the current name to go by.
+	m.projectStates = nil
+	if ls := m.localOf(visibleRow{project: &p}); ls.Worktree != "" {
+		t.Errorf("found a workspace the project was never opened under: %+v", ls)
+	}
+}

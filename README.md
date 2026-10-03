@@ -634,10 +634,17 @@ project having no branch of its own:
   beside the Linear token and not in the repo.
 
 `owl project open|start|close <id>` does the same from a terminal,
-where `<id>` is Linear's slug or a fragment of the name — `owl project
-open sequential`. A fragment matching two projects is an error naming
-both rather than a guess. `close` removes the worktree and the window
-and keeps the session id, so the next open resumes the conversation.
+where `<id>` is Linear's slug, the slug in the workspace's name, or a
+fragment of the name — `owl project open sequential`. A fragment
+matching two projects is an error naming both rather than a guess.
+`close` removes the worktree and the window and keeps the session id,
+so the next open resumes the conversation.
+
+A project renamed in Linear keeps its workspace. owl records the name
+of the first open beside the session id and looks for that workspace
+before one under the new name, because Claude keeps a conversation by
+its directory and a new worktree would start it over
+([docs/projects.md](docs/projects.md#when-a-project-is-renamed-in-linear)).
 
 ### Which repositories
 

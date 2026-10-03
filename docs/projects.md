@@ -209,54 +209,39 @@ would make it impossible rather than discouraged. owl already writes
 ## When a project is renamed in Linear
 
 owl names a project's workspace `proj-<slug of the project's name>`, and
-the name is the one thing about a project that changes. Rename it and
-the row loses its `⎇` and `©`: the worktree and the conversation are
-still there, under the old slug, and owl is looking for the new one.
+the name is the one thing about a project that changes. A new name must
+not mean a new workspace. Claude keeps a conversation by the absolute
+path of its directory, so a worktree under a new slug starts the
+conversation over and leaves the transcript behind under the old one.
 
-Nothing is lost. The session id survives, because `projects.json` is
-keyed by the project's Linear UUID and not by its name.
+So the workspace keeps the name the project had when owl first opened
+it. `projects.json` holds that name beside the session id, keyed by the
+project's Linear UUID, which a rename leaves alone. Open, close and the
+list's `⎇` and `©` look for the slug of the first name, then the slug
+of the current one. When neither worktree exists, open creates it under
+the one Claude holds a conversation for, else the first, so a project
+closed and then renamed comes back where its conversation is. The
+first name's slug resolves as `<id>` too, since it is what the window
+list shows.
 
-**Do not press Enter first.** owl would create a *second*, empty
-worktree under the new slug and start a fresh conversation carrying the
-old session id, leaving the real transcript behind. Move first, then
-open.
+The current name is the fallback for a worktree and conversation moved
+to the new slug by hand, which is what this section used to say to do.
+A worktree under neither name is not found: renamed twice and moved to
+the middle name, say. Move it, and its conversation, to either one:
 
 ```sh
-# 1. the worktree, from the repo root — safe, a project's is detached
-#    and clean, so nothing can be lost here
-git worktree move .worktrees.local/proj-<old-slug> .worktrees.local/proj-<new-slug>
+# from the repo root — a project's worktree is detached and clean
+git worktree move .worktrees.local/proj-<slug> .worktrees.local/proj-<first-slug>
 
-# 2. the conversation. Claude Code indexes it by the worktree's absolute
-#    path with every non-alphanumeric character replaced by a dash, the
-#    leading slash included, so
-#      /Users/me/src/app/.worktrees.local/proj-x
-#    is the directory
-#      -Users-me-src-app--worktrees-local-proj-x
-#    (one dash per character: the `--` comes from `/.`). In
-#    $CLAUDE_CONFIG_DIR/projects when that is set, ~/.claude/projects
-#    otherwise.
-mv ~/.claude/projects/<encoded-old> ~/.claude/projects/<encoded-new>
-
-# 3. Enter on the project in owl
+# Claude Code keys the conversation by the worktree's absolute path with
+# every non-alphanumeric character replaced by a dash, so
+#   /Users/me/src/app/.worktrees.local/proj-x
+# is
+#   -Users-me-src-app--worktrees-local-proj-x
+# in $CLAUDE_CONFIG_DIR/projects when that is set, ~/.claude/projects
+# otherwise.
+mv ~/.claude/projects/<encoded-from> ~/.claude/projects/<encoded-to>
 ```
-
-Step 3 is part of the procedure, not a check: the multiplexer workspace
-still carries the old title and the old working directory, which step 1
-has just deleted under it. Opening from owl renames it and resumes the
-conversation, because `hasConversationFor` now resolves at the new
-path. `owl project open <slug>` does the same from a shell.
-
-Verified on a 5.7 MB transcript: same session id, appended to, nothing
-rewritten. The old path's references inside the transcript stay as they
-are — that work did happen there.
-
-If a stray `proj-<new-slug>` worktree already exists because Enter came
-first, remove it with `git worktree remove` before step 1; it is empty.
-
-Renames are rare enough that this is a recipe rather than a fix. The
-fix, if they stop being rare: record the workspace name in
-`projects.json` beside the session id, which is already keyed by the
-UUID, and find the workspace by that rather than by the name.
 
 ## Open
 
@@ -273,6 +258,10 @@ UUID, and find the workspace by that rather than by the name.
   its prompt, or owl, from what it can observe (the PR, the branch, the
   exit state)? The first is richer and unreliable; the second is thin
   and always happens. Probably both, in different fields.
+- **The workspace's title after a rename.** It keeps the first name, in
+  the window list and the multiplexer's sidebar alike. The current name
+  belongs in the workspace's description, which mux has no call to set
+  yet (DEV-82).
 - **Whether a fork can be refused.** An issue whose work is unrelated
   to the project's current thread would be better off cold than
   carrying twenty thousand tokens of someone else's milestone.

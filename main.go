@@ -495,6 +495,11 @@ type model struct {
 	drillCursor int             // the project row to come back to
 	issuePRs    map[string][]PR // the repo's open PRs by issue key, for the issue rows
 	localState  map[string]LocalState
+	// projectStates is the project state file, so a project's row finds
+	// its workspace under the name of its first open as well as its
+	// current one. Read with the local state, since an open in between
+	// is what adds to it.
+	projectStates map[string]projectState
 
 	// load state
 	ready       bool      // the list has been fetched (or read from the cache)
@@ -1120,6 +1125,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case localMsg:
 		m.localState = map[string]LocalState(msg)
+		m.projectStates = loadProjectStates()
 		m.refreshList()
 		// LocalState is derived from tmux/git — cheap to refetch, not cached.
 
@@ -1499,7 +1505,8 @@ func (m model) localOf(r visibleRow) LocalState {
 		return findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, r.issue.Key) })
 	}
 	if r.project != nil {
-		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project) })
+		st := m.projectStates[r.project.ID]
+		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project, st) })
 	}
 	return LocalState{}
 }
