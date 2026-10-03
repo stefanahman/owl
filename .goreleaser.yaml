@@ -32,7 +32,8 @@ changelog:
 
 # Homebrew cask in stefanahman/homebrew-tap: `brew install --cask stefanahman/tap/owl`.
 # Casks (not formulas) are what goreleaser recommends for prebuilt binaries;
-# the binaries are unsigned, so the hook strips the quarantine attribute.
+# the binaries are unsigned, so a postflight step strips the quarantine
+# attribute.
 homebrew_casks:
   - name: owl
     repository:
@@ -46,9 +47,17 @@ homebrew_casks:
     dependencies:
       - formula: gh
       - formula: tmux
-    hooks:
-      post:
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/owl"]
-          end
+    # Raw, not hooks.post.install: Homebrew deprecated the postflight
+    # stanza that hook writes, and warns on every install and upgrade
+    # ("Calling `postflight` is deprecated!"). Its replacement,
+    # postflight_steps, takes a declarative DSL rather than Ruby, which
+    # goreleaser cannot write yet (goreleaser/goreleaser#6873). The
+    # block lands at the top of the cask, out of Homebrew's stanza order,
+    # which only `brew style` minds. {{staged_path}} is Homebrew's token
+    # and goreleaser templates the cask once, so it is escaped once.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/owl"]
+        end
+      end
