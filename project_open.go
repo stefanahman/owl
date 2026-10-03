@@ -182,6 +182,14 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	if hasConversationFor(wt) {
 		agentArgs = []string{"--resume", st.Session}
 	}
+	// The conversation is named for the project as Linear has it now,
+	// on every open: the workspace keeps the name of the first open, so
+	// after a rename this is where the current one shows — Claude's
+	// prompt box, its /resume picker and the terminal title, which is
+	// what a multiplexer's tab and cmux-describe read. On a resume it
+	// adds a newer title, which is the one Claude shows. Quoted, since
+	// startLine joins the arguments into a shell line as they are.
+	agentArgs = append(agentArgs, "--name", shellQuote(p.Name))
 
 	ws := workspace{
 		label: p.Name,

@@ -224,6 +224,14 @@ closed and then renamed comes back where its conversation is. The
 first name's slug resolves as `<id>` too, since it is what the window
 list shows.
 
+The name it has now goes on the conversation instead. owl passes the
+title as `--name` on every open, and on a resume Claude records it as a
+newer title, so the prompt box, the `/resume` picker and the terminal
+title follow Linear while the workspace stays where it is. A
+multiplexer that shows the terminal title in its tab shows it there;
+cmux's workspace description gets it from a `Stop` hook that copies
+the title across, as eden's `cmux-describe` does.
+
 The current name is the fallback for a worktree and conversation moved
 to the new slug by hand, which is what this section used to say to do.
 A worktree under neither name is not found: renamed twice and moved to
@@ -258,10 +266,6 @@ mv ~/.claude/projects/<encoded-from> ~/.claude/projects/<encoded-to>
   its prompt, or owl, from what it can observe (the PR, the branch, the
   exit state)? The first is richer and unreliable; the second is thin
   and always happens. Probably both, in different fields.
-- **The workspace's title after a rename.** It keeps the first name, in
-  the window list and the multiplexer's sidebar alike. The current name
-  belongs in the workspace's description, which mux has no call to set
-  yet (DEV-82).
 - **Whether a fork can be refused.** An issue whose work is unrelated
   to the project's current thread would be better off cold than
   carrying twenty thousand tokens of someone else's milestone.

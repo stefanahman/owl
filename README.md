@@ -631,7 +631,10 @@ project having no branch of its own:
   `--session-id` then `--resume` — so a project is one conversation
   that resumes as itself, rather than whatever `-c` finds last in that
   worktree. Session ids are machine-local, which is why they live
-  beside the Linear token and not in the repo.
+  beside the Linear token and not in the repo. It passes the project's
+  title as `--name` too, on every open, so Claude's prompt box, its
+  `/resume` picker and the terminal title read as the project does in
+  Linear; a `/rename` inside the conversation lasts until the next open.
 
 `owl project open|start|close <id>` does the same from a terminal,
 where `<id>` is Linear's slug, the slug in the workspace's name, or a
@@ -643,7 +646,8 @@ so the next open resumes the conversation.
 A project renamed in Linear keeps its workspace. owl records the name
 of the first open beside the session id and looks for that workspace
 before one under the new name, because Claude keeps a conversation by
-its directory and a new worktree would start it over
+its directory and a new worktree would start it over. The new name
+shows in the conversation's title instead
 ([docs/projects.md](docs/projects.md#when-a-project-is-renamed-in-linear)).
 
 ### Which repositories

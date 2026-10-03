@@ -152,6 +152,21 @@ func seedRenamed(t *testing.T, f *fixture, name string) string {
 	return wt
 }
 
+// nameAgent makes the agent a script that writes the value of its
+// --name argument to a file, as the shell handed it over, and returns
+// the file.
+func nameAgent(t *testing.T, f *fixture) string {
+	t.Helper()
+	got := filepath.Join(f.root, "agent.name")
+	script := filepath.Join(f.root, "agent.sh")
+	body := "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n\tif [ \"$1\" = --name ]; then printf '%s\\n' \"$2\" > " + shellQuote(got) + "; fi\n\tshift\ndone\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Agent.Cmd = shellQuote(script)
+	return got
+}
+
 func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
@@ -160,11 +175,15 @@ func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 	first := "proj-capture-redesign-draft"
 	wt := seedRenamed(t, f, first)
 	f.git(f.repo, "worktree", "add", "--detach", wt, "origin/main")
+	named := nameAgent(t, f)
 
 	var out strings.Builder
 	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
 		t.Fatal(err)
 	}
+	// The workspace keeps the first name; the conversation is named for
+	// the project as it is called now, as one argument.
+	f.waitFile(named, "Sequential Capture redesign\n")
 	// The worktree it already has, and the conversation in it: a second
 	// one under the new name would start that conversation over.
 	if strings.Contains(out.String(), "creating") || !strings.Contains(out.String(), "started projects:"+first+", resuming the conversation") {

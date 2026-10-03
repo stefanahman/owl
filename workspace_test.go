@@ -810,6 +810,13 @@ func TestStartLine(t *testing.T) {
 	if want := "claude --permission-mode auto --resume u-u-i-d"; again != want {
 		t.Errorf("resumed project = %q, want %q", again, want)
 	}
+	// Its name is a Linear title, which may hold anything the shell
+	// reads as syntax; quoted, it arrives as one argument, unchanged.
+	title := `Register Marco (VW Polo) — it's "done" $HOME ` + "`id`; exit 1"
+	line := startLine(`printf '%s\n'`, "", true, "--resume", "u-u-i-d", "--name", shellQuote(title))
+	if got, err := exec.Command("sh", "-c", line).Output(); err != nil || string(got) != "--resume\nu-u-i-d\n--name\n"+title+"\n" {
+		t.Errorf("the name through the shell = %q, %v; want %q as one argument", got, err, title)
+	}
 	// Without such a flag the old behaviour stands.
 	if got := startLine(cmd, "", true, "--add-dir", "/wt"); got != "claude --permission-mode auto --add-dir /wt -c" {
 		t.Errorf("flags that name no conversation = %q", got)
