@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -267,6 +268,20 @@ func (w LinearWorkspaces) TeamKeys() []string {
 		all = append(all, ws.TeamKeys()...)
 	}
 	return all
+}
+
+// isIssueKey reports whether key — as issueKeyOf returns one — is an
+// issue of a team the config names. With no team named, any key is.
+func (c Config) isIssueKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	teams := c.Linear.TeamKeys()
+	if len(teams) == 0 {
+		return true
+	}
+	team, _, _ := strings.Cut(key, "-")
+	return slices.ContainsFunc(teams, func(t string) bool { return strings.EqualFold(t, team) })
 }
 
 // Configured reports whether any workspace has a key to read with.

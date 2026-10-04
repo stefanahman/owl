@@ -229,7 +229,7 @@ func runIssueClose(cfg Config, args []string, out io.Writer) error {
 	if len(rest) == 1 {
 		key, err = parseIssueKey(rest[0])
 	} else {
-		key, err = inferIssue(mx, cfg.WorktreesDir)
+		key, err = inferIssue(mx, cfg)
 	}
 	if err != nil {
 		return err
@@ -271,16 +271,16 @@ func unpushed(repo, branch string) string {
 
 // inferIssue finds the key of the feature the caller is in: the
 // worktree path, then the branch, then the window of the multiplexer.
-func inferIssue(mx windows, worktreesDir string) (string, error) {
+func inferIssue(mx windows, cfg Config) (string, error) {
 	if top, err := git(".", "rev-parse", "--show-toplevel"); err == nil {
-		if repo, err := mainRepo("."); err == nil && filepath.Dir(top) == filepath.Join(repo, worktreesDir) {
-			if key := issueKeyOf(filepath.Base(top)); key != "" {
+		if repo, err := mainRepo("."); err == nil && filepath.Dir(top) == filepath.Join(repo, cfg.WorktreesDir) {
+			if key := issueKeyOf(filepath.Base(top)); cfg.isIssueKey(key) {
 				return key, nil
 			}
 		}
 	}
 	if br, err := git(".", "branch", "--show-current"); err == nil {
-		if key := issueKeyOf(path.Base(br)); key != "" {
+		if key := issueKeyOf(path.Base(br)); cfg.isIssueKey(key) {
 			return key, nil
 		}
 	}

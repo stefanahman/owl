@@ -300,7 +300,7 @@ func TestOpenYourOwnPRInAForeignWorktreeKeepsTheName(t *testing.T) {
 	}
 	// The name it opened under has to be one its own scope owns, or the
 	// window cannot be found again.
-	if sc := scopeForName(name); !sc.owns(name) {
+	if sc := scopeForName(name); !sc.owns(f.cfg, name) {
 		t.Errorf("scopeForName(%q) = %s, which does not own it", name, sc.name)
 	}
 	// And no second worktree on one branch.

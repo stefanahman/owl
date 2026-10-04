@@ -24,25 +24,27 @@ const (
 // window names are its, and under tmux which session holds them. The
 // reviews are one scope; the features another.
 type scope struct {
-	name    string                   // for messages: reviews, features
-	session func(cfg Config) string  // the tmux session
-	owns    func(window string) bool // whether a window name is one of ours
+	name    string                               // for messages: reviews, features
+	session func(cfg Config) string              // the tmux session
+	owns    func(cfg Config, window string) bool // whether a window name is one of ours
 }
 
 // reviews is the scope of PR reviews: windows named pr-<N>[-<slug>].
 var reviews = scope{
 	name:    "reviews",
 	session: func(cfg Config) string { return cfg.Tmux.Session },
-	owns:    func(w string) bool { return prNumberOf(w) > 0 },
+	owns:    func(_ Config, w string) bool { return prNumberOf(w) > 0 },
 }
 
 // features is the scope of issues being worked on: windows named
 // after the branch Linear names, <team>-<n>-<slug>, in the tmux
-// session issue.session.
+// session issue.session. The team is one the config names: under herdr
+// and cmux owl shares one list of workspaces with whatever else made
+// them, and spaces' bf-1..bf-4 read as issue keys too.
 var features = scope{
 	name:    "features",
 	session: func(cfg Config) string { return cfg.Issue.Session },
-	owns:    func(w string) bool { return issueKeyOf(w) != "" },
+	owns:    func(cfg Config, w string) bool { return cfg.isIssueKey(issueKeyOf(w)) },
 }
 
 // projects is the scope of the conversations above the issues: windows
@@ -50,7 +52,7 @@ var features = scope{
 var projects = scope{
 	name:    "projects",
 	session: func(cfg Config) string { return cfg.Project.Session },
-	owns:    func(w string) bool { return projectSlugOf(w) != "" },
+	owns:    func(_ Config, w string) bool { return projectSlugOf(w) != "" },
 }
 
 // scopeOf is the scope of a list kind: features for issue, projects
@@ -132,7 +134,7 @@ func statesIn(cfg Config, shared mux.Driver, scopes ...scope) map[string]string 
 	}
 	for name, state := range states {
 		for _, sc := range scopes {
-			if sc.owns(name) {
+			if sc.owns(cfg, name) {
 				out[name] = state
 				break
 			}
@@ -144,8 +146,9 @@ func statesIn(cfg Config, shared mux.Driver, scopes ...scope) map[string]string 
 // windows is one scope's windows in a multiplexer, and nothing else
 // the user keeps there.
 type windows struct {
-	d  mux.Driver
-	sc scope
+	d   mux.Driver
+	sc  scope
+	cfg Config // what the scope's owns reads: the teams a feature's key belongs to
 	// style is how the scope's group is drawn where the multiplexer
 	// draws one, and nil when grouping is off. It rides here rather
 	// than through Open's arguments: newWindows already has the config,
@@ -182,20 +185,20 @@ func newWindows(cfg Config, sc scope) windows {
 	style := groupStyle(cfg, sc)
 	switch cfg.Mux {
 	case "tmux":
-		return windows{tmux, sc, style}
+		return windows{tmux, sc, cfg, style}
 	case "herdr":
-		return windows{herdr, sc, style}
+		return windows{herdr, sc, cfg, style}
 	case "cmux":
-		return windows{mux.NewCmux(), sc, style}
+		return windows{mux.NewCmux(), sc, cfg, style}
 	}
-	return windows{mux.Detect(tmux, herdr, mux.NewCmux()), sc, style}
+	return windows{mux.Detect(tmux, herdr, mux.NewCmux()), sc, cfg, style}
 }
 
 // windowsByKind is the multiplexer a child was told about through
 // OWL_MUX, enough to notify with; ok is false for none.
 func windowsByKind(kind string) (windows, bool) {
 	d := mux.ByKind(kind)
-	return windows{d, reviews, nil}, d != nil
+	return windows{d, reviews, Config{}, nil}, d != nil
 }
 
 // Kind names the multiplexer: the value of OWL_MUX.
@@ -224,7 +227,7 @@ func (w windows) list() ([]mux.Workspace, error) {
 	}
 	var ours []mux.Workspace
 	for _, ws := range all {
-		if w.sc.owns(ws.Name) {
+		if w.sc.owns(w.cfg, ws.Name) {
 			ours = append(ours, ws)
 		}
 	}
@@ -301,7 +304,7 @@ func (w windows) States() map[string]string {
 	}
 	out := map[string]string{}
 	for name, state := range states {
-		if w.sc.owns(name) {
+		if w.sc.owns(w.cfg, name) {
 			out[name] = state
 		}
 	}
@@ -374,7 +377,7 @@ func (w windows) Close(name string) error {
 // Current is the scope's window owl was started in, if any.
 func (w windows) Current() (string, bool) {
 	ws, ok := w.d.Current()
-	if !ok || !w.sc.owns(ws.Name) {
+	if !ok || !w.sc.owns(w.cfg, ws.Name) {
 		return "", false
 	}
 	return ws.Name, true

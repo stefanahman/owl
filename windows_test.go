@@ -76,7 +76,7 @@ func TestNewWindowsPicksTheMultiplexer(t *testing.T) {
 	if _, ok := windowsByKind(""); ok {
 		t.Error("windowsByKind should know nothing else")
 	}
-	if got := (windows{mux.Tmux{SessionName: "s"}, reviews, nil}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
+	if got := (windows{d: mux.Tmux{SessionName: "s"}, sc: reviews}).ChildEnv(); !reflect.DeepEqual(got, []string{"OWL_MUX=tmux"}) {
 		t.Errorf("ChildEnv = %v", got)
 	}
 }
@@ -477,5 +477,45 @@ func TestWatchEndsWithTheList(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Error("the watch outlived the context it was started on")
+	}
+}
+
+// TestFeaturesOwnOnlyTheirTeamsWorkspaces: under herdr and cmux owl
+// shares one list of workspaces with whatever else made them — spaces'
+// bf-1..bf-4 among them, whose names read as issue keys. A feature's
+// workspace carries a key of a team the config names; bf-1 is not one,
+// so owl neither lists it as a feature nor closes it from inside it.
+func TestFeaturesOwnOnlyTheirTeamsWorkspaces(t *testing.T) {
+	f := newFixture(t)
+	fake := muxtest.NewFakeHerdr(t)
+	f.cfg.Mux = "herdr"
+	f.cfg.Herdr.Socket = fake.Socket()
+	f.cfg.Linear = LinearWorkspaces{{Team: "BAR"}}
+	t.Setenv("HERDR_ENV", "")
+	d := mux.NewHerdr(fake.Socket())
+	for _, name := range []string{"bf-1", "bar-4159-thing"} {
+		if _, err := d.Create(name, f.repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := newWindows(f.cfg, features).Windows(); !reflect.DeepEqual(got, []string{"bar-4159-thing"}) {
+		t.Errorf("features own %v, want only bar-4159-thing", got)
+	}
+	// With no team named, any key goes, as before.
+	f.cfg.Linear = nil
+	if got := newWindows(f.cfg, features).Windows(); len(got) != 2 {
+		t.Errorf("no teams: features own %v, want both", got)
+	}
+}
+
+func TestIsIssueKey(t *testing.T) {
+	cfg := Config{Linear: LinearWorkspaces{{Team: "BAR"}, {Teams: []string{"DEV", "LIFE"}}}}
+	for key, want := range map[string]bool{"BAR-4159": true, "bar-4159": true, "dev-82": true, "LIFE-3": true, "bf-1": false, "release-2": false, "": false} {
+		if got := cfg.isIssueKey(key); got != want {
+			t.Errorf("isIssueKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+	if !(Config{}).isIssueKey("bf-1") {
+		t.Error("with no team named, any key is an issue's")
 	}
 }
