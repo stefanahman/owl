@@ -41,7 +41,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/stefanahman/owl
-    description: "TUI of the PRs waiting for your review; one key opens each as a git worktree and a window in tmux, herdr or cmux with Claude Code reviewing inside"
+    description: "TUI that opens any PR, issue or project as a git worktree with Claude Code"
     license: MIT
     binaries: [owl]
     dependencies:
