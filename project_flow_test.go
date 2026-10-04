@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -257,5 +258,26 @@ func TestProjectOpenFindsAWorktreeUnderItsCurrentName(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "resuming the conversation") {
 		t.Errorf("reopen: %q", out.String())
+	}
+}
+
+// TestSaveProjectStateConcurrently: two projects opened at once each
+// save their own entry; neither may be lost to the other's write.
+func TestSaveProjectStateConcurrently(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const n = 24
+	errs := make(chan error, n)
+	for i := range n {
+		go func() {
+			errs <- saveProjectState(fmt.Sprintf("uuid-%02d", i), projectState{Session: fmt.Sprintf("s-%02d", i), Name: "p"})
+		}()
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(loadProjectStates()); got != n {
+		t.Errorf("%d of %d entries survived", got, n)
 	}
 }

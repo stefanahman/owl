@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // projectState is what owl keeps per project between sessions. It is
@@ -57,22 +58,48 @@ func loadProjectStates() map[string]projectState {
 	return states
 }
 
-// saveProjectState records one project's session id.
+// saveProjectState records one project's state. The file is every
+// project's, so the read, the change and the write happen under a lock
+// of their own, and the write lands whole by a rename: two projects
+// opened at once each keep their entry, and a reader never sees half a
+// file — which reads as empty, and would lose every session id.
 func saveProjectState(id string, st projectState) error {
 	path, err := projectStatePath()
 	if err != nil {
 		return err
 	}
-	states := loadProjectStates()
-	states[id] = st
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock %s: %w", lock.Name(), err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+
+	states := loadProjectStates()
+	states[id] = st
 	b, err := json.MarshalIndent(states, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o600)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".projects-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append(b, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // newSessionID is a v4 UUID: what `claude --session-id` takes.
