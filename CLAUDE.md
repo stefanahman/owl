@@ -1,7 +1,7 @@
 # owl — agent notes
 
 owl is the launcher for review, feature and project work — three
-lists, `owl pr`, `owl issue` and `owl project` (README.md). It
+lists, `owl pr`, `owl issue` and `owl project` (README.md, docs/). It
 ships together with four sibling repos, each with a CLAUDE.md like this
 one: [mux](https://github.com/stefanahman/mux), the multiplexer drivers
 owl imports; [spaces](https://github.com/stefanahman/spaces), the
@@ -36,7 +36,7 @@ against the real workspace. After a deliberate UI change, `make
 update-snapshots` and look at the PNGs in e2e/testdata — `.gitattributes`
 keeps those bytes from being normalised, so a snapshot diff is real.
 Behaviour comes with a test; the three hermetic layers are in
-README.md, Hacking, and the smoke run above is the fourth.
+CONTRIBUTING.md, and the smoke run above is the fourth.
 
 ## 2. Commit
 
@@ -87,14 +87,17 @@ face: `unknown command <noun>` for a command the cask predates, and
 
 ## 4. Document
 
-README.md is the front page — facts as tables, one voice; docs/ holds
-the depth (multiplexers.md) and the design notes (design/projects.md, written
+README.md is the front page, short; docs/ holds the reference, one
+file per list (reviews.md, features.md, projects.md) plus keys.md,
+commands.md, configuration.md, how-it-works.md and multiplexers.md —
+facts as tables, one voice. docs/design/ holds the design notes
+(projects.md, written
 before the project layer and now part built: the list, the workspace
 and the named conversation shipped, the fork-and-join model and the
 shared-branch mode did not, and its Open section is where the next
 session starts); owl/README.md is the plugin. The config
-template lives in config.go (`owl config init`) and, abridged, in the
-README's Configuration block: keys and defaults in step
+template lives in config.go (`owl config init`) and, abridged, in
+docs/configuration.md: keys and defaults in step
 (TestTemplateMatchesDefaults checks the code side). A new or changed
 skill bumps one version in three places: `owl/.claude-plugin/plugin.json`,
 and both `metadata.version` and the `plugins[0]` entry in
