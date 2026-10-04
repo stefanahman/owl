@@ -88,7 +88,7 @@ face: `unknown command <noun>` for a command the cask predates, and
 ## 4. Document
 
 README.md is the front page — facts as tables, one voice; docs/ holds
-the depth (multiplexers.md) and the design notes (projects.md, written
+the depth (multiplexers.md) and the design notes (design/projects.md, written
 before the project layer and now part built: the list, the workspace
 and the named conversation shipped, the fork-and-join model and the
 shared-branch mode did not, and its Open section is where the next

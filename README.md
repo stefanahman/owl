@@ -648,7 +648,7 @@ of the first open beside the session id and looks for that workspace
 before one under the new name, because Claude keeps a conversation by
 its directory and a new worktree would start it over. The new name
 shows in the conversation's title instead
-([docs/projects.md](docs/projects.md#when-a-project-is-renamed-in-linear)).
+([docs/design/projects.md](docs/design/projects.md#when-a-project-is-renamed-in-linear)).
 
 ### Which repositories
 
