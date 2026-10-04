@@ -1,11 +1,10 @@
 // The pull request list's own side: the rows of the review queue, the
 // two panes it is read in, and the badges a row carries.
 //
-// The other lists have had a file each — issue_list.go, project_list.go,
-// mine.go — while this one stayed in main.go with the model. What is
-// shared still lives there: renderRow, countsSummary and legend all
-// dispatch by which list is open, and only their pull request tails
-// are here.
+// The other lists have a file each — issue_list.go, project_list.go,
+// mine.go — and so does this one. What all of them share is in
+// view.go: renderRow, countsSummary and legend dispatch by which list
+// is open, and only their pull request tails are here.
 //
 // Two panes are this list alone. A review queue and your own pull
 // requests are different questions, and the answer to one is no help
