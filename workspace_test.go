@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/stefanahman/mux"
+	"github.com/stefanahman/mux/muxtest"
 	"io"
 	"os"
 	"os/exec"
@@ -102,40 +103,14 @@ func newFixture(t *testing.T) *fixture {
 	f.write(filepath.Join(f.repo, ".claude", "settings.local.json"), "{}\n")
 	f.write(filepath.Join(f.repo, ".claude", "skills", "review.local", "SKILL.md"), "# skill\n")
 
-	// Private tmux server with its own minimal config: /bin/sh in every
-	// window (the developer's shell would read its rc files and write
-	// history into $HOME on exit, racing the temp dir cleanup), and no
-	// exit when the last session goes. It owns the default socket name
-	// under a private TMUX_TMPDIR, so plain `tmux` reaches it whether or
-	// not $TMUX is set. The socket gets a short directory of its own —
-	// Unix socket paths are limited to ~100 bytes and t.TempDir includes
-	// the test name.
-	sockDir, err := os.MkdirTemp("", "owl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
-	conf := filepath.Join(sockDir, "tmux.conf")
-	f.write(conf, "set -g default-shell /bin/sh\nset -s exit-empty off\n")
-	t.Setenv("TMUX_TMPDIR", sockDir)
-	t.Setenv("TMUX", "") // the test may itself run inside tmux; never touch that server
-	t.Setenv("HISTFILE", "")
-	// -L creates the socket dir; -S would not. The server starts with a
-	// clean environment: the test may run inside a Claude Code session,
-	// whose markers the server would pass to every pane.
-	start := exec.Command("tmux", "-L", "default", "-f", conf, "start-server")
-	start.Env = mux.CleanEnv(os.Environ())
-	if out, err := start.CombinedOutput(); err != nil {
-		t.Fatalf("start-server: %v: %s", err, out)
-	}
-	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
-	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
-	t.Setenv("TMUX", socket+",0,0") // as inside a pane of the test server
-	// The test's multiplexer is that server, whatever the test itself
-	// runs in: a herdr pane or a cmux terminal would otherwise be
-	// detected, and get the test's windows.
-	t.Setenv("HERDR_ENV", "")
-	t.Setenv("CMUX_WORKSPACE_ID", "")
+	// A private tmux server — /bin/sh in every window, a short socket
+	// directory under a private TMUX_TMPDIR, a clean environment — the
+	// one mux gives every consumer's tests.
+	muxtest.StartTmux(t)
+	// As inside a pane of the test server: owl's tmux reaches it through
+	// $TMUX, the way a binding run from a pane would.
+	socket := filepath.Join(os.Getenv("TMUX_TMPDIR"), fmt.Sprintf("tmux-%d", os.Getuid()), "default")
+	t.Setenv("TMUX", socket+",0,0")
 
 	f.cfg = defaultConfig()
 	f.cfg.Mux = "tmux"
