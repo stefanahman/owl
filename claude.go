@@ -49,6 +49,52 @@ func hasConversationFor(cwd string) bool {
 	return hasConversation(filepath.Join(projects, encodeProjectPath(cwd)))
 }
 
+// hasSession reports whether Claude holds the conversation with this
+// id for a working directory: its transcript is named for the session.
+// A project's conversation is known by its id, so another transcript
+// in the same directory does not make it resumable.
+func hasSession(cwd, session string) bool {
+	if session == "" {
+		return false
+	}
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(projects, encodeProjectPath(cwd), session+".jsonl"))
+	return err == nil
+}
+
+// sessionWorkspace is the project workspace under the repo's worktrees
+// dir whose conversation directory holds the session, under whatever
+// proj- name it has, or "". It is how a project renamed more than once
+// finds its conversation: neither the name of its first open nor its
+// current one may be the name it was last opened under.
+func sessionWorkspace(repo, worktreesDir, session string) string {
+	if repo == "" || session == "" {
+		return ""
+	}
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(projects)
+	if err != nil {
+		return ""
+	}
+	prefix := encodeProjectPath(filepath.Join(repo, worktreesDir, "proj-"))
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), prefix)
+		if !ok || !e.IsDir() || rest == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(projects, e.Name(), session+".jsonl")); err == nil {
+			return "proj-" + rest // a slug is [a-z0-9-]: the encoding leaves it as is
+		}
+	}
+	return ""
+}
+
 // priorWorkspaceName returns the name of a workspace for PR n that
 // Claude holds a conversation for — `pr-<n>` or `pr-<n>-<slug>` under
 // the repo's worktrees dir — or "" when there is none. `close` removes

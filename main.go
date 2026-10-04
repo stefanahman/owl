@@ -1505,8 +1505,8 @@ func (m model) localOf(r visibleRow) LocalState {
 		return findLocalBy(m.localState, func(name string) bool { return matchesIssue(name, r.issue.Key) })
 	}
 	if r.project != nil {
-		st := m.projectStates[r.project.ID]
-		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project, st) })
+		st, taken := m.projectStates[r.project.ID], takenNames(m.projectStates, r.project.ID)
+		return findLocalBy(m.localState, func(name string) bool { return matchesProject(name, *r.project, st, taken) })
 	}
 	return LocalState{}
 }

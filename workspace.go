@@ -325,34 +325,76 @@ func projectSlug(name string) string {
 	return slug
 }
 
+// projectWorkspace is the workspace name a project's name gives:
+// `proj-` and its slug, or Linear's slug id for a name with no letter
+// or digit to make one — `proj-` alone is no project's name.
+func projectWorkspace(name, slugID string) string {
+	if slug := projectSlug(name); slug != "" {
+		return "proj-" + slug
+	}
+	return "proj-" + slugID
+}
+
+// recordedWorkspace is the workspace a project's state holds: the name
+// owl recorded, or, in a state from before it recorded one, the name
+// of the project's first open gives.
+func recordedWorkspace(st projectState, slugID string) string {
+	if st.Workspace != "" || st.Name == "" {
+		return st.Workspace
+	}
+	return projectWorkspace(st.Name, slugID)
+}
+
 // projectNames are the names a project's workspace may go by, in the
-// order to look for it: the name it had when owl first opened it, then
-// the name it has now. A project renamed in Linear keeps the first —
+// order to look for it: the one recorded in its state, then the one its
+// current name gives. A project renamed in Linear keeps the first —
 // renaming a workspace is what strands its worktree and its
 // conversation, which Claude keys by the directory — so the first is
-// where an open looks first, and what it creates when there is nothing
-// to find and no conversation under the current name either. A review
-// gets the same from priorWorkspaceName; a project has no number in its
-// name to find it by, so the name of its first open comes from the
-// state, keyed by its id. A project owl has never opened has only its
-// current name.
-func projectNames(p Project, st projectState) []string {
-	current := "proj-" + projectSlug(p.Name)
-	if st.Name == "" {
-		return []string{current}
+// where an open looks first. A review gets the same from
+// priorWorkspaceName; a project has no number in its name to find it
+// by, so the name comes from the state, keyed by its id.
+//
+// taken are the names other projects hold, which this one must not
+// walk into: a project renamed away from a name keeps its workspace
+// under it, and another project may be given that name since. When its
+// current name is taken and it has no workspace of its own, it gets
+// Linear's slug id on the end.
+func projectNames(p Project, st projectState, taken map[string]bool) []string {
+	current := projectWorkspace(p.Name, p.SlugID)
+	var names []string
+	for _, n := range []string{recordedWorkspace(st, p.SlugID), current} {
+		if n != "" && !taken[n] && !slices.Contains(names, n) {
+			names = append(names, n)
+		}
 	}
-	if first := "proj-" + projectSlug(st.Name); first != current {
-		return []string{first, current}
+	if len(names) == 0 {
+		names = []string{current + "-" + p.SlugID}
 	}
-	return []string{current}
+	return names
+}
+
+// takenNames are the workspace names held by every project in states
+// but the one with id.
+func takenNames(states map[string]projectState, id string) map[string]bool {
+	taken := map[string]bool{}
+	for other, st := range states {
+		if other == id {
+			continue
+		}
+		// Another project's slug id is not known here; its own name
+		// slugs to something unless it has no letter in it.
+		if n := recordedWorkspace(st, ""); n != "" && n != "proj-" {
+			taken[n] = true
+		}
+	}
+	return taken
 }
 
 // matchesProject reports whether name is one of the project's
-// workspace names. Whole names, not slugs: a project whose name has no
-// letter or digit in it slugs to "", which is also what projectSlugOf
-// returns for every name that is not a project's.
-func matchesProject(name string, p Project, st projectState) bool {
-	return slices.Contains(projectNames(p, st), name)
+// workspace names. Whole names, not slugs: a slug does not say which
+// project it belongs to once one has been renamed.
+func matchesProject(name string, p Project, st projectState, taken map[string]bool) bool {
+	return slices.Contains(projectNames(p, st, taken), name)
 }
 
 // isWorkspaceName reports whether a name is a review's, a feature's or

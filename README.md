@@ -839,7 +839,7 @@ owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going the
 owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
 owl issue new <title…>                file an issue in linear.team, assigned to you
 owl project                           the projects you work in; a table when stdout is not a terminal
-owl project open <id> [--prompt TEXT] open (or focus) the project's conversation; <id> is Linear's slug or a fragment of the name
+owl project open <id> [--prompt TEXT] open (or focus) the project's conversation; <id> is Linear's slug, its workspace's slug, or a fragment of the name
 owl project start <id> [--prompt TEXT] the same without going there
 owl project close [--force] <id>      remove the project's worktree and window; the session id is kept
 owl hoot <title…>                     the same, from the owl
@@ -857,7 +857,7 @@ has to guess from the shape of an id which kind of thing it acts on.
 |---|---|---|
 | git worktree | `<repo>/.worktrees.local/<name>` on a branch of the same name: `pr-<N>-<slug>` fetched from `pull/N/head`, or the issue's branch. A project's `proj-<slug>` is detached at the remote's default branch instead: it has no branch of its own, and its agent reads rather than commits | `open` creates, `close` removes |
 | window | same name, in the multiplexer, cwd the worktree, running `agent.cmd` | `open` creates, `close` kills |
-| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c`, or by `--session-id` for a project, whose id owl keeps in `$XDG_STATE_HOME/owl/projects.json` |
+| conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c`, or for a project with `--resume` and the id owl keeps in `$XDG_STATE_HOME/owl/projects.json`, when that conversation's own transcript is there |
 
 A prompt (`f`, a binding, `open --prompt`) is typed into the window as
 one line of keystrokes. If the agent has exited — the window is back at

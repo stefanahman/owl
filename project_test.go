@@ -338,3 +338,21 @@ func TestProjectRowFindsItsRenamedWorkspace(t *testing.T) {
 		t.Errorf("found a workspace the project was never opened under: %+v", ls)
 	}
 }
+
+// The list reads the project state with the local state, so a project
+// opened since the list started finds its workspace without a restart.
+func TestLocalMsgReadsTheProjectStates(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if err := saveProjectState("uuid-a76d38ca8527", projectState{Session: "s", Name: "Capture redesign draft", Workspace: "proj-capture-redesign-draft"}); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := model{}.Update(localMsg{"proj-capture-redesign-draft": {Worktree: "/wt"}})
+	m := next.(model)
+	if m.projectStates["uuid-a76d38ca8527"].Workspace != "proj-capture-redesign-draft" {
+		t.Errorf("project states after localMsg: %+v", m.projectStates)
+	}
+	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
+	if ls := m.localOf(visibleRow{project: &p}); ls.Worktree != "/wt" {
+		t.Errorf("the row did not find its workspace: %+v", ls)
+	}
+}

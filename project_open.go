@@ -24,7 +24,14 @@ import (
 // not belong in the repo.
 type projectState struct {
 	Session string `json:"session"` // the uuid owl passes to --session-id
-	Name    string `json:"name"`    // the project's name, for messages
+	// Name is the project's name at its first open. It is never updated:
+	// in a state from before Workspace was recorded, it is what the
+	// workspace's name comes from.
+	Name string `json:"name"`
+	// Workspace is the name the project's workspace goes by — its
+	// worktree's, its window's — recorded when owl creates or finds it,
+	// so a rename in Linear does not move it.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // projectStatePath is $XDG_STATE_HOME/owl/projects.json, else
@@ -115,9 +122,10 @@ func newSessionID() (string, error) {
 }
 
 // findProject resolves what the user typed to one project: Linear's
-// slug id, else a case-insensitive fragment of the name. Several
-// matches is an error naming them — guessing between projects would
-// open the wrong conversation.
+// slug id, the slug in its workspace's name (the one recorded, or the
+// one its current name gives), else a case-insensitive fragment of the
+// name. Several matches is an error naming them — guessing between
+// projects would open the wrong conversation.
 func findProject(tracker Tracker, id string) (Project, error) {
 	// An id resolves on its own, and that is the path the list uses:
 	// one lookup instead of every project the user works in, with all
@@ -130,13 +138,12 @@ func findProject(tracker Tracker, id string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	// The slug of a project's first name resolves as well as its
-	// current one: it is what its workspace is still called after a
-	// rename, and so what the user reads in the window list.
+	// The workspace's slug resolves as well as the current name's: it
+	// is what the window list shows after a rename.
 	states := loadProjectStates()
 	var byName []Project
 	for _, p := range all {
-		if p.SlugID == id || slices.Contains(projectNames(p, states[p.ID]), "proj-"+id) {
+		if p.SlugID == id || slices.Contains(projectNames(p, states[p.ID], takenNames(states, p.ID)), "proj-"+id) {
 			return p, nil
 		}
 		if strings.Contains(strings.ToLower(p.Name), strings.ToLower(id)) {
@@ -172,58 +179,56 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	if err != nil {
 		return err
 	}
-	// The state comes first: it holds the name the project had when it
-	// was first opened, which is what its worktree is called if it has
-	// been renamed in Linear since. Read after the lookup, it was there
-	// and unused, and the open made a second worktree beside the first.
-	st := loadProjectStates()[p.ID]
-	names := projectNames(p, st)
+	// The lock is the workspace's, named from the state as it is now;
+	// the state is read again once it is held. A second open of a
+	// project never opened, waiting here while the first saves its
+	// session id, would otherwise mint a second id over it — and the
+	// transcript on disk is the first one's.
+	before := loadProjectStates()
+	names := projectNames(p, before[p.ID], takenNames(before, p.ID))
 	unlock, err := lockWorkspace(repo, names[0])
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	wt, name, err := ensureProjectWorktree(cfg, repo, names, out)
+	states := loadProjectStates()
+	st := states[p.ID]
+	names = projectNames(p, st, takenNames(states, p.ID))
+	wt, name, err := ensureProjectWorktree(cfg, repo, names, st.Session, out)
 	if err != nil {
 		return err
 	}
 
 	// The session id is owl's, not Claude's to pick: a project resumes
 	// as the same conversation every time, and the forks below it will
-	// resume from a known parent.
-	if st.Session == "" {
-		session, err := newSessionID()
-		if err != nil {
-			return err
+	// resume from a known parent. Where its workspace is goes beside it.
+	if st.Session == "" || st.Workspace != name {
+		if st.Session == "" {
+			session, err := newSessionID()
+			if err != nil {
+				return err
+			}
+			st = projectState{Session: session, Name: p.Name}
 		}
-		st = projectState{Session: session, Name: p.Name}
+		st.Workspace = name
 		if err := saveProjectState(p.ID, st); err != nil {
 			return err
 		}
 	}
-	// --resume only when the conversation is actually on disk. The id
-	// alone proves nothing: the worktree may have been closed before
-	// Claude ever wrote a session, and resuming one that does not exist
-	// fails where starting it with the same id succeeds.
-	agentArgs := []string{"--session-id", st.Session}
-	if hasConversationFor(wt) {
-		agentArgs = []string{"--resume", st.Session}
-	}
-	// The conversation is named for the project as Linear has it now,
-	// on every open: the workspace keeps the name of the first open, so
-	// after a rename this is where the current one shows — Claude's
-	// prompt box, its /resume picker and the terminal title, which is
-	// what a multiplexer's tab and cmux-describe read. On a resume it
-	// adds a newer title, which is the one Claude shows. Quoted, since
-	// startLine joins the arguments into a shell line as they are.
-	agentArgs = append(agentArgs, "--name", shellQuote(p.Name))
 
 	ws := workspace{
-		label: p.Name,
-		name:  name,
-		dir:   wt,
-		first: strings.ReplaceAll(cfg.Project.Prompt, "{name}", p.Name),
-		args:  agentArgs,
+		label:   p.Name,
+		name:    name,
+		dir:     wt,
+		first:   strings.ReplaceAll(cfg.Project.Prompt, "{name}", p.Name),
+		session: st.Session,
+		// The conversation is named for the project as Linear has it
+		// now, on every open: the workspace keeps the name it was made
+		// under, so after a rename this is where the current one shows —
+		// Claude's prompt box, its /resume picker and the terminal
+		// title, which a multiplexer's tab and cmux-describe read. On a
+		// resume it adds a newer title, which is the one Claude shows.
+		args: []string{"--name", shellQuote(p.Name)},
 		env: map[string]string{
 			"OWL_PROJECT":         p.Name,
 			"OWL_PROJECT_SLUG":    p.SlugID,
@@ -235,18 +240,23 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 
 // ensureProjectWorktree returns the project's worktree and the name it
 // goes by: the first of names a worktree already carries, in order, or
-// else one created detached at the remote's default branch — under the
-// first of names Claude holds a conversation for, and names[0] when it
-// holds none. A conversation moved to the new name by hand, with its
-// worktree, is where the worktree comes back.
+// else one created detached at the remote's default branch — where
+// Claude holds the project's conversation (its session's transcript),
+// under one of names or under any proj- name a project renamed more
+// than once last used, and under names[0] when there is none.
 //
 // Detached, because the default branch is checked out in the main
 // worktree already and git refuses the same branch twice — and because
 // a project's agent reads, plans and dispatches. The work goes on the
 // issues' branches; this one has nothing to commit.
-func ensureProjectWorktree(cfg Config, repo string, names []string, out io.Writer) (string, string, error) {
+func ensureProjectWorktree(cfg Config, repo string, names []string, session string, out io.Writer) (string, string, error) {
+	found := sessionWorkspace(repo, cfg.WorktreesDir, session)
+	look := names
+	if found != "" && !slices.Contains(names, found) {
+		look = append(slices.Clone(names), found)
+	}
 	if list, err := listWorktrees(repo); err == nil {
-		for _, name := range names {
+		for _, name := range look {
 			for _, w := range list {
 				if !w.Prunable && filepath.Base(w.Path) == name {
 					return w.Path, name, nil
@@ -262,11 +272,10 @@ func ensureProjectWorktree(cfg Config, repo string, names []string, out io.Write
 	}
 	_, _ = git(repo, "worktree", "prune")
 	name := names[0]
-	for _, n := range names {
-		if hasConversationFor(filepath.Join(repo, cfg.WorktreesDir, n)) {
-			name = n
-			break
-		}
+	if i := slices.IndexFunc(names, func(n string) bool { return hasSession(filepath.Join(repo, cfg.WorktreesDir, n), session) }); i >= 0 {
+		name = names[i]
+	} else if found != "" {
+		name = found
 	}
 	wt := filepath.Join(repo, cfg.WorktreesDir, name)
 	base := defaultBranch(repo, cfg.Remote)
@@ -289,9 +298,38 @@ func runProjectClose(cfg Config, tracker Tracker, args []string, out io.Writer) 
 	if err != nil {
 		return err
 	}
-	// Either of its names, so a project renamed since it was opened is
-	// still found; the lock is the one open takes.
-	names := projectNames(p, loadProjectStates()[p.ID])
-	isIt := func(n string) bool { return slices.Contains(names, n) }
-	return closeWorkspace(cfg, newWindows(cfg, projects), names[0], isIt, force, out)
+	// One workspace, the one open would use: the first of its names a
+	// worktree carries, else the first a window does. Matching either
+	// name would let the window come from one workspace and the worktree
+	// from the other, where a project has both. The lock is open's.
+	states := loadProjectStates()
+	names := projectNames(p, states[p.ID], takenNames(states, p.ID))
+	mx := newWindows(cfg, projects)
+	name := names[0]
+	if repo, err := mainRepo("."); err == nil {
+		name = pickProjectWorkspace(repo, cfg.WorktreesDir, names, mx.Windows())
+	}
+	isIt := func(n string) bool { return n == name }
+	return closeWorkspace(cfg, mx, names[0], isIt, force, out)
+}
+
+// pickProjectWorkspace is the first of names a worktree under
+// worktreesDir carries, else the first a window does, else names[0].
+func pickProjectWorkspace(repo, worktreesDir string, names, windows []string) string {
+	if list, err := listWorktrees(repo); err == nil {
+		dir := filepath.Join(repo, worktreesDir)
+		for _, n := range names {
+			for _, w := range list {
+				if !w.Prunable && filepath.Dir(w.Path) == dir && filepath.Base(w.Path) == n {
+					return n
+				}
+			}
+		}
+	}
+	for _, n := range names {
+		if slices.Contains(windows, n) {
+			return n
+		}
+	}
+	return names[0]
 }

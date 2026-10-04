@@ -78,10 +78,15 @@ type workspace struct {
 	dir   string            // the worktree
 	first string            // the agent's prompt for a fresh conversation
 	env   map[string]string // the scope's variables for after_open
-	// args are flags for the agent command, before the prompt. A
-	// project passes --session-id or --resume: owl keeps the id of that
-	// conversation, so it resumes as itself rather than as whatever
-	// `-c` finds most recent in the worktree.
+	// session is the conversation's id where owl keeps one — a
+	// project's. The agent starts with --session-id, or --resume when
+	// that conversation is on disk: its own transcript, not any in the
+	// worktree, since resuming an id with no transcript fails. Without
+	// one, a review or a feature resumes with `-c`.
+	session string
+	// args are more flags for the agent command, before the prompt — a
+	// project's --name. startLine joins them into a shell line as they
+	// are, so each is shell-quoted already.
 	args []string
 }
 
@@ -97,6 +102,15 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	}
 
 	resume := hasConversationFor(ws.dir)
+	args := ws.args
+	if ws.session != "" {
+		resume = hasSession(ws.dir, ws.session)
+		flag := "--session-id"
+		if resume {
+			flag = "--resume"
+		}
+		args = append([]string{flag, ws.session}, ws.args...)
+	}
 	where := mx.Describe(ws.name)
 	// The text the agent starts on: the caller's prompt, or the
 	// workspace's own first one when a fresh conversation has none. A
@@ -114,7 +128,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	}
 	switch {
 	case !slices.Contains(mx.Windows(), ws.name):
-		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, file, resume, ws.args...)); err != nil {
+		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, file, resume, args...)); err != nil {
 			return err
 		}
 		if resume {
@@ -128,7 +142,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, file, resume, ws.args...)); err != nil {
+		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, file, resume, args...)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)

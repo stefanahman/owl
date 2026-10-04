@@ -48,7 +48,8 @@ The mode is a default per project, kept in the repo (`.owl/projects.json`,
 structured so a session updates it without prose to preserve), and
 overridable per invocation. Projects change mode as the work changes.
 
-Workspace names: `proj-<slug>` from Linear's project slug, beside
+Workspace names: `proj-<slug>` from the project's name (Linear's slug
+id is hex, unreadable in a window list), beside
 `pr-<N>` and `<key>-<slug>`. One more branch of `isWorkspaceName`, one
 more `scope` value whose windows live in `project.session`.
 
@@ -214,15 +215,26 @@ not mean a new workspace. Claude keeps a conversation by the absolute
 path of its directory, so a worktree under a new slug starts the
 conversation over and leaves the transcript behind under the old one.
 
-So the workspace keeps the name the project had when owl first opened
-it. `projects.json` holds that name beside the session id, keyed by the
-project's Linear UUID, which a rename leaves alone. Open, close and the
-list's `⎇` and `©` look for the slug of the first name, then the slug
-of the current one. When neither worktree exists, open creates it under
-the one Claude holds a conversation for, else the first, so a project
-closed and then renamed comes back where its conversation is. The
-first name's slug resolves as `<id>` too, since it is what the window
-list shows.
+So the workspace keeps the name it was made under. `projects.json`
+records it beside the session id, keyed by the project's Linear UUID,
+which a rename leaves alone; a state from before it recorded one has
+the project's name at its first open, and the name comes from that.
+Open, close and the list's `⎇` and `©` look for the recorded name, then
+the one the current name gives, and close takes the one open would
+use, window and worktree together. The recorded name's slug resolves as
+`<id>` too, since it is what the window list shows.
+
+When the worktree is gone, open makes it again where the project's
+conversation is: the directory holding its session's own transcript,
+under either name or under any `proj-` name, which is where a project
+renamed more than once last had it. Another transcript in the directory
+is not this project's, and resuming an id with no transcript fails, so
+owl starts the conversation fresh with its id instead.
+
+A name another project holds is not this one's to use. A project
+renamed away from "X" keeps `proj-x`, and a project named "X" since
+gets `proj-x-<slug id>`. A name with no letter or digit to slug is
+named for Linear's slug id.
 
 The name it has now goes on the conversation instead. owl passes the
 title as `--name` on every open, and on a resume Claude records it as a
@@ -231,25 +243,6 @@ title follow Linear while the workspace stays where it is. A
 multiplexer that shows the terminal title in its tab shows it there;
 cmux's workspace description gets it from a `Stop` hook that copies
 the title across, as eden's `cmux-describe` does.
-
-The current name is the fallback for a worktree and conversation moved
-to the new slug by hand, which is what this section used to say to do.
-A worktree under neither name is not found: renamed twice and moved to
-the middle name, say. Move it, and its conversation, to either one:
-
-```sh
-# from the repo root — a project's worktree is detached and clean
-git worktree move .worktrees.local/proj-<slug> .worktrees.local/proj-<first-slug>
-
-# Claude Code keys the conversation by the worktree's absolute path with
-# every non-alphanumeric character replaced by a dash, so
-#   /Users/me/src/app/.worktrees.local/proj-x
-# is
-#   -Users-me-src-app--worktrees-local-proj-x
-# in $CLAUDE_CONFIG_DIR/projects when that is set, ~/.claude/projects
-# otherwise.
-mv ~/.claude/projects/<encoded-from> ~/.claude/projects/<encoded-to>
-```
 
 ## Open
 

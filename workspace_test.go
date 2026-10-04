@@ -912,37 +912,57 @@ func TestProjectSlug(t *testing.T) {
 }
 
 func TestMatchesProject(t *testing.T) {
-	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign"}
+	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
 	current, first := "proj-sequential-capture-redesign", "proj-capture-redesign-draft"
+	none := map[string]bool{}
 
 	// Never opened: only the name it has.
-	if got := projectNames(p, projectState{}); !reflect.DeepEqual(got, []string{current}) {
+	if got := projectNames(p, projectState{}, none); !reflect.DeepEqual(got, []string{current}) {
 		t.Errorf("never opened: %v", got)
 	}
 	// Opened under the name it still has: one name, not the same twice.
-	if got := projectNames(p, projectState{Name: p.Name}); !reflect.DeepEqual(got, []string{current}) {
+	if got := projectNames(p, projectState{Name: p.Name}, none); !reflect.DeepEqual(got, []string{current}) {
 		t.Errorf("not renamed: %v", got)
 	}
 	// Renamed since: the first name before the current one.
 	renamed := projectState{Name: "Capture redesign draft"}
-	if got := projectNames(p, renamed); !reflect.DeepEqual(got, []string{first, current}) {
+	if got := projectNames(p, renamed, none); !reflect.DeepEqual(got, []string{first, current}) {
 		t.Errorf("renamed: %v", got)
 	}
 	for _, name := range []string{first, current} {
-		if !matchesProject(name, p, renamed) {
+		if !matchesProject(name, p, renamed, none) {
 			t.Errorf("%s is not the renamed project's", name)
 		}
 	}
-	if matchesProject("proj-sequential", p, renamed) {
+	if matchesProject("proj-sequential", p, renamed, none) {
 		t.Error("a prefix of the name matches")
 	}
+	// A recorded workspace wins over the name of the first open: it is
+	// where the worktree is, wherever that came from.
+	if got := projectNames(p, projectState{Name: "Capture redesign draft", Workspace: "proj-moved-by-hand"}, none); !reflect.DeepEqual(got, []string{"proj-moved-by-hand", current}) {
+		t.Errorf("recorded: %v", got)
+	}
 
-	// A name with no letter or digit slugs to "", as projectSlugOf
-	// answers for every name that is not a project's: comparing slugs,
-	// every review and feature was this project's.
-	blank := Project{ID: "uuid-blank", Name: "  "}
-	for _, name := range []string{"pr-42", "bar-4159-thing", current} {
-		if matchesProject(name, blank, projectState{}) {
+	// A name another project holds is not this one's. Here its only
+	// name is taken, so it gets Linear's slug id on the end.
+	taken := takenNames(map[string]projectState{"uuid-other": {Name: "Sequential Capture redesign"}}, p.ID)
+	if got := projectNames(p, projectState{}, taken); !reflect.DeepEqual(got, []string{current + "-a76d38ca8527"}) {
+		t.Errorf("taken: %v", got)
+	}
+	if matchesProject(current, p, projectState{}, taken) {
+		t.Error("the project matches the other one's workspace")
+	}
+
+	// A name with no letter or digit has no slug; the workspace is named
+	// for Linear's slug id instead — `proj-` alone is no project's name,
+	// so the list would never find it, and two such projects would share
+	// it.
+	blank := Project{ID: "uuid-blank", Name: "  ", SlugID: "0ff1ce0ff1ce"}
+	if got := projectNames(blank, projectState{}, none); !reflect.DeepEqual(got, []string{"proj-0ff1ce0ff1ce"}) || projectSlugOf(got[0]) == "" {
+		t.Errorf("no letters: %v", got)
+	}
+	for _, name := range []string{"pr-42", "bar-4159-thing", current, "proj-"} {
+		if matchesProject(name, blank, projectState{}, none) {
 			t.Errorf("%s matches a project whose name has no letters", name)
 		}
 	}
