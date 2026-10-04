@@ -592,17 +592,22 @@ func linkLocal(globs []string, repo, wt string) error {
 	return nil
 }
 
+// promptFile is where a prompt was written, as a type of its own: the
+// parameter it fills used to hold the prompt itself, and text passed
+// where a path belongs would otherwise compile and quietly ask the
+// shell to `cat` the whole prompt as a filename.
+type promptFile string
+
 // startLine composes the shell line that starts the agent: the
 // configured command, the workspace's own flags, `-c` to resume a
 // prior conversation, then the prompt — the explicit one, or first for
-// a fresh conversation. A resumed conversation without an explicit
-// prompt gets none: the agent shows the transcript and waits.
+// a fresh conversation — read out of its file rather than written into
+// the line. A resumed conversation without an explicit prompt gets
+// none: the agent shows the transcript and waits.
 //
 // `-c` is skipped when the flags already say which conversation to
 // resume. A project names its session, and `-c` would reopen whatever
 // ran last in that worktree instead.
-// startLine is the command line that starts the agent, with the prompt
-// read out of promptFile rather than written into the line.
 //
 // The prompt used to be quoted into the line itself, and the line is
 // typed into the workspace's shell one character at a time. Past a few
@@ -618,12 +623,6 @@ func linkLocal(globs []string, repo, wt string) error {
 // prompt's own newlines, which the old path had to flatten to survive —
 // so an agent now gets the markdown it was written, headings and code
 // blocks and all.
-// promptFile is where a prompt was written, as a type of its own: the
-// parameter it fills used to hold the prompt itself, and text passed
-// where a path belongs would otherwise compile and quietly ask the
-// shell to `cat` the whole prompt as a filename.
-type promptFile string
-
 func startLine(cmd string, prompt promptFile, resume bool, args ...string) string {
 	line := cmd
 	for _, a := range args {
