@@ -461,7 +461,17 @@ func mergeBindings(defaults, user []Binding) []Binding {
 // feedbackPrompt is what the shipped `f` binding sends. Two-pass
 // self-critique + a RESOLVED taxonomy, calm tenor: encouraging
 // language increases deliberation, urgency causes shortcuts.
-const feedbackPrompt = "Please carefully check the feedback since your last review — take your time. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
+//
+// It opens on whether the code changed at all, because the list cannot
+// say: a PR is waiting for you when its head is not the commit your
+// review covers, and a rebase moves the head as surely as a fix does.
+// How the branch moved is no help either — a fix for review feedback is
+// a fixup squashed into its commit, so it arrives as a force push just
+// as a rebase does. The PR's whole diff at both commits can tell: with
+// no context lines a rebase leaves its patch-id alone, where with them
+// a neighbouring line on main would change it. range-diff alone would
+// not do, since it reports a squash as changed commits.
+const feedbackPrompt = "Please carefully check the feedback since your last review — take your time. The author may have rewritten the branch since, so first find out whether the code changed. gh pr view {pr} --json reviews,headRefOid,baseRefName gives the commit your last review covers (the newest review by the account gh is signed in as), the PR's head and its base branch: fetch all three. Then run git diff -U0 <remote>/<base>...<commit> | git patch-id --stable for the reviewed commit and for the head: the same id means a rebase or a squash moved the code and changed none of it. When the ids differ, git range-diff <remote>/<base> <reviewed commit> <head> shows which commits changed. The worktree may still hold the commit you reviewed, so read the code at the head. First pass: check whether each prior finding is resolved (file:line evidence). Second pass: critique your own conclusions and drop weak claims. Output: SINCE YOUR REVIEW (unchanged only when the ids match; otherwise the commits and files that changed) / RESOLVED / STILL BROKEN / NEW CONCERNS / new verdict."
 
 // reviewPrompt is what the shipped `f` sends on an issue: the other
 // side of feedback from the PR list's.

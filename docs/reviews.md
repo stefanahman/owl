@@ -19,6 +19,19 @@ cache until the live one lands (one per repo, or one for the list across
 | `[draft]` | a draft PR |
 | a dim row | your **team** was asked, you were not |
 
+## A push after your review
+
+Any new head puts a PR you reviewed under waiting for you, a rebase
+included. owl does not try to tell the two apart, because how the
+branch moved says nothing about the code: a fix for review feedback is
+a fixup squashed into its commit, so it arrives as a force push exactly
+as a rebase does. The shipped `f` settles it first. The PR's Claude
+diffs the commit your review covers and the head against the base, with
+no context lines, and compares their `git patch-id`: the same id means a
+rebase or a squash moved the code and changed none of it, and otherwise
+`git range-diff` names the commits that changed. Its answer opens with
+that, before the findings.
+
 ## Asked of you, or of your team
 
 GitHub's review request is one of two things wearing the same face: a
