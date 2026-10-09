@@ -223,7 +223,8 @@ project, having no key, is asked of each workspace in turn.
 
 **The issue and project lists show one workspace at a time**, and
 `tab` moves to the next in the config's order, the last back to the
-first: with the two above, stefanahman → norrbrunn → stefanahman. A
+first: with the two above, stefanahman → norrbrunn → stefanahman.
+`shift+tab` goes the other way (`keys.pane` and `keys.pane_back`). A
 company's work and your own, interleaved by recency, read as one list
 badly. Both are already fetched, so the switch is instant. The title names
 every workspace in that order, the one showing lit and the others dim

@@ -56,9 +56,10 @@ requests that exist, none of them yours, at least one a team's.
 
 The PR list has two, because "what needs my review" and "what is
 stopping mine from landing" are different questions with different
-answers and different keys. `tab` moves between them; the pane you are
-not driving goes dim, so which one has the keys is never in doubt. Each
-keeps its own cursor, so coming back lands where you left.
+answers and different keys. `tab` moves between them, and so does
+`shift+tab`; the pane you are not driving goes dim, so which one has
+the keys is never in doubt. Each keeps its own cursor, so coming back
+lands where you left.
 
 **The panes do not move.** The review queue is always above, yours
 always below, and `tab` changes only the highlight — a pane that

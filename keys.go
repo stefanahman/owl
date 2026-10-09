@@ -24,6 +24,7 @@ type keyMap struct {
 	Next     key.Binding
 	Cleanup  key.Binding
 	Pane     key.Binding
+	PaneBack key.Binding // Pane the other way; in the help beside Pane, not on a line of its own
 	Drill    key.Binding
 	Back     key.Binding
 	Search   key.Binding
@@ -54,6 +55,7 @@ func newKeyMap(k KeysConfig, bindings []Binding) keyMap {
 		Next:     bind(k.Next, "next attention-needed"),
 		Cleanup:  bind(k.Cleanup, "clean up worktree"),
 		Pane:     bind(k.Pane, "other pane"),
+		PaneBack: bind(k.PaneBack, "other pane"),
 		Drill:    bind(k.Drill, "the project's issues"),
 		Back:     bind(k.Back, "back"),
 		Search:   bind(k.Search, "search"),

@@ -341,8 +341,8 @@ func TestTabStepsThroughWorkspaces(t *testing.T) {
 	if got := stripANSI(m.projectCountsSummary()); !strings.HasPrefix(got, "2 projects") {
 		t.Errorf("counts: %q, want 2 projects", got)
 	}
-	if !m.keys.Pane.Enabled() || m.keys.Pane.Help().Desc != "next Linear workspace" {
-		t.Errorf("Tab's help reads %q, enabled %v", m.keys.Pane.Help().Desc, m.keys.Pane.Enabled())
+	if h := m.keys.Pane.Help(); !m.keys.Pane.Enabled() || h.Key != "tab/shift+tab" || h.Desc != "next/previous Linear workspace" {
+		t.Errorf("Tab's help reads %q %q, enabled %v", h.Key, h.Desc, m.keys.Pane.Enabled())
 	}
 
 	m = tab(t, m)
@@ -394,8 +394,8 @@ func TestTabWithOneWorkspace(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	m := newProjectModel(defaultConfig(), "acme/app", nil, nil)
 	m.projects, m.ready = fixtureProjects(), true
-	if m.keys.Pane.Enabled() {
-		t.Error("one workspace: Tab is still in the help")
+	if m.keys.Pane.Enabled() || m.keys.PaneBack.Enabled() {
+		t.Error("one workspace: Tab or Shift+Tab is still live")
 	}
 	if m = tab(t, m); m.onlyWorkspace != "" || len(shownProjects(m)) != 4 {
 		t.Errorf("one workspace: Tab narrowed the list to %q", m.onlyWorkspace)
@@ -453,5 +453,47 @@ func TestTabInADrillDoesNothing(t *testing.T) {
 	m.drill = &m.projects[0]
 	if m = tab(t, m); m.onlyWorkspace != "stefanahman" {
 		t.Errorf("Tab in a drill moved the list to %q", m.onlyWorkspace)
+	}
+}
+
+func shiftTab(t *testing.T, m model) model {
+	t.Helper()
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	return next.(model)
+}
+
+// TestShiftTabStepsBack: Shift+Tab is Tab the other way, wrapping at
+// either end. Three workspaces, because with two the two directions
+// land in the same place.
+func TestShiftTabStepsBack(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "a"}, {Name: "b"}, {Name: "c"}}
+	m := newProjectModel(cfg, "acme/app", nil, nil)
+	m.ready = true
+	var got []string
+	for _, step := range []func(*testing.T, model) model{shiftTab, shiftTab, shiftTab, tab, tab} {
+		m = step(t, m)
+		got = append(got, m.onlyWorkspace)
+	}
+	if want := []string{"c", "b", "a", "b", "c"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("from a, shift+tab ×3 then tab ×2 visits %v, want %v", got, want)
+	}
+}
+
+// TestShiftTabSwitchesPanes: on the PR list there are two panes, and
+// the other one is the other one whichever way round you go.
+func TestShiftTabSwitchesPanes(t *testing.T) {
+	m := newModel(defaultConfig(), "acme/app", nil)
+	m.me = "me"
+	m.prs = []PR{{Number: 1, Title: "theirs", HeadRefName: "a"}}
+	m.mine = []PR{ownPR(9, "APPROVED", "SUCCESS", "MERGEABLE", 0, false)}
+	m.width, m.height, m.ready = 140, 30, true
+	m.resizeViewport()
+	if m = shiftTab(t, m); !m.mineFocus {
+		t.Error("shift+tab did not move to the mine pane")
+	}
+	if m = shiftTab(t, m); m.mineFocus {
+		t.Error("shift+tab did not move back to the review pane")
 	}
 }

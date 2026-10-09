@@ -578,6 +578,7 @@ type KeysConfig struct {
 	Next     keyNames `yaml:"next"`
 	Cleanup  keyNames `yaml:"cleanup"`
 	Pane     keyNames `yaml:"pane"`
+	PaneBack keyNames `yaml:"pane_back"`
 	Drill    keyNames `yaml:"drill"`
 	Back     keyNames `yaml:"back"`
 	Search   keyNames `yaml:"search"`
@@ -602,6 +603,7 @@ func (k KeysConfig) each(fn func(action string, keys keyNames)) {
 	fn("next", k.Next)
 	fn("cleanup", k.Cleanup)
 	fn("pane", k.Pane)
+	fn("pane_back", k.PaneBack)
 	fn("drill", k.Drill)
 	fn("back", k.Back)
 	fn("search", k.Search)
@@ -701,7 +703,8 @@ func defaultConfig() Config {
 		PageUp: keyNames{"pgup", "ctrl+u"}, PageDown: keyNames{"pgdown", "ctrl+d"},
 		Open: keyNames{"enter"}, Start: keyNames{"s"}, Browser: keyNames{"o"},
 		Yank: keyNames{"y"}, Next: keyNames{"n"}, Cleanup: keyNames{"c"},
-		Pane: keyNames{"tab"}, Drill: keyNames{"right"}, Back: keyNames{"left"},
+		Pane: keyNames{"tab"}, PaneBack: keyNames{"shift+tab"},
+		Drill: keyNames{"right"}, Back: keyNames{"left"},
 		Search: keyNames{"/"}, Cancel: keyNames{"esc"}, Refresh: keyNames{"r"}, Help: keyNames{"?"},
 		Quit: keyNames{"q", "ctrl+c"},
 	}

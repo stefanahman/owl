@@ -4,7 +4,7 @@
 |---|---|---|---|
 | `↓`/`j` `↑`/`k` `g` `G` `pgup` `pgdn` | move; section headers are skipped | the same | the same |
 | `n` | next PR that needs you: todo, or Claude blocked or done | next issue whose Claude needs you | next project whose Claude needs you |
-| `tab` | the other pane: to review, or your own | with several Linear workspaces, the next one; the list shows one at a time | the same |
+| `tab` `shift+tab` | the other pane: to review, or your own | with several Linear workspaces, the next or the previous one; the list shows one at a time | the same |
 | `↵` | open (or focus) the review workspace, then `on_open` | open (or focus) the feature workspace | open (or focus) the project's conversation |
 | `s` | start the workspace and stay in the list — no `on_open`, no `after_open`; press it on one row after another | the same | the same |
 | `f` | send the check-feedback prompt to the PR's Claude and stay; only on a PR with a conversation | — | — |

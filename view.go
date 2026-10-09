@@ -450,7 +450,7 @@ func (m model) render() string {
 		// empty desk.
 		where := ""
 		if m.onlyWorkspace != "" && m.drill == nil {
-			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.keys.Pane.Help().Key)
+			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.cfg.Keys.Pane.label())
 		}
 		switch {
 		case m.search.Value() != "":

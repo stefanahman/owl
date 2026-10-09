@@ -323,7 +323,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.cursor = m.lastPRRowIndex()
 		m.refreshList()
-	case key.Matches(msg, m.keys.Pane):
+	case key.Matches(msg, m.keys.Pane), key.Matches(msg, m.keys.PaneBack):
+		// With two panes the other one is the other one either way round.
 		if m.panes() {
 			// The cursors swap with the focus, so each pane comes back to
 			// the row you left it on.
@@ -336,9 +337,13 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.refreshList()
 		} else if m.cyclesWorkspaces() {
 			// The issue and project lists have no panes; their Tab is the
-			// workspaces, one at a time. Saved now rather than only on
+			// workspaces, one at a time, and Shift+Tab the same backwards. Saved now rather than only on
 			// exit: a popup the multiplexer closes never reaches the exit.
-			m.onlyWorkspace = m.nextWorkspace()
+			step := 1
+			if key.Matches(msg, m.keys.PaneBack) {
+				step = -1
+			}
+			m.onlyWorkspace = m.stepWorkspace(step)
 			m.cursor = m.firstPRRowIndex()
 			m.refreshList()
 			m.persistCache()

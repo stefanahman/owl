@@ -200,20 +200,21 @@ func (m model) multiWorkspace() bool { return len(m.cfg.Linear) > 1 }
 // every row shows.
 func (m model) shows(ws string) bool { return m.onlyWorkspace == "" || ws == m.onlyWorkspace }
 
-// cyclesWorkspaces reports whether Tab steps through the workspaces
-// here. The PR list's Tab is its panes, and a drilled project is one
+// cyclesWorkspaces reports whether Tab and Shift+Tab step through the
+// workspaces here. The PR list's Tab is its panes, and a drilled project is one
 // workspace already.
 func (m model) cyclesWorkspaces() bool {
 	return m.kind != "pr" && m.drill == nil && m.multiWorkspace()
 }
 
-// nextWorkspace is where Tab goes: the next workspace in the config's
-// order, and after the last the first again.
-func (m model) nextWorkspace() string {
+// stepWorkspace is where Tab (step 1) and Shift+Tab (step -1) go: the
+// next or previous workspace in the config's order, wrapping round at
+// either end.
+func (m model) stepWorkspace(step int) string {
 	all := m.cfg.Linear
 	for i, ws := range all {
 		if ws.Name == m.onlyWorkspace {
-			return all[(i+1)%len(all)].Name
+			return all[((i+step)%len(all)+len(all))%len(all)].Name
 		}
 	}
 	return all[0].Name
@@ -235,15 +236,17 @@ func (m model) configuredWorkspace(name string) string {
 	return m.cfg.Linear[0].Name
 }
 
-// labelWorkspaceKey names Tab on the issue and project lists. With one
-// workspace there is nothing to step through, so the key is switched
-// off and leaves the help.
+// labelWorkspaceKey names Tab and Shift+Tab on the issue and project
+// lists, as one line of the help: two lines for one key read both
+// ways would be a line of noise. With one workspace there is nothing
+// to step through, so both keys are switched off and leave the help.
 func (m *model) labelWorkspaceKey() {
 	if !m.multiWorkspace() {
 		m.keys.Pane.SetEnabled(false)
+		m.keys.PaneBack.SetEnabled(false)
 		return
 	}
-	m.keys.Pane.SetHelp(m.keys.Pane.Help().Key, "next Linear workspace")
+	m.keys.Pane.SetHelp(m.keys.Pane.Help().Key+"/"+m.keys.PaneBack.Help().Key, "next/previous Linear workspace")
 }
 
 // workspaceTabs names every configured Linear workspace for the title

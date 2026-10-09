@@ -90,6 +90,7 @@ keys:                            # one key name or a list; names as bubbletea sp
   yank: y
   next: n
   pane: tab                       # owl pr: the other pane; issue and project lists: the next Linear workspace
+  pane_back: shift+tab            # the same, the other way: the previous Linear workspace
   drill: right                    # on a project row: its issues, grouped by milestone
   back: left                      # back out of a drilled list
   cleanup: c
