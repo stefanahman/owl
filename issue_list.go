@@ -200,7 +200,7 @@ func (m model) visibleIssueRows() []visibleRow {
 	for _, sec := range m.issueSections() {
 		var members []Issue
 		for _, is := range all {
-			if !contains(sec.types, is.State.Type) || !matches(is) {
+			if !contains(sec.types, is.State.Type) || !matches(is) || !m.shows(is.Workspace) {
 				continue
 			}
 			// The window is the query's, but a cache read from an earlier
@@ -461,12 +461,17 @@ func (p PR) anyApproved() bool {
 // issueCountsSummary is the idle-state action row of the issue list.
 func (m model) issueCountsSummary() string {
 	counts := map[string]int{}
+	n := 0
 	for _, is := range m.issues {
+		if !m.shows(is.Workspace) {
+			continue
+		}
+		n++
 		counts[is.State.Type]++
 	}
 	return styleDim.Render(fmt.Sprintf(
 		"%d open · %d in progress · %d todo · %d backlog",
-		len(m.issues),
+		n,
 		counts["started"],
 		counts["unstarted"]+counts["triage"],
 		counts["backlog"],

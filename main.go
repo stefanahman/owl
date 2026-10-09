@@ -98,6 +98,10 @@ type model struct {
 	// here narrows the list to m.repo even where owners would span more,
 	// for the times you want this repo and not the whole desk.
 	here bool
+	// onlyWorkspace narrows the issue and project lists to one Linear
+	// workspace, by its configured name; "" shows them all. Tab steps
+	// through them, and the cache remembers where it stopped.
+	onlyWorkspace string
 	// paneChosen is set once Tab has been pressed. Until then the list
 	// may land the focus on whichever pane has rows; after it, the
 	// reader has said which pane they want and a fetch landing must not
@@ -241,10 +245,14 @@ func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCac
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open project in Linear")
 	m.keys.Yank.SetHelp(m.keys.Yank.Help().Key, "yank project name")
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, "close the project workspace")
+	m.labelWorkspaceKey()
 	if cache != nil {
 		m.projects = cache.Projects
 		m.doneProjects = cache.DoneProjects
 		m.issues = cache.Issues
+		// Before the cursor: the row it names is a row of this narrowed
+		// list, not of the whole one.
+		m.onlyWorkspace = m.configuredWorkspace(cache.Workspace)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
 		m.cursor = cache.Cursor
@@ -263,11 +271,13 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	// The legend names what the keys do here: features, not reviews.
 	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, "open feature")
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
+	m.labelWorkspaceKey()
 	if cache != nil {
 		m.issues = cache.Issues
 		m.doneIssues = cache.DoneIssues
 		m.cancelledIssues = cache.CancelledIssues
 		m.issuePRs = byIssueKey(cache.IssuePRs)
+		m.onlyWorkspace = m.configuredWorkspace(cache.Workspace)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
 		m.cursor = cache.Cursor
@@ -370,11 +380,11 @@ func (m model) fetches() []tea.Cmd {
 // best-effort.
 func (m model) persistCache() {
 	if m.kind == "project" {
-		saveProjectCache(projectCacheFile{Projects: m.projects, DoneProjects: m.doneProjects, Issues: m.issues, FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveProjectCache(projectCacheFile{Projects: m.projects, DoneProjects: m.doneProjects, Issues: m.issues, FetchedAt: m.lastFetched, Cursor: m.cursor, Workspace: m.onlyWorkspace})
 		return
 	}
 	if m.kind == "issue" {
-		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, CancelledIssues: m.cancelledIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor})
+		saveIssueCache(issueCacheFile{Issues: m.issues, DoneIssues: m.doneIssues, CancelledIssues: m.cancelledIssues, IssuePRs: flattenPRs(m.issuePRs), FetchedAt: m.lastFetched, Cursor: m.cursor, Workspace: m.onlyWorkspace})
 		return
 	}
 	saveCache(prCacheKey(m.cfg.PR, m.repo, m.here), cacheFile{

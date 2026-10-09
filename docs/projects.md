@@ -222,6 +222,18 @@ is more than one workspace to tell apart. `owl issue open DEV-12` is
 routed by the team its key names; a project, having no key, is asked
 of each workspace in turn.
 
+Merged is the default, not the only view. **`tab` narrows the issue
+and project lists to one workspace**, in the config's order, and the
+press after the last one brings all of them back: with the two above,
+all → stefanahman → norrbrunn → all. A narrowed list names its
+workspace in the title, drops the workspace column (every row would
+answer alike), and counts only what it shows. Each list remembers
+where `tab` left it beside the cursor, so the next popup opens on the
+same workspace — one `owl project`, switched in place, rather than one
+per workspace. A narrowed list with nothing in it says which workspace
+it looked in, so an empty workspace does not read as an empty desk. A
+drilled project is one workspace already, and `tab` does nothing there.
+
 A list asks for a name per workspace and refuses two that claim the
 same team key: one names the file a token caches into
 (`linear-<name>.token`), the other answers which workspace `DEV-12` is

@@ -89,7 +89,7 @@ keys:                            # one key name or a list; names as bubbletea sp
   browser: o
   yank: y
   next: n
-  pane: tab                       # move between the panes of a list; the inactive one dims
+  pane: tab                       # owl pr: the other pane; issue and project lists: the next Linear workspace
   drill: right                    # on a project row: its issues, grouped by milestone
   back: left                      # back out of a drilled list
   cleanup: c

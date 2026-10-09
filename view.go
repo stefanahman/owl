@@ -445,13 +445,21 @@ func (m model) render() string {
 		empty = empty && len(m.otherPaneRows()) == 0
 	}
 	if empty {
+		// A list Tab has narrowed says where it looked, and how to look
+		// elsewhere: an empty workspace must not read as an empty desk.
+		where := ""
+		if m.onlyWorkspace != "" && m.drill == nil {
+			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.keys.Pane.Help().Key)
+		}
 		switch {
 		case m.search.Value() != "":
-			b.WriteString(fmt.Sprintf("\nno %s match /%s\n", m.noun(), m.search.Value()))
+			b.WriteString(fmt.Sprintf("\nno %s match /%s%s\n", m.noun(), m.search.Value(), where))
+		case m.kind == "project" && where != "":
+			b.WriteString("\nno open projects of yours" + where + ".\n")
 		case m.kind == "project":
 			b.WriteString("\nno open projects you work in.\n")
 		case m.kind == "issue":
-			b.WriteString("\nno open issues assigned to you.\n")
+			b.WriteString("\nno open issues assigned to you" + where + ".\n")
 		default:
 			b.WriteString("\nno PRs need your review.\n")
 		}

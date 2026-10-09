@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // stubTracker is a workspace's worth of canned answers. The set does
@@ -343,5 +345,183 @@ func TestProjectLegendHasNoGap(t *testing.T) {
 	}
 	if strings.Contains(two.projectLegend(), "\n\n\n") {
 		t.Errorf("two workspaces: the legend has a double gap:\n%s", two.projectLegend())
+	}
+}
+
+// twoWorkspaceProjects is the fixture's projects split across the two
+// workspaces of the personal config: the first two stefanahman's, the
+// last two norrbrunn's.
+func twoWorkspaceProjects() []Project {
+	ps := fixtureProjects()
+	for i := range ps {
+		ps[i].Workspace = "stefanahman"
+		if i >= 2 {
+			ps[i].Workspace = "norrbrunn"
+		}
+	}
+	return ps
+}
+
+func tab(t *testing.T, m model) model {
+	t.Helper()
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	return next.(model)
+}
+
+// shownProjects is the names of the project rows showing, in order.
+func shownProjects(m model) []string {
+	var names []string
+	for _, row := range m.visibleProjectRows() {
+		if row.project != nil {
+			names = append(names, row.project.Name)
+		}
+	}
+	return names
+}
+
+// TestTabStepsThroughWorkspaces: on the project list Tab narrows to
+// each workspace in the config's order and then back to all of them.
+// A narrowed list names its workspace in the title, drops the column
+// every row would answer alike, and counts only what it shows.
+func TestTabStepsThroughWorkspaces(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}
+	m := newProjectModel(cfg, "acme/app", nil, nil)
+	m.projects, m.ready, m.width, m.height = twoWorkspaceProjects(), true, 200, 30
+	m.resizeViewport()
+	if got := len(shownProjects(m)); got != 4 {
+		t.Fatalf("before Tab: %d projects, want all 4", got)
+	}
+
+	m = tab(t, m)
+	if got := shownProjects(m); !reflect.DeepEqual(got, []string{"Sequential Capture redesign", "Bardo Backstage (BACKEND)"}) {
+		t.Errorf("first Tab shows %v, want stefanahman's two", got)
+	}
+	title := stripANSI(m.titleLine("acme/app"))
+	if !strings.Contains(title, "stefanahman") || strings.Contains(title, "norrbrunn") {
+		t.Errorf("narrowed title: %q, want stefanahman alone", title)
+	}
+	if got := m.projectCols().workspace; got != 0 {
+		t.Errorf("narrowed list kept a workspace column of %d cells", got)
+	}
+	if got := stripANSI(m.projectCountsSummary()); !strings.HasPrefix(got, "2 projects") {
+		t.Errorf("narrowed counts: %q, want 2 projects", got)
+	}
+	if !m.keys.Pane.Enabled() || m.keys.Pane.Help().Desc != "next Linear workspace" {
+		t.Errorf("Tab's help reads %q, enabled %v", m.keys.Pane.Help().Desc, m.keys.Pane.Enabled())
+	}
+
+	m = tab(t, m)
+	if got := shownProjects(m); !reflect.DeepEqual(got, []string{"Endpoint Validation w. LLM readable errors", "Sven v2 — Deterministic harness"}) {
+		t.Errorf("second Tab shows %v, want norrbrunn's two", got)
+	}
+
+	m = tab(t, m)
+	if got := len(shownProjects(m)); got != 4 || m.projectCols().workspace == 0 {
+		t.Errorf("third Tab: %d projects, column %d cells; want all 4 and the column back", got, m.projectCols().workspace)
+	}
+}
+
+// TestTabNarrowsTheIssueList: the same key on the issue list, which
+// merges the same workspaces.
+func TestTabNarrowsTheIssueList(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman", Teams: []string{"DEV"}}, {Name: "norrbrunn", Teams: []string{"NOR"}}}
+	mine := mkIssue("DEV-12", "yours", "dev-12-x", "In Progress", "started", 2, time.Hour)
+	mine.Workspace = "stefanahman"
+	theirs := mkIssue("NOR-7", "the company's", "nor-7-x", "In Progress", "started", 2, 2*time.Hour)
+	theirs.Workspace = "norrbrunn"
+	m := newIssueModel(cfg, "acme/app", nil, nil)
+	m.issues, m.ready, m.width, m.height = []Issue{mine, theirs}, true, 160, 30
+	m.resizeViewport()
+
+	keys := func(m model) []string {
+		var out []string
+		for _, row := range m.visibleIssueRows() {
+			if row.issue != nil {
+				out = append(out, row.issue.Key)
+			}
+		}
+		return out
+	}
+	m = tab(t, tab(t, m))
+	if got := keys(m); !reflect.DeepEqual(got, []string{"NOR-7"}) {
+		t.Errorf("two Tabs show %v, want norrbrunn's NOR-7", got)
+	}
+	if got := stripANSI(m.issueCountsSummary()); !strings.HasPrefix(got, "1 open") {
+		t.Errorf("narrowed counts: %q, want 1 open", got)
+	}
+}
+
+// TestTabWithOneWorkspace: nothing to step through, so the key is off
+// and out of the help, and the list stays whole.
+func TestTabWithOneWorkspace(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	m := newProjectModel(defaultConfig(), "acme/app", nil, nil)
+	m.projects, m.ready = fixtureProjects(), true
+	if m.keys.Pane.Enabled() {
+		t.Error("one workspace: Tab is still in the help")
+	}
+	if m = tab(t, m); m.onlyWorkspace != "" || len(shownProjects(m)) != 4 {
+		t.Errorf("one workspace: Tab narrowed the list to %q", m.onlyWorkspace)
+	}
+}
+
+// TestTabRemembersTheWorkspace: the next start opens on the workspace
+// Tab left, with the cursor on the row it was on there; a workspace the
+// config no longer has opens on all of them rather than on nothing.
+func TestTabRemembersTheWorkspace(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}
+	m := newProjectModel(cfg, "acme/app", nil, nil)
+	m.projects, m.ready = twoWorkspaceProjects(), true
+	m = tab(t, tab(t, m)) // norrbrunn
+	m.moveCursor(1)
+	m.persistCache()
+
+	resumed := newProjectModel(cfg, "acme/app", nil, loadProjectCache())
+	if resumed.onlyWorkspace != "norrbrunn" {
+		t.Fatalf("resumed on %q, want norrbrunn", resumed.onlyWorkspace)
+	}
+	if p := resumed.selectedProject(); p == nil || p.Name != "Sven v2 — Deterministic harness" {
+		t.Errorf("resumed cursor on %+v, want norrbrunn's second project", p)
+	}
+
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "bardo"}}
+	if gone := newProjectModel(cfg, "acme/app", nil, loadProjectCache()); gone.onlyWorkspace != "" {
+		t.Errorf("a workspace no longer configured narrowed the list to %q", gone.onlyWorkspace)
+	}
+}
+
+// TestNarrowedEmptyListSaysWhere: a workspace with nothing in it must
+// not read as an empty desk, so the empty line names the workspace and
+// the key to the next one.
+func TestNarrowedEmptyListSaysWhere(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}
+	m := newProjectModel(cfg, "acme/app", nil, nil)
+	m.projects, m.ready, m.width, m.height = twoWorkspaceProjects()[:2], true, 120, 30
+	m.resizeViewport()
+	m = tab(t, tab(t, m)) // norrbrunn, which holds none of these
+	if got := stripANSI(m.View().Content); !strings.Contains(got, "no open projects of yours in norrbrunn — tab for the next workspace.") {
+		t.Errorf("empty narrowed list reads:\n%s", got)
+	}
+}
+
+// TestTabInADrillDoesNothing: a drilled project is one workspace
+// already, and narrowing behind it would surprise on the way back.
+func TestTabInADrillDoesNothing(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cfg := defaultConfig()
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}
+	m := newProjectModel(cfg, "acme/app", nil, nil)
+	m.projects, m.ready = twoWorkspaceProjects(), true
+	m.drill = &m.projects[0]
+	if m = tab(t, m); m.onlyWorkspace != "" {
+		t.Errorf("Tab in a drill narrowed the list to %q", m.onlyWorkspace)
 	}
 }

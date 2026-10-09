@@ -46,6 +46,10 @@ type issueCacheFile struct {
 	IssuePRs        []PR      `json:"issuePrs"`
 	FetchedAt       time.Time `json:"fetchedAt"`
 	Cursor          int       `json:"cursor"`
+	// Workspace is the Linear workspace Tab had narrowed the list to at
+	// exit, "" for all of them; the next start opens on it, as on the
+	// cursor.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // projectCacheFile is the project list's on-disk shape. The issues
@@ -56,6 +60,7 @@ type projectCacheFile struct {
 	Issues       []Issue   `json:"issues"`
 	FetchedAt    time.Time `json:"fetchedAt"`
 	Cursor       int       `json:"cursor"`
+	Workspace    string    `json:"workspace,omitempty"` // as the issue list's
 }
 
 // cacheDir is $XDG_CACHE_HOME/owl, else ~/.cache/owl, followed by the

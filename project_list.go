@@ -92,6 +92,9 @@ func (m model) visibleProjectRows() []visibleRow {
 			if filter != "" && !strings.Contains(strings.ToLower(p.Name), filter) {
 				continue
 			}
+			if !m.shows(p.Workspace) {
+				continue
+			}
 			// The window is the query's, but a cache read from an earlier
 			// week would smuggle older ones in: hold the line here too.
 			if p.State.Type == "completed" && time.Since(p.CompletedAt) > doneProjectWindow {
@@ -174,8 +177,9 @@ func (m model) projectCols() projectCols {
 	c := projectCols{priority: priorityWidth, due: dueWidth, initiative: initiativeWidth, lead: leadWidth}
 	// The workspace column exists only where there is more than one to
 	// tell apart. With a single workspace every row carries the same
-	// answer, which is no answer at all.
-	if m.multiWorkspace() {
+	// answer, which is no answer at all — and so does a list Tab has
+	// narrowed to one.
+	if m.spansWorkspaces() {
 		c.workspace = workspaceWidth
 	}
 	if m.width == 0 {
@@ -201,12 +205,72 @@ func (m model) projectCols() projectCols {
 // is filed and vanishes when it is closed would be worse than none.
 func (m model) multiWorkspace() bool { return len(m.cfg.Linear) > 1 }
 
+// spansWorkspaces reports whether the rows showing can come from more
+// than one workspace: several are configured and Tab has not narrowed
+// the list to one of them.
+func (m model) spansWorkspaces() bool { return m.multiWorkspace() && m.onlyWorkspace == "" }
+
+// shows reports whether a row from workspace ws is in the list.
+func (m model) shows(ws string) bool { return m.onlyWorkspace == "" || ws == m.onlyWorkspace }
+
+// cyclesWorkspaces reports whether Tab steps through the workspaces
+// here. The PR list's Tab is its panes, and a drilled project is one
+// workspace already.
+func (m model) cyclesWorkspaces() bool {
+	return m.kind != "pr" && m.drill == nil && m.multiWorkspace()
+}
+
+// nextWorkspace is where Tab goes: every workspace in the config's
+// order, then all of them again.
+func (m model) nextWorkspace() string {
+	for i, ws := range m.cfg.Linear {
+		if ws.Name != m.onlyWorkspace {
+			continue
+		}
+		if i+1 < len(m.cfg.Linear) {
+			return m.cfg.Linear[i+1].Name
+		}
+		return ""
+	}
+	return m.cfg.Linear[0].Name
+}
+
+// configuredWorkspace is name if the config still has a workspace by
+// it, else "". The cache remembers the last one chosen, and a
+// workspace removed since would narrow the list to nothing.
+func (m model) configuredWorkspace(name string) string {
+	if !m.multiWorkspace() {
+		return ""
+	}
+	for _, ws := range m.cfg.Linear {
+		if ws.Name == name {
+			return name
+		}
+	}
+	return ""
+}
+
+// labelWorkspaceKey names Tab on the issue and project lists. With one
+// workspace there is nothing to step through, so the key is switched
+// off and leaves the help.
+func (m *model) labelWorkspaceKey() {
+	if !m.multiWorkspace() {
+		m.keys.Pane.SetEnabled(false)
+		return
+	}
+	m.keys.Pane.SetHelp(m.keys.Pane.Help().Key, "next Linear workspace")
+}
+
 // workspaceNames names the Linear workspaces the rows can come from,
-// for the title of a list that is scoped by them. "" where there is
-// only one, which the title answers with the repo instead.
+// for the title of a list that is scoped by them: the one Tab chose,
+// or all of them. "" where there is only one, which the title answers
+// with the repo instead.
 func (m model) workspaceNames() string {
 	if !m.multiWorkspace() {
 		return ""
+	}
+	if m.onlyWorkspace != "" {
+		return m.onlyWorkspace
 	}
 	names := make([]string, 0, len(m.cfg.Linear))
 	for _, ws := range m.cfg.Linear {
@@ -364,14 +428,18 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 // projectCountsSummary is the idle-state action row of the project list.
 func (m model) projectCountsSummary() string {
 	counts := map[string]int{}
-	mine := 0
+	n, mine := 0, 0
 	for _, p := range m.projects {
+		if !m.shows(p.Workspace) {
+			continue
+		}
+		n++
 		counts[p.State.Type]++
 		mine += m.mineIn(p)
 	}
 	return styleDim.Render(fmt.Sprintf(
 		"%d projects · %d in progress · %d planned · %d backlog · %d issues yours",
-		len(m.projects),
+		n,
 		counts["started"],
 		counts["planned"],
 		counts["backlog"]+counts["paused"],
