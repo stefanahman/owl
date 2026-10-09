@@ -80,6 +80,27 @@ func TestCacheKeepsTheRepo(t *testing.T) {
 	}
 }
 
+// TestCacheKeepsTheWorkspace: the same for the Linear lists. A project
+// read back without its workspace has a blank column until the fetch
+// lands, and a list narrowed to one workspace shows nothing at all.
+func TestCacheKeepsTheWorkspace(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	saveProjectCache(projectCacheFile{
+		Projects: []Project{{ID: "p1", Name: "The Vake", Workspace: "norrbrunn"}},
+		Issues:   []Issue{{Key: "NOR-7", Workspace: "norrbrunn"}},
+	})
+	got := loadProjectCache()
+	if got == nil || len(got.Projects) != 1 || len(got.Issues) != 1 {
+		t.Fatalf("the cache came back as %+v", got)
+	}
+	if got.Projects[0].Workspace != "norrbrunn" {
+		t.Errorf("project came back from %q, want norrbrunn", got.Projects[0].Workspace)
+	}
+	if got.Issues[0].Workspace != "norrbrunn" {
+		t.Errorf("issue came back from %q, want norrbrunn", got.Issues[0].Workspace)
+	}
+}
+
 // useConfig points owl at a config file of that name in dir, as
 // $OWL_CONFIG does, creating the file.
 func useConfig(t *testing.T, dir, name string) string {

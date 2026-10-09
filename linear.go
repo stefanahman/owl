@@ -136,7 +136,9 @@ type Issue struct {
 	// Workspace is the Linear workspace this came from, stamped by the
 	// tracker set as it merges. Empty with one workspace configured,
 	// which is what most of them are: there is nothing to tell apart.
-	Workspace string `json:"-"`
+	// Linear never sends it; the tag is for the cache, which must give
+	// a row back with its workspace.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // Milestone is a step inside a project. In a Linear workspace this is
@@ -184,8 +186,9 @@ type Project struct {
 	} `json:"projectMilestones"`
 	// Workspace is the Linear workspace this came from. A project has
 	// no key to say so — an issue carries DEV-12 and a project carries
-	// a UUID — so the row is told by this or not at all.
-	Workspace string `json:"-"`
+	// a UUID — so the row is told by this or not at all. Cached with
+	// the row, as the issue's is.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // Initiative is the initiative the project belongs to, or "".
