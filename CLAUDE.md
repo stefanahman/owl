@@ -23,7 +23,7 @@ make test      # go test . and the e2e suite (needs tmux; all hermetic)
 make lint      # gofmt, go vet
 make build     # bin/owl — the plugin directory at the root is also called owl,
                # so `go build -o owl` would land on it
-go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...   # CI's analysis job
+GOTOOLCHAIN=go1.27.1 go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...   # CI's analysis job; 2026.2.1 cannot read go1.27.2
 OWL_SMOKE=1 go test -run TestFetchSmoke .   # the fourth mode: your real gh, from a checkout
 ```
 
@@ -159,6 +159,13 @@ make install BIN=~/.eden/bin              # and the copy the hotkeys run, now st
 Patch for fixes and additions, minor for a new command or config key
 (a removed key gets a migration error naming the new place — see
 parseConfig), major not yet.
+
+A Go security release is a release here too. The `toolchain` line in
+go.mod is the Go every build uses — CI, the release, `make install` —
+and govulncheck reads it, so CI goes red (weekly, if nobody pushes)
+when that Go has a fix owl needs. `go get toolchain@patch`, one commit
+`build: go1.X.Y — <the fix>`, and ship. Dependabot does not bump that
+line.
 
 A change in mux comes first: tag mux, then here `GOPROXY=direct go get
 github.com/stefanahman/mux@vX.Y.Z && go mod tidy`, one commit `build:
