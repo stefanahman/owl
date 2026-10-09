@@ -67,8 +67,8 @@ that stale copy is what every hotkey runs.
 
 CI (`.github/workflows/ci.yml`): `go` (lint, test, and `goreleaser
 check`, so a broken release config fails here rather than at the tag),
-`macos` (the whole suite on a real tmux), `analysis` (staticcheck,
-govulncheck), `plugin` (two `claude plugin validate --strict` runs,
+`macos` (the whole suite on a real tmux), `analysis` (staticcheck),
+`vulncheck` (govulncheck on go.mod's toolchain), `plugin` (two `claude plugin validate --strict` runs,
 against a pinned `@anthropic-ai/claude-code` that needs bumping as
 Claude Code moves). `gh run list --workflow ci --branch main
 --limit 1` shows it. The macOS e2e waits thirty seconds for the child
