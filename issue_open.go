@@ -41,7 +41,27 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		first: strings.ReplaceAll(cfg.Issue.Prompt, "{key}", key),
 		env:   map[string]string{"OWL_ISSUE": key, "OWL_BRANCH": name},
 	}
-	return ws.open(cfg, newWindows(cfg, features), repo, prompt, arrive, out)
+	if err := ws.open(cfg, newWindows(cfg, features), repo, prompt, arrive, out); err != nil {
+		return err
+	}
+	if cfg.Issue.Claim {
+		claim(tracker, key, out)
+	}
+	return nil
+}
+
+// claim makes the issue the user's in Linear and says what changed.
+// It never fails the open: the workspace is up by now, and a key that
+// cannot write is a line to read, not a reason to have opened nothing.
+func claim(tracker Tracker, key string, out io.Writer) {
+	c, err := tracker.Claim(key)
+	if err != nil {
+		fmt.Fprintf(out, "%s: not claimed in Linear (issue.claim: false turns this off): %v\n", key, err)
+		return
+	}
+	if s := c.String(); s != "" {
+		fmt.Fprintf(out, "%s: %s\n", key, s)
+	}
 }
 
 // ensureIssueWorktree returns the workspace name and worktree path for

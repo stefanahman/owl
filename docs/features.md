@@ -113,5 +113,20 @@ branch another worktree holds, and a branch with commits that exist
 nowhere else is refused unless `--force`. The remote branch is never
 touched.
 
+Opening an issue also claims it in Linear, so the board says what
+you are working on before there is a pull request to say it. The
+state and the assignee are decided apart:
+
+| | Before | After |
+|---|---|---|
+| State | triage, backlog or todo | the team's first started state, In Progress by default |
+| State | started, done or cancelled | unchanged |
+| Assignee | nobody | you |
+| Assignee | someone else | unchanged, and owl names them |
+
+An issue already in progress and yours is read and not written. A key
+without Write access, or a Linear that does not answer, costs a line
+of output and never the workspace. `issue.claim: false` turns it off.
+
 `owl hoot "what needs doing"` files an issue in `linear.team`, assigned
 to you, and prints its key and URL.

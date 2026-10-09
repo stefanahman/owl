@@ -212,6 +212,42 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	}
 }
 
+// TestIssueOpenClaimsTheIssue: opening an issue makes it the user's in
+// Linear, once, and says so; `issue.claim: false` leaves Linear alone.
+func TestIssueOpenClaimsTheIssue(t *testing.T) {
+	f, fake := issueFixture(t)
+	t.Chdir(f.repo)
+	reads := func() int {
+		n := 0
+		for _, q := range fake.queries {
+			if q == claimQuery {
+				n++
+			}
+		}
+		return n
+	}
+
+	if out := f.openIssue("BAR-4160"); !strings.Contains(out, "BAR-4160: Todo → In Progress, assigned to you\n") {
+		t.Errorf("output: %q", out)
+	}
+	if want := []string{"uuid-BAR-4160 state-in-progress me-uuid"}; !slices.Equal(fake.updates, want) {
+		t.Errorf("updates = %q, want %q", fake.updates, want)
+	}
+	// Again: in progress and the user's now, so nothing is written or said.
+	if out := f.openIssue("BAR-4160"); strings.Contains(out, "BAR-4160: ") || len(fake.updates) != 1 {
+		t.Errorf("second open: %q, %d updates", out, len(fake.updates))
+	}
+
+	f.cfg.Issue.Claim = false
+	before := reads()
+	if out := f.openIssue("BAR-4161"); strings.Contains(out, "BAR-4161: ") {
+		t.Errorf("open with claim off: %q", out)
+	}
+	if reads() != before || len(fake.updates) != 1 {
+		t.Errorf("claim off still asked Linear: %d claim reads, %d updates", reads()-before, len(fake.updates))
+	}
+}
+
 // commitAt commits with a fixed committer date, so "newest branch" is
 // decided by the fixture and not by how fast the test ran.
 func (f *fixture) commitAt(dir, when, msg string) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -149,5 +150,25 @@ func TestIssueListAndHoot(t *testing.T) {
 	cfg.Linear = LinearWorkspaces{{Team: "BAR"}} // a team, no key: the tracker has nothing to read with
 	if err := runIssue(cfg, nil, &out); err == nil || !strings.Contains(err.Error(), "no token configured") {
 		t.Errorf("without a token: %v", err)
+	}
+}
+
+// TestClaimNeverFailsTheOpen: by the time the claim runs the workspace
+// is up, so what Linear says comes back as a line — what changed, or
+// why nothing did and how to stop asking — and never as an error.
+func TestClaimNeverFailsTheOpen(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tracker *stubTracker
+		want    string
+	}{
+		"claimed":   {&stubTracker{claim: Claimed{From: "Todo", To: "In Progress", Assigned: true}}, "BAR-1: Todo → In Progress, assigned to you\n"},
+		"unchanged": {&stubTracker{}, ""},
+		"read-only": {&stubTracker{err: errors.New("linear: Invalid scope")}, "BAR-1: not claimed in Linear (issue.claim: false turns this off): linear: Invalid scope\n"},
+	} {
+		var out strings.Builder
+		claim(tc.tracker, "BAR-1", &out)
+		if out.String() != tc.want {
+			t.Errorf("%s: %q, want %q", name, out.String(), tc.want)
+		}
 	}
 }

@@ -106,6 +106,9 @@ func window(text string) Window {
 type IssueConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
+	// Claim makes an opened issue the user's in Linear: started, and
+	// assigned to them when nobody holds it.
+	Claim bool `yaml:"claim"`
 }
 
 // GroupStyle is how a scope's workspace group is shown. cmux draws
@@ -670,7 +673,7 @@ func defaultConfig() Config {
 	c.Linear = LinearWorkspaces{{}}
 	c.Tmux = TmuxConfig{Session: "reviews", KeepaliveWindow: "scratch"}
 	c.Remote = "origin"
-	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}"}
+	c.Issue = IssueConfig{Session: "features", Prompt: "/owl:feature {key}", Claim: true}
 	c.Mine = MineConfig{Prompt: "Please read up on where this work stands before changing anything. The branch is {branch} and its pull request is #{pr}: read the commits against the base, the PR's checks, its review comments and whether it merges cleanly, and anything uncommitted in the worktree. Then tell me what is done, what is left, and what is stopping it from landing — and wait for me. Do not review this PR: it is mine, not one I was asked to look at."}
 	c.Project = ProjectConfig{Session: "projects", Prompt: "/owl:project {name}", DimStatuses: []string{"Paused"}}
 	c.Groups = GroupsConfig{

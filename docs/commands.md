@@ -8,7 +8,7 @@ owl pr open <N> [--prompt TEXT]       open (or focus) PR N's workspace; with --p
 owl pr start <N> [--prompt TEXT]      the same without going there: no window selection, no after_open
 owl pr close [--force] [<N>]          remove the worktree, branch and window; N is inferred from inside a workspace
 owl issue                             the open issues assigned to you; a table when stdout is not a terminal
-owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY
+owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY, and claim the issue
 owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
 owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
 owl issue new <title…>                file an issue in linear.team, assigned to you

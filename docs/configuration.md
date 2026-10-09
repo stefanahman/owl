@@ -38,6 +38,7 @@ agent:
 issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
+  claim: true                    # opening an issue makes it yours in Linear: started, and assigned to you when nobody holds it
 
 mine:                            # a PR of your own, from the second pane of `owl pr`
   prompt: "Please read up on…"   # first prompt of a *fresh* conversation on one; {pr}, {branch}, {key}
@@ -71,7 +72,7 @@ keys:                            # rebind any action: a key name or a list
   quit: [q, ctrl+c]
 
 linear:                          # the issue tracker behind `owl issue`
-  token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key
+  token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key; Read for the lists, Write for issue.claim and `owl hoot`
   account: ""                    # the 1Password account the item is in, when several are signed in
   team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
   # teams: [DEV, LIFE]           # every team you file work under; defaults to the single team above
