@@ -336,9 +336,8 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.refreshList()
 		} else if m.cyclesWorkspaces() {
 			// The issue and project lists have no panes; their Tab is the
-			// workspaces, one at a time and then all of them. Saved now
-			// rather than only on exit: a popup the multiplexer closes
-			// never reaches the exit.
+			// workspaces, one at a time. Saved now rather than only on
+			// exit: a popup the multiplexer closes never reaches the exit.
 			m.onlyWorkspace = m.nextWorkspace()
 			m.cursor = m.firstPRRowIndex()
 			m.refreshList()

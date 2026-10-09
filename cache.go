@@ -46,9 +46,8 @@ type issueCacheFile struct {
 	IssuePRs        []PR      `json:"issuePrs"`
 	FetchedAt       time.Time `json:"fetchedAt"`
 	Cursor          int       `json:"cursor"`
-	// Workspace is the Linear workspace Tab had narrowed the list to at
-	// exit, "" for all of them; the next start opens on it, as on the
-	// cursor.
+	// Workspace is the Linear workspace Tab had left the list on at
+	// exit; the next start opens on it, as on the cursor.
 	Workspace string `json:"workspace,omitempty"`
 }
 

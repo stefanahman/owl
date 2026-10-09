@@ -295,9 +295,9 @@ func (m model) titleLine(repo string) string {
 	} else if m.kind != "pr" {
 		// The issue and project lists are not scoped by a repo — they are
 		// what is assigned to you and what you work in — so where several
-		// Linear workspaces answer, the workspaces are the honest scope.
-		// A repo there would name one of them while the rows come from
-		// both. With one workspace the repo stays: it is the context you
+		// Linear workspaces are configured, the one showing is the honest
+		// scope. A repo there would name a context the rows need not come
+		// from. With one workspace the repo stays: it is the context you
 		// are standing in, and a lone workspace is often not even named.
 		scope := repo
 		if names := m.workspaceNames(); names != "" {
@@ -445,8 +445,9 @@ func (m model) render() string {
 		empty = empty && len(m.otherPaneRows()) == 0
 	}
 	if empty {
-		// A list Tab has narrowed says where it looked, and how to look
-		// elsewhere: an empty workspace must not read as an empty desk.
+		// With several workspaces the list says where it looked, and how
+		// to look elsewhere: an empty workspace must not read as an
+		// empty desk.
 		where := ""
 		if m.onlyWorkspace != "" && m.drill == nil {
 			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.keys.Pane.Help().Key)

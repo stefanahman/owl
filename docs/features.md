@@ -69,8 +69,8 @@ point. The title takes whatever width the window leaves.
 
 Enter opens the feature workspace, `o` opens the issue in Linear, `y`
 copies its key, `/` filters by key, title or project. With several
-Linear workspaces, `tab` narrows the list to one of them at a time, as
-on the project list ([projects.md](projects.md#several-workspaces)).
+Linear workspaces the list shows one at a time and `tab` moves to the
+next, as on the project list ([projects.md](projects.md#several-workspaces)).
 Off a terminal, `owl issue` prints a table of the open ones.
 
 A feature workspace is a worktree for the issue. `open` looks for the

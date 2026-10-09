@@ -98,9 +98,10 @@ type model struct {
 	// here narrows the list to m.repo even where owners would span more,
 	// for the times you want this repo and not the whole desk.
 	here bool
-	// onlyWorkspace narrows the issue and project lists to one Linear
-	// workspace, by its configured name; "" shows them all. Tab steps
-	// through them, and the cache remembers where it stopped.
+	// onlyWorkspace is the Linear workspace the issue and project lists
+	// show, by its configured name; "" where only one is configured and
+	// there is nothing to choose. Tab steps through them, and the cache
+	// remembers where it stopped.
 	onlyWorkspace string
 	// paneChosen is set once Tab has been pressed. Until then the list
 	// may land the focus on whichever pane has rows; after it, the
@@ -246,12 +247,13 @@ func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCac
 	m.keys.Yank.SetHelp(m.keys.Yank.Help().Key, "yank project name")
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, "close the project workspace")
 	m.labelWorkspaceKey()
+	m.onlyWorkspace = m.configuredWorkspace("")
 	if cache != nil {
 		m.projects = cache.Projects
 		m.doneProjects = cache.DoneProjects
 		m.issues = cache.Issues
-		// Before the cursor: the row it names is a row of this narrowed
-		// list, not of the whole one.
+		// Before the cursor: the row it names is a row of this
+		// workspace's list, not of another's.
 		m.onlyWorkspace = m.configuredWorkspace(cache.Workspace)
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -272,6 +274,7 @@ func newIssueModel(cfg Config, repo string, tracker Tracker, cache *issueCacheFi
 	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, "open feature")
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open issue in browser")
 	m.labelWorkspaceKey()
+	m.onlyWorkspace = m.configuredWorkspace("")
 	if cache != nil {
 		m.issues = cache.Issues
 		m.doneIssues = cache.DoneIssues

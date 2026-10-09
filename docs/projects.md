@@ -215,24 +215,26 @@ linear:
     teams: [NOR]
 ```
 
-The lists merge, newest change first, and every row remembers where it
-came from: an issue says so already in `DEV-12`, and a project — which
-carries a UUID and a name — gets a column that appears only when there
-is more than one workspace to tell apart. `owl issue open DEV-12` is
-routed by the team its key names; a project, having no key, is asked
-of each workspace in turn.
+owl reads every workspace on each fetch, and every row remembers where
+it came from: an issue says so already in `DEV-12`, and a project —
+which carries a UUID and a name — is told by the workspace it was read
+from. `owl issue open DEV-12` is routed by the team its key names; a
+project, having no key, is asked of each workspace in turn.
 
-Merged is the default, not the only view. **`tab` narrows the issue
-and project lists to one workspace**, in the config's order, and the
-press after the last one brings all of them back: with the two above,
-all → stefanahman → norrbrunn → all. A narrowed list names its
-workspace in the title, drops the workspace column (every row would
-answer alike), and counts only what it shows. Each list remembers
-where `tab` left it beside the cursor, so the next popup opens on the
-same workspace — one `owl project`, switched in place, rather than one
-per workspace. A narrowed list with nothing in it says which workspace
-it looked in, so an empty workspace does not read as an empty desk. A
-drilled project is one workspace already, and `tab` does nothing there.
+**The issue and project lists show one workspace at a time**, and
+`tab` moves to the next in the config's order, the last back to the
+first: with the two above, stefanahman → norrbrunn → stefanahman. A
+company's work and your own, interleaved by recency, read as one list
+badly. Both are already fetched, so the switch is instant; the title
+names the workspace showing and the counts are its own. Each list
+remembers where `tab` left it beside the cursor, so the next popup
+opens on the same workspace — one `owl project`, switched in place,
+rather than one per workspace — and a workspace the config no longer
+has opens on the first. A workspace with nothing in it says so by
+name, so it does not read as an empty desk. A drilled project is one
+workspace already, and `tab` does nothing there. Off a terminal,
+`owl issue` and `owl project` print every workspace: an issue's key
+says which, and the project table has a column for it.
 
 A list asks for a name per workspace and refuses two that claim the
 same team key: one names the file a token caches into
