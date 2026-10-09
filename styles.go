@@ -32,6 +32,9 @@ var (
 	styleSectionCancelled = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("244"))
 	styleDraft            = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // dim for [draft]
 	styleSearchLabel      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	// styleTabCurrent is the Linear workspace showing, among the others
+	// named dim in the title.
+	styleTabCurrent = lipgloss.NewStyle().Bold(true).Underline(true)
 )
 
 func applyTheme(t ThemeConfig) {

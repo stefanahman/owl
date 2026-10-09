@@ -225,8 +225,10 @@ project, having no key, is asked of each workspace in turn.
 `tab` moves to the next in the config's order, the last back to the
 first: with the two above, stefanahman → norrbrunn → stefanahman. A
 company's work and your own, interleaved by recency, read as one list
-badly. Both are already fetched, so the switch is instant; the title
-names the workspace showing and the counts are its own. Each list
+badly. Both are already fetched, so the switch is instant. The title names
+every workspace in that order, the one showing lit and the others dim
+— `owl · projects · stefanahman  norrbrunn` — and the counts are the
+lit one's. Each list
 remembers where `tab` left it beside the cursor, so the next popup
 opens on the same workspace — one `owl project`, switched in place,
 rather than one per workspace — and a workspace the config no longer

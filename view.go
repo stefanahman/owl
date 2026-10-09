@@ -281,9 +281,10 @@ func (m model) countsSummary() string {
 func (m model) titleLine(repo string) string {
 	// Every list says what it is scoped by, and each is scoped by
 	// something different: the PR list by the repositories it spans,
-	// the others by the Linear workspaces they read. One of them is
-	// named, several are all named — a title naming one of several is
-	// worse than a title naming none.
+	// the others by the Linear workspace they show. The PR list names
+	// every owner it spans — a title naming one of several is worse
+	// than a title naming none — and the others name every workspace,
+	// the one showing lit.
 	//
 	// The PR list is owl's front door and leads with its scope alone;
 	// the others name themselves first, from the same noun the
@@ -299,11 +300,10 @@ func (m model) titleLine(repo string) string {
 		// scope. A repo there would name a context the rows need not come
 		// from. With one workspace the repo stays: it is the context you
 		// are standing in, and a lone workspace is often not even named.
-		scope := repo
-		if names := m.workspaceNames(); names != "" {
-			scope = names
+		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), repo))
+		if tabs := m.workspaceTabs(); tabs != "" {
+			left = styleHeader.Render(fmt.Sprintf("owl · %s ·", m.noun())) + " " + tabs
 		}
-		left = styleHeader.Render(fmt.Sprintf("owl · %s · %s", m.noun(), scope))
 	}
 	right := ""
 	if !m.lastFetched.IsZero() {
@@ -521,9 +521,9 @@ func relativeAge(iso string) string {
 // a plus rather than a comma: a title saying two things is saying both
 // are in the list, not that it holds one or the other.
 //
-// Shared by the two lists that can span something — the PR list over
-// repository owners, the issue and project lists over Linear
-// workspaces — which are different enough not to share more than this.
+// The PR list's, over repository owners. The issue and project lists
+// show one Linear workspace at a time and name them as tabs instead
+// (workspaceTabs).
 func scopeLabel(names []string) string {
 	kept := make([]string, 0, len(names))
 	for _, n := range names {

@@ -251,18 +251,23 @@ func TestSetMergesProjectsNewestFirst(t *testing.T) {
 	}
 }
 
-// TestTitleNamesTheWorkspace: the issue and project lists are not
-// scoped by a repo, so with several workspaces the title names the one
-// showing rather than a repo the rows need not come from.
-func TestTitleNamesTheWorkspace(t *testing.T) {
+// TestTitleNamesTheWorkspaces: the issue and project lists are not
+// scoped by a repo, so with several workspaces the title names every
+// one, in the order Tab visits them, with the one showing lit and the
+// rest dim — where you are, and where else there is to go.
+func TestTitleNamesTheWorkspaces(t *testing.T) {
 	two := Config{Linear: LinearWorkspaces{{Name: "stefanahman"}, {Name: "norrbrunn"}}}
 	m := model{cfg: two, kind: "project", width: 120, onlyWorkspace: "norrbrunn"}
-	title := stripANSI(m.titleLine("acme/app"))
+	raw := m.titleLine("acme/app")
+	title := stripANSI(raw)
 	if strings.Contains(title, "acme/app") {
 		t.Errorf("the title names a repo over a workspace's list: %q", title)
 	}
-	if !strings.Contains(title, "owl · projects · norrbrunn") {
-		t.Errorf("the title does not name norrbrunn: %q", title)
+	if !strings.Contains(title, "owl · projects · stefanahman  norrbrunn") {
+		t.Errorf("the title does not name both workspaces in order: %q", title)
+	}
+	if !strings.Contains(raw, styleTabCurrent.Render("norrbrunn")) || !strings.Contains(raw, styleDim.Render("stefanahman")) {
+		t.Errorf("the title does not light norrbrunn and dim stefanahman: %q", raw)
 	}
 
 	// One workspace keeps the repo: it is the context you are standing

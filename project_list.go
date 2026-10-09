@@ -246,14 +246,24 @@ func (m *model) labelWorkspaceKey() {
 	m.keys.Pane.SetHelp(m.keys.Pane.Help().Key, "next Linear workspace")
 }
 
-// workspaceNames names the Linear workspace the rows come from, for
-// the title of a list that is scoped by it. "" where there is only
-// one, which the title answers with the repo instead.
-func (m model) workspaceNames() string {
+// workspaceTabs names every configured Linear workspace for the title
+// of a list that shows one of them: the one showing lit, the others
+// dim, in the order Tab visits them. The title says where you are and
+// where else there is to go. "" where there is only one, which the
+// title answers with the repo instead.
+func (m model) workspaceTabs() string {
 	if !m.multiWorkspace() {
 		return ""
 	}
-	return m.onlyWorkspace
+	tabs := make([]string, 0, len(m.cfg.Linear))
+	for _, ws := range m.cfg.Linear {
+		style := styleDim
+		if ws.Name == m.onlyWorkspace {
+			style = styleTabCurrent
+		}
+		tabs = append(tabs, style.Render(ws.Name))
+	}
+	return strings.Join(tabs, "  ")
 }
 
 func (m model) projectNameWidth() int {
