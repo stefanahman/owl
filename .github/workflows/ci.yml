@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, so a Go security release goes red here even when nobody
+  # pushes: govulncheck below reads the toolchain that ships.
+  schedule:
+    - cron: "17 6 * * 1"
 
 jobs:
   go:
@@ -34,25 +38,26 @@ jobs:
       - run: brew install tmux
       - run: make test
 
-  # Static analysis on the current Go; the job above proves the minimum
-  # in go.mod still builds and passes.
+  # Static analysis. The jobs above build and test with go.mod's
+  # toolchain line, which is what the release builds with too.
   analysis:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # staticcheck 2026.2.1 cannot read go1.27.2's export data ("export
       # data version 5 is greater than maximum supported version 4"), so
-      # it runs on the last Go it can. Back to stable with the staticcheck
-      # release that reads it.
+      # it runs on the last Go it can. Back to go-version-file: go.mod with
+      # the staticcheck release that reads it.
       - uses: actions/setup-go@v7
         with:
           go-version: 1.27.1
       - run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...
-      # govulncheck stays on stable: it judges the standard library by
-      # the Go it runs on, and 1.27.1's net/http is what 1.27.2 fixed.
+      # govulncheck judges the standard library by the Go it runs on, so
+      # it runs on the toolchain the release builds with. A Go security
+      # release turns this red; `go get toolchain@patch` and a tag fix it.
       - uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: go.mod
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   plugin:
