@@ -206,10 +206,22 @@ func tryEach[T any](s trackerSet, id string, read func(Tracker, string) (T, erro
 	return zero, nil
 }
 
+// Claim goes where Issue goes: to the workspace whose team the key
+// names, else to each in turn. A workspace that does not have the
+// issue answers with an error, not an empty one, so the first that
+// answers at all is the one that has it.
+func (s trackerSet) Claim(key string) (Claimed, error) {
+	if w, ok := s.forKey(key); ok {
+		return w.tracker.Claim(key)
+	}
+	return tryEach(s, key, Tracker.Claim, func(*Claimed, string) {}, func(Claimed) bool { return true })
+}
+
 // Create files in the one workspace that says where new issues go.
-// owl writes in exactly one place — `owl hoot` — and which of several
-// workspaces it should write to is a question the config answers by
-// naming a team, or does not answer at all.
+// A claim writes to the issue's own workspace, which its key names;
+// a new issue has no key yet, so which of several workspaces it goes
+// to is a question the config answers by naming a team, or does not
+// answer at all.
 func (s trackerSet) Create(title string) (Issue, error) {
 	var targets []workspaceTracker
 	for _, w := range s.workspaces {

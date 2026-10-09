@@ -1,8 +1,8 @@
 // Linear as the issue tracker: the issues assigned to the user, one
-// issue by its identifier, a new issue. GraphQL over HTTPS with a
-// personal API key — Linear's own recommendation for personal tools —
-// and the queries verified against the published schema and the
-// workspace's live data.
+// issue by its identifier, a new issue, a claim on one. GraphQL over
+// HTTPS with a personal API key — Linear's own recommendation for
+// personal tools — and the queries verified against the published
+// schema and the workspace's live data.
 package main
 
 import (
@@ -46,6 +46,43 @@ type Tracker interface {
 	// Create files an issue in the configured team, assigned to the
 	// user, and returns it.
 	Create(title string) (Issue, error)
+	// Claim makes the issue the user's work in progress: one not yet
+	// started moves to its team's first started state, and one nobody
+	// holds is assigned to the user. Someone else's assignment is left
+	// as it is and named in the answer.
+	Claim(key string) (Claimed, error)
+}
+
+// Claimed is what a claim changed. From and To are state names, empty
+// when the state was left alone; Assigned is an issue nobody held that
+// is now the user's; HeldBy is the someone else who holds it, whom a
+// claim never replaces.
+type Claimed struct {
+	From, To string
+	Assigned bool
+	HeldBy   string
+}
+
+// String says what changed, "" for nothing: "Todo → In Progress,
+// assigned to you", or "Backlog → In Progress; assigned to Anna, left
+// as it is".
+func (c Claimed) String() string {
+	var parts []string
+	if c.To != "" {
+		parts = append(parts, c.From+" → "+c.To)
+	}
+	if c.Assigned {
+		parts = append(parts, "assigned to you")
+	}
+	s := strings.Join(parts, ", ")
+	if c.HeldBy == "" {
+		return s
+	}
+	held := "assigned to " + c.HeldBy + ", left as it is"
+	if s == "" {
+		return held
+	}
+	return s + "; " + held
 }
 
 // Issue is what owl shows and acts on.
@@ -253,9 +290,10 @@ func (l Linear) post(q string, vars map[string]any, out any) error {
 			return fmt.Errorf("%w: %s", errLinearAuth, e.Message)
 		}
 		// A key that can read but not write says so in a message that
-		// names a scope and not a remedy. `owl hoot` is the write owl
-		// ships, and on a read-only key it fails exactly here, so the
-		// message says what to do rather than which scope was absent.
+		// names a scope and not a remedy. `owl hoot` and the claim an
+		// issue's open makes are the writes owl ships, and on a
+		// read-only key they fail exactly here, so the message says
+		// what to do rather than which scope was absent.
 		if strings.Contains(e.Message, "Invalid scope") {
 			return fmt.Errorf("linear: %s — the key in linear.token is read-only. A personal API key is scoped when you make it (Linear: Settings → Account → Security & Access); this needs Write, and can be limited to one team", e.Message)
 		}
@@ -519,6 +557,87 @@ func (l Linear) Create(title string) (Issue, error) {
 		return Issue{}, errors.New("linear: issueCreate did not succeed")
 	}
 	return r.IssueCreate.Issue, nil
+}
+
+// claimQuery reads what a claim decides on: where the issue stands,
+// who holds it, and the states its team counts as started. Linear
+// answers those in no particular order — In Review before In Progress,
+// on the live API — so the first is found by position.
+const claimQuery = `query($id: String!) { viewer { id } issue(id: $id) { id state { name type } assignee { name isMe } team { states(filter: { type: { eq: "started" } }) { nodes { id name position } } } } }`
+
+// Claim is one read and at most one update: an issue already started
+// and already the user's is left untouched.
+func (l Linear) Claim(key string) (Claimed, error) {
+	var r struct {
+		Viewer struct {
+			ID string `json:"id"`
+		} `json:"viewer"`
+		Issue struct {
+			ID    string `json:"id"`
+			State struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"state"`
+			// nil when nobody holds the issue.
+			Assignee *struct {
+				Name string `json:"name"`
+				IsMe bool   `json:"isMe"`
+			} `json:"assignee"`
+			Team struct {
+				States struct {
+					Nodes []struct {
+						ID       string  `json:"id"`
+						Name     string  `json:"name"`
+						Position float64 `json:"position"`
+					} `json:"nodes"`
+				} `json:"states"`
+			} `json:"team"`
+		} `json:"issue"`
+	}
+	if err := l.query(claimQuery, map[string]any{"id": key}, &r); err != nil {
+		return Claimed{}, err
+	}
+	var c Claimed
+	input := map[string]any{}
+	// Forward only. An issue in review, done or cancelled is where its
+	// owner put it, and opening its workspace is no reason to move it.
+	switch r.Issue.State.Type {
+	case "triage", "backlog", "unstarted":
+		states := r.Issue.Team.States.Nodes
+		first := -1
+		for i, s := range states {
+			if first < 0 || s.Position < states[first].Position {
+				first = i
+			}
+		}
+		if first >= 0 {
+			input["stateId"] = states[first].ID
+			c.From, c.To = r.Issue.State.Name, states[first].Name
+		}
+	}
+	switch a := r.Issue.Assignee; {
+	case a == nil:
+		input["assigneeId"] = r.Viewer.ID
+		c.Assigned = true
+	case !a.IsMe:
+		c.HeldBy = a.Name
+	}
+	if len(input) == 0 {
+		return c, nil
+	}
+	var u struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	}
+	m := `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`
+	if err := l.query(m, map[string]any{"id": r.Issue.ID, "input": input}, &u); err != nil {
+		return Claimed{}, err
+	}
+	if !u.IssueUpdate.Success {
+		return Claimed{}, errors.New("linear: issueUpdate did not succeed")
+	}
+	return c, nil
 }
 
 // newTracker is the tracker for this configuration: one workspace's

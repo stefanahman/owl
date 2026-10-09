@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,12 @@ type fakeLinear struct {
 
 	projectLookups    int    // project(id:) calls, to prove open takes the cheap path
 	doneProjectsSince string // the completedAt bound the last DoneProjects() sent
+
+	// updates are the issueUpdate calls, "<id> <stateId> <assigneeId>"
+	// with "-" for a field not sent; claimed is what they changed, so a
+	// second claim reads the issue as the first one left it.
+	updates []string
+	claimed map[string]bool
 }
 
 func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
@@ -165,12 +172,63 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			f.t.Errorf("projects query with an unknown cursor %q", after)
 		}
 		data = map[string]any{"projects": map[string]any{"nodes": nodes, "pageInfo": page}}
+	case strings.Contains(req.Query, "states(filter: { type: { eq: \"started\" } })"):
+		// A claim's read. The team's started states come In Review
+		// first, as the live API sends them: the client must pick by
+		// position, not take the first.
+		me := map[string]any{"name": "Stefan Åhman", "isMe": true}
+		anna := map[string]any{"name": "Anna Berg", "isMe": false}
+		at := func(state, stype string, assignee any) map[string]any {
+			return map[string]any{
+				"state": map[string]string{"name": state, "type": stype}, "assignee": assignee,
+				"team": map[string]any{"states": map[string]any{"nodes": []any{
+					map[string]any{"id": "state-in-review", "name": "In Review", "position": 1002},
+					map[string]any{"id": "state-in-progress", "name": "In Progress", "position": 2},
+				}}},
+			}
+		}
+		key, _ := req.Variables["id"].(string)
+		var n map[string]any
+		switch {
+		case key == "BAR-4159":
+			n = at("In Review", "started", me)
+		case key == "BAR-4160" && f.claimed["uuid-BAR-4160"]:
+			n = at("In Progress", "started", me)
+		case key == "BAR-4160":
+			n = at("Todo", "unstarted", nil)
+		case key == "BAR-4161" && f.claimed["uuid-BAR-4161"]:
+			n = at("In Progress", "started", anna)
+		case key == "BAR-4161":
+			n = at("Backlog", "backlog", anna)
+		default:
+			_, _ = io.WriteString(w, `{"errors":[{"message":"Entity not found: Issue","extensions":{"code":"INVALID_INPUT"}}]}`)
+			return
+		}
+		n["id"] = "uuid-" + key
+		data = map[string]any{"viewer": map[string]string{"id": "me-uuid"}, "issue": n}
+	case strings.Contains(req.Query, "issueUpdate"):
+		id, _ := req.Variables["id"].(string)
+		input, _ := req.Variables["input"].(map[string]any)
+		field := func(k string) string {
+			if v, ok := input[k].(string); ok {
+				return v
+			}
+			return "-"
+		}
+		f.updates = append(f.updates, id+" "+field("stateId")+" "+field("assigneeId"))
+		if f.claimed == nil {
+			f.claimed = map[string]bool{}
+		}
+		f.claimed[id] = true
+		data = map[string]any{"issueUpdate": map[string]any{"success": true}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
 		switch key, _ := req.Variables["id"].(string); key {
 		case "BAR-4159":
 			data = map[string]any{"issue": issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}
 		case "BAR-4160":
 			data = map[string]any{"issue": issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}
+		case "BAR-4161":
+			data = map[string]any{"issue": issue("BAR-4161", "Held elsewhere", "bar-4161-held-elsewhere", "Backlog", "backlog")}
 		default:
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, `{"errors":[{"message":"Entity not found: Issue - Could not find referenced Issue.","extensions":{"code":"INVALID_INPUT"}}]}`)
@@ -288,6 +346,64 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	}
 	if _, err := (Linear{Token: l.Token, Team: "NOPE", Endpoint: srv.URL}).Create("x"); err == nil || !strings.Contains(err.Error(), `no team with key "NOPE"`) {
 		t.Errorf("create with an unknown team: %v", err)
+	}
+}
+
+// TestLinearClaim: an issue not yet started moves to the team's first
+// started state, an issue nobody holds becomes the user's, and nothing
+// else is written — not an issue already in review, not someone else's
+// assignment, and not a second time.
+func TestLinearClaim(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	f, srv := newFakeLinear(t, "lin_key")
+	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Endpoint: srv.URL}
+
+	got, err := l.Claim("BAR-4160")
+	if want := (Claimed{From: "Todo", To: "In Progress", Assigned: true}); err != nil || got != want {
+		t.Fatalf("Claim(BAR-4160) = %+v, %v; want %+v", got, err, want)
+	}
+	// In Progress at position 2, not In Review, which Linear lists first.
+	if want := []string{"uuid-BAR-4160 state-in-progress me-uuid"}; !slices.Equal(f.updates, want) {
+		t.Errorf("updates = %q, want %q", f.updates, want)
+	}
+	if got, err := l.Claim("BAR-4160"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
+		t.Errorf("a second claim = %+v, %v, %d updates; want nothing written", got, err, len(f.updates))
+	}
+
+	// In review and the user's: read, and left exactly where it is.
+	if got, err := l.Claim("BAR-4159"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
+		t.Errorf("Claim(BAR-4159) = %+v, %v, %d updates; want nothing written", got, err, len(f.updates))
+	}
+
+	// Someone else's: the state moves, the assignee stays and is named.
+	got, err = l.Claim("BAR-4161")
+	if want := (Claimed{From: "Backlog", To: "In Progress", HeldBy: "Anna Berg"}); err != nil || got != want {
+		t.Fatalf("Claim(BAR-4161) = %+v, %v; want %+v", got, err, want)
+	}
+	if last := f.updates[len(f.updates)-1]; last != "uuid-BAR-4161 state-in-progress -" {
+		t.Errorf("update = %q: the assignee was sent", last)
+	}
+	if got, err := l.Claim("BAR-4161"); err != nil || got != (Claimed{HeldBy: "Anna Berg"}) || len(f.updates) != 2 {
+		t.Errorf("a second claim on someone else's = %+v, %v, %d updates", got, err, len(f.updates))
+	}
+
+	if _, err := l.Claim("BAR-1"); err == nil || !strings.Contains(err.Error(), "Entity not found") {
+		t.Errorf("unknown issue: %v", err)
+	}
+}
+
+func TestClaimedSaysWhatChanged(t *testing.T) {
+	for c, want := range map[Claimed]string{
+		{}:                                "",
+		{From: "Todo", To: "In Progress"}: "Todo → In Progress",
+		{Assigned: true}:                  "assigned to you",
+		{From: "Todo", To: "In Progress", Assigned: true}:         "Todo → In Progress, assigned to you",
+		{HeldBy: "Anna Berg"}:                                     "assigned to Anna Berg, left as it is",
+		{From: "Backlog", To: "In Progress", HeldBy: "Anna Berg"}: "Backlog → In Progress; assigned to Anna Berg, left as it is",
+	} {
+		if got := c.String(); got != want {
+			t.Errorf("%+v = %q, want %q", c, got, want)
+		}
 	}
 }
 

@@ -17,6 +17,8 @@ type stubTracker struct {
 	err      error // when set, every read fails with it
 	created  []string
 	team     string
+	claim    Claimed  // what Claim answers
+	claims   []string // the keys it was asked to claim
 }
 
 func (s *stubTracker) Issues() ([]Issue, error) {
@@ -76,6 +78,13 @@ func (s *stubTracker) Create(title string) (Issue, error) {
 	}
 	s.created = append(s.created, title)
 	return Issue{Key: s.team + "-1", Title: title}, nil
+}
+func (s *stubTracker) Claim(key string) (Claimed, error) {
+	if s.err != nil {
+		return Claimed{}, s.err
+	}
+	s.claims = append(s.claims, key)
+	return s.claim, nil
 }
 
 func issueAt(key, iso string) Issue {
@@ -189,6 +198,10 @@ func TestSetRoutesByTeam(t *testing.T) {
 	}
 	if got.Workspace != "norrbrunn" {
 		t.Errorf("NOR-7 came from %q", got.Workspace)
+	}
+	// A claim writes, so it goes to the one workspace and no other.
+	if _, err := set.Claim("NOR-7"); err != nil || len(a.claims) != 0 || !reflect.DeepEqual(b.claims, []string{"NOR-7"}) {
+		t.Errorf("Claim(NOR-7) reached %q and %q, %v", a.claims, b.claims, err)
 	}
 	// A team no workspace claims is asked of each rather than refused:
 	// the key can be real and `teams` simply incomplete.
