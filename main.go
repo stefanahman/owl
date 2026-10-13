@@ -137,9 +137,11 @@ type model struct {
 	// with the local state, for a line row to find its own.
 	stack        *stackView
 	stackRecords []stackRecord
-	// stackCol is the stack column's width, worked out once per refresh
-	// rather than once per row: every row's label walks the graph.
-	stackCol int
+	// stackCol is the stack column's width, and stackBadges whether it
+	// carries a stack review's badges, worked out once per refresh rather
+	// than once per row: every row's label walks the graph.
+	stackCol    int
+	stackBadges bool
 	// mineFocus says the mine pane has the cursor and the keys. Only
 	// the PR list has two panes; the other lists leave it false.
 	// otherCursor holds the row the unfocused pane was left on, and the

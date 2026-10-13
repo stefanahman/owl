@@ -18,6 +18,7 @@ cache until the live one lands (one per repo, or one for the list across
 | `⚠` | someone requested changes |
 | `[draft]` | a draft PR |
 | `≡4969 3/6` | a layer of the stack whose bottom is #4969: the third of a line six long; `≡4969 3` is the third below a fork. A column of its own before the title, in a colour no other glyph wears |
+| `≡4969 3/6 ⎇ ©` | a stack review is open on a line holding the layer: its worktree and its Claude. The row's own `⎇` `©` stay its own review's, which is what `↵` opens |
 | a dim row | your **team** was asked, you were not |
 
 ## A push after your review

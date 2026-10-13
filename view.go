@@ -45,7 +45,7 @@ func (m model) visibleRows() []visibleRow {
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
 	m.focusWhereTheRowsAre()
-	m.stackCol = m.stackColumnWidth()
+	m.stackCol, m.stackBadges = m.stackColumn()
 	rows := m.visibleRows()
 	h := m.contentHeight
 	if m.panes() {

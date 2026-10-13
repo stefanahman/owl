@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -475,5 +476,57 @@ func TestStackGraphsSurviveTheCache(t *testing.T) {
 	}
 	if l, err := back["acme/example"].line(4974); err != nil || len(l.PRs) != 6 {
 		t.Errorf("line(4974) from the cache: %v %v", l.numbers(), err)
+	}
+}
+
+// TestStackColumnShowsTheStackReview: a stack review open on a line
+// puts its own ⎇ © after the label of every layer it holds — #4969 too,
+// beside that row's own review — and not on #5124, a layer of the same
+// stack on another line. A closed one keeps its record and shows
+// nothing, and then the column spends no width on badges.
+func TestStackColumnShowsTheStackReview(t *testing.T) {
+	row := func(n int) PR {
+		p := PR{Number: n, Title: "pr " + strconv.Itoa(n)}
+		p.Author.Login = "alice"
+		return p
+	}
+	m := stackModel(t, row(4974), row(4970), row(4969), row(5124))
+	m.stackRecords = []stackRecord{{name: "stack-desktop", Repo: "acme/example", Tip: 4974,
+		PRs: []int{4969, 4970, 4971, 4972, 4973, 4974}}}
+	m.localState = map[string]LocalState{
+		"stack-desktop": {Worktree: "/wt/stack-desktop", Window: "stack-desktop", ClaudeState: agentWorking},
+		"pr-4969-rules": {Worktree: "/wt/pr-4969-rules"},
+	}
+	m.refreshList()
+	// "≡4969 1" padded to "≡4969 6/6", the widest label, then the badges.
+	stackBadges := styleStack.Render("≡4969 1") + "  " + " " + workspaceBadges(m.localState["stack-desktop"], "")
+	lines := map[int]string{}
+	for _, line := range strings.Split(m.render(), "\n") {
+		for _, n := range []int{4974, 4970, 4969, 5124} {
+			if strings.Contains(stripANSI(line), "pr "+strconv.Itoa(n)) {
+				lines[n] = line
+			}
+		}
+	}
+	if !strings.Contains(lines[4969], stackBadges) {
+		t.Errorf("#4969 lacks the stack review's badges after its label:\n%q", stripANSI(lines[4969]))
+	}
+	if !strings.Contains(lines[4969], styleWorktree.Render("⎇")+" ") || strings.Count(stripANSI(lines[4969]), "⎇") != 2 {
+		t.Errorf("#4969 should carry its own ⎇ and the stack review's: %q", stripANSI(lines[4969]))
+	}
+	for _, n := range []int{4974, 4970} {
+		if strings.Count(stripANSI(lines[n]), "⎇") != 1 || !strings.Contains(lines[n], styleClaudeWorking.Render("©")) {
+			t.Errorf("#%d lacks the stack review's badges: %q", n, stripANSI(lines[n]))
+		}
+	}
+	if strings.Contains(stripANSI(lines[5124]), "⎇") || strings.Contains(stripANSI(lines[5124]), "©") {
+		t.Errorf("#5124 is on another line and shows the review: %q", stripANSI(lines[5124]))
+	}
+
+	// Closed: the record stays, the worktree and the window are gone.
+	m.localState = map[string]LocalState{}
+	m.refreshList()
+	if m.stackBadges || strings.Contains(stripANSI(m.render()), "⎇") {
+		t.Errorf("a closed stack review still shows: badges=%v", m.stackBadges)
 	}
 }

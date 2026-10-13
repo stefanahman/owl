@@ -268,8 +268,12 @@ func splitPaneHeights(avail, want, otherWant int) (int, int) {
 }
 
 // stackLegend explains the stack column, in both panes' legends.
-var stackLegend = fmt.Sprintf("  %s  a layer of the stack whose bottom is #4969: the third of a line six long; %s the third below a fork",
-	styleStack.Render("≡4969 3/6"), styleStack.Render("≡4969 3"))
+var stackLegend = lipgloss.JoinVertical(lipgloss.Left,
+	fmt.Sprintf("  %s  the stack whose bottom is #4969, layer 3 of 6; %s is below a fork",
+		styleStack.Render("≡4969 3/6"), styleStack.Render("≡4969 3")),
+	fmt.Sprintf("  %s  after it: a stack review holds the layer — → then ↵ on its line goes there",
+		styleWorktree.Render("⎇")+" "+styleClaudeWorking.Render("©")),
+)
 
 // graphOf is the stack graph of the repository a pull request is in,
 // or nil before the list has one.
@@ -304,32 +308,88 @@ func (m model) stackLabel(pr *PR) string {
 	return fmt.Sprintf("≡%d %d/%d", l.PRs[0].Number, layer, len(l.PRs))
 }
 
-// stackColumnWidth is the widest label among the open rows of both
-// panes, so the column lines up from one pane to the other; 0, and no
-// column at all, while no row is a layer. Merged rows are never layers:
-// the graph holds the open pull requests.
-func (m model) stackColumnWidth() int {
-	w := 0
+// stackColumn is the stack column's shape over the open rows of both
+// panes, so it lines up from one pane to the other: the widest label —
+// 0, and no column at all, while no row is a layer — and whether any
+// row has a stack review open on it, which is what the column's badges
+// need room for. Merged rows are never layers: the graph holds the open
+// pull requests.
+func (m model) stackColumn() (width int, badges bool) {
 	for _, list := range [][]PR{m.prs, m.mine} {
 		for i := range list {
-			w = max(w, lipgloss.Width(m.stackLabel(&list[i])))
+			width = max(width, lipgloss.Width(m.stackLabel(&list[i])))
+			if _, ok := m.stackReview(&list[i]); ok {
+				badges = true
+			}
 		}
 	}
-	return w
+	return width, badges
 }
 
 // stackCell is the row's stack column: its label in the stack colour,
-// padded to the column, or blank on a row that is no layer.
+// padded to the column, then the stack review's badges when one holds
+// the row — blank on a row that is no layer.
 func (m model) stackCell(pr *PR) string {
 	if m.stackCol == 0 {
 		return ""
 	}
 	label := m.stackLabel(pr)
-	pad := strings.Repeat(" ", m.stackCol-lipgloss.Width(label)+2)
-	if label == "" {
-		return pad
+	cell := strings.Repeat(" ", max(m.stackCol-lipgloss.Width(label), 0))
+	if label != "" {
+		cell = styleStack.Render(label) + cell
 	}
-	return styleStack.Render(label) + pad
+	if m.stackBadges {
+		ls, ok := m.stackReview(pr)
+		if !ok {
+			ls = LocalState{}
+		}
+		cell += " " + workspaceBadges(ls, "")
+	}
+	return cell + "  "
+}
+
+// stackReview is the stack review that holds a row: the workspace of a
+// line whose record held the pull request at its last open, while its
+// worktree or its window is there. A layer below a fork can be on
+// several lines under review, and the one whose Claude most wants you
+// speaks for them — the row's own ⎇ © slots stay its own review's,
+// which is what ↵ opens.
+func (m model) stackReview(pr *PR) (LocalState, bool) {
+	repo := pr.Repo
+	if repo == "" {
+		repo = m.repo
+	}
+	var best LocalState
+	found := false
+	for _, r := range m.stackRecords {
+		if !strings.EqualFold(r.Repo, repo) || !slices.Contains(r.PRs, pr.Number) {
+			continue
+		}
+		ls, ok := m.localState[r.name]
+		if !ok || ls.Worktree == "" && ls.Window == "" {
+			continue // a closed stack keeps its record, and holds nothing
+		}
+		if !found || stateClaim(ls.ClaudeState) > stateClaim(best.ClaudeState) {
+			best, found = ls, true
+		}
+	}
+	return best, found
+}
+
+// stateClaim orders agent states by how much they want you: blocked on you,
+// then done and unread, then working, then idle.
+func stateClaim(state string) int {
+	switch state {
+	case agentBlocked:
+		return 4
+	case agentDone:
+		return 3
+	case agentWorking:
+		return 2
+	case agentIdle:
+		return 1
+	}
+	return 0
 }
 
 // PR titles take what the window leaves them, between a floor that
