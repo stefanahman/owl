@@ -22,14 +22,14 @@ import (
 )
 
 func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
-	num, prompt, base, err := parseOpenArgs("pr", "PR number", args)
+	o, err := parseOpenArgs("pr", "PR number", args)
 	if err != nil {
 		return err
 	}
-	if base != "" {
+	if o.base != "" {
 		return usageError("pr open: --base is the issue side's; a pull request's base is the one it was opened against")
 	}
-	n, err := parsePRNumber(num)
+	n, err := parsePRNumber(o.id)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		first: firstPrompt(cfg, n, plan),
 		env:   env,
 	}
-	return ws.open(cfg, newWindows(cfg, scopeForName(plan.name)), repo, prompt, arrive, out)
+	return ws.open(cfg, newWindows(cfg, scopeForName(plan.name)), repo, o.prompt, arrive, out)
 }
 
 // workspace is what open and start act on once its worktree exists —
@@ -182,41 +182,49 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	return runAfterOpen(hook, out, env)
 }
 
+// openArgs is what `<noun> open` and `<noun> start` were given.
+type openArgs struct {
+	id     string // the PR number, issue key or project, as typed
+	prompt string // --prompt
+	base   string // --base: the issue side's branch point
+}
+
 // parseOpenArgs accepts `<id> [--prompt TEXT] [--base BRANCH]` in any
 // order; noun and what name the id in the usage errors (pr, "PR
 // number"). --base is the issue side's: a PR's branch point is
 // whatever the PR says.
-func parseOpenArgs(noun, what string, args []string) (id, prompt, base string, err error) {
+func parseOpenArgs(noun, what string, args []string) (openArgs, error) {
+	var o openArgs
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "--prompt":
 			if i+1 == len(args) {
-				return "", "", "", usageError(noun + " open: --prompt needs a value")
+				return openArgs{}, usageError(noun + " open: --prompt needs a value")
 			}
-			prompt = args[i+1]
+			o.prompt = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--prompt="):
-			prompt = strings.TrimPrefix(a, "--prompt=")
+			o.prompt = strings.TrimPrefix(a, "--prompt=")
 		case a == "--base":
 			if i+1 == len(args) {
-				return "", "", "", usageError(noun + " open: --base needs a branch")
+				return openArgs{}, usageError(noun + " open: --base needs a branch")
 			}
-			base = args[i+1]
+			o.base = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--base="):
-			base = strings.TrimPrefix(a, "--base=")
+			o.base = strings.TrimPrefix(a, "--base=")
 		case strings.HasPrefix(a, "-"):
-			return "", "", "", usageError(noun + " open: unknown flag " + a)
-		case id == "":
-			id = a
+			return openArgs{}, usageError(noun + " open: unknown flag " + a)
+		case o.id == "":
+			o.id = a
 		default:
-			return "", "", "", usageError(noun + " open: unexpected argument " + a)
+			return openArgs{}, usageError(noun + " open: unexpected argument " + a)
 		}
 	}
-	if id == "" {
-		return "", "", "", usageError(noun + " open: " + what + " required")
+	if o.id == "" {
+		return openArgs{}, usageError(noun + " open: " + what + " required")
 	}
-	return id, prompt, base, nil
+	return o, nil
 }
 
 // firstPrompt is what a *fresh* conversation in the workspace opens

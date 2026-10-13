@@ -951,13 +951,13 @@ func TestParseOpenArgs(t *testing.T) {
 		"equals":       {"42", "--prompt=hi"},
 	}
 	for name, args := range ok {
-		id, prompt, _, err := parseOpenArgs("pr", "PR number", args)
-		if err != nil || id != "42" || (len(args) > 1 && prompt != "hi") {
-			t.Errorf("%s: got %q %q %v", name, id, prompt, err)
+		o, err := parseOpenArgs("pr", "PR number", args)
+		if err != nil || o.id != "42" || (len(args) > 1 && o.prompt != "hi") {
+			t.Errorf("%s: got %q %q %v", name, o.id, o.prompt, err)
 		}
 	}
 	for _, args := range [][]string{nil, {"42", "7"}, {"42", "--bogus"}, {"42", "--prompt"}, {"42", "--base"}} {
-		if _, _, _, err := parseOpenArgs("pr", "PR number", args); err == nil {
+		if _, err := parseOpenArgs("pr", "PR number", args); err == nil {
 			t.Errorf("%v: expected an error", args)
 		}
 	}
@@ -967,9 +967,9 @@ func TestParseOpenArgs(t *testing.T) {
 		"equals": {"BAR-1", "--base=bar-2-below"},
 		"first":  {"--base", "bar-2-below", "BAR-1"},
 	} {
-		id, _, base, err := parseOpenArgs("issue", "issue key", args)
-		if err != nil || id != "BAR-1" || base != "bar-2-below" {
-			t.Errorf("%s: got %q base %q %v", name, id, base, err)
+		o, err := parseOpenArgs("issue", "issue key", args)
+		if err != nil || o.id != "BAR-1" || o.base != "bar-2-below" {
+			t.Errorf("%s: got %q base %q %v", name, o.id, o.base, err)
 		}
 	}
 	// The id's shape is the scope's business: a PR number must be one.
