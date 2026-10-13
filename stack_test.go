@@ -380,7 +380,8 @@ func TestStackMark(t *testing.T) {
 		p.Author.Login = "alice"
 		return p
 	}
-	m := stackModel(t, row(4971, "pr 4971"), row(4974, "feat(calculate): key the middle factor gap"), row(3582, "pr 3582"))
+	long := "feat(calculate): key the middle factor gap on a level that finds any supplier's factors"
+	m := stackModel(t, row(4971, "pr 4971"), row(4974, long), row(3582, "pr 3582"))
 	check := func(when string, m model) {
 		t.Helper()
 		raw := m.render()
@@ -412,6 +413,17 @@ func TestStackMark(t *testing.T) {
 	failed, _ := m.Update(stacksMsg{gen: m.fetchGen})
 	check("after a failed fetch", failed.(model))
 
+	// The title takes what the window gives it: whole in a wide one, cut
+	// in a narrow one.
+	if screen := stripANSI(m.render()); !strings.Contains(screen, long+" ") {
+		t.Errorf("a 160-column window cut the title:\n%s", screen)
+	}
+	m.width = 100
+	m.resizeViewport()
+	m.refreshList()
+	if screen := stripANSI(m.render()); strings.Contains(screen, long) || !strings.Contains(screen, "…") {
+		t.Errorf("a 100-column window did not cut the title:\n%s", screen)
+	}
 }
 
 // TestNoStackColumnWithoutStacks: a list with no layer in it spends no

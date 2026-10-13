@@ -134,35 +134,39 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		// you. The title gives up the width they need, down to a floor —
 		// a row with three keys on it still has to read as a title.
 		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.TeamKeys()))
-		repo := m.repoCell(row.pr)
-		width := max(68-lipgloss.Width(chips)-lipgloss.Width(repo), 24)
-		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s%s%s%s",
+		prefix := fmt.Sprintf("%s#%-5d %s %s  %s %s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
 			m.stackCell(row.pr),
-			repo,
-			trim(row.pr.Title, width),
-			draft,
-			chips,
-		), " ")
+			m.repoCell(row.pr),
+		)
+		title := ""
+		if w := m.prTitleWidth(lipgloss.Width(prefix)); w > 0 {
+			title = titleCell(row.pr.Title, draft, w)
+		} else {
+			// No window size yet: the width this row always had.
+			title = trim(row.pr.Title, max(68-lipgloss.Width(chips)-lipgloss.Width(m.repoCell(row.pr)), 24)) + draft
+		}
+		return strings.TrimRight(prefix+title+chips, " ")
 	}
-	repo := m.repoCell(row.pr)
-	out := fmt.Sprintf(
-		"%s#%-5d %s %s  %s%s%s%s (%s)",
+	prefix := fmt.Sprintf("%s#%-5d %s %s  %s%s",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, verdictOf(row, m.me)),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
 		m.stackCell(row.pr),
-		repo,
-		trim(row.pr.Title, 70-lipgloss.Width(repo)),
-		draft,
-		row.pr.Author.Login,
+		m.repoCell(row.pr),
 	)
+	title := ""
+	if w := m.prTitleWidth(lipgloss.Width(prefix)); w > 0 {
+		title = titleCell(row.pr.Title, draft, w)
+	} else {
+		title = trim(row.pr.Title, 70-lipgloss.Width(m.repoCell(row.pr))) + draft
+	}
+	out := fmt.Sprintf("%s%s (%s)", prefix, title, row.pr.Author.Login)
 	// Asked of your team and not of you: present, with a lower claim on
 	// you, which is what dim means everywhere else in owl. Stripped of
 	// its colours first — dimming over them leaves the escape codes

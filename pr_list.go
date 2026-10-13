@@ -332,6 +332,32 @@ func (m model) stackCell(pr *PR) string {
 	return styleStack.Render(label) + pad
 }
 
+// PR titles take what the window leaves them, between a floor that
+// still reads as a title and a ceiling past which a row stops being
+// one line of reading. The suffix is reserved for what follows the
+// title: the author, or a pull request's issue chips.
+const (
+	prTitleFloor   = 24
+	prTitleCeiling = 100
+	prSuffix       = 20
+)
+
+// prTitleWidth is the title column after a prefix this wide; 0 before
+// the window has a size, and the caller keeps its old fixed width.
+func (m model) prTitleWidth(prefix int) int {
+	if m.width == 0 {
+		return 0
+	}
+	return clampInt(m.width-prefix-prSuffix, prTitleFloor, prTitleCeiling)
+}
+
+// titleCell is a title and its draft mark cut together to w and padded
+// to it, so what follows lines up down the list.
+func titleCell(title, draft string, w int) string {
+	s := trim(title, w-lipgloss.Width(draft)) + draft
+	return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0))
+}
+
 // badges renders a fixed-width block of colored state glyphs.
 //
 //	Slot 1  ⎇   worktree present — or the spinner while a child starts,

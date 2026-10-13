@@ -114,14 +114,18 @@ func (m model) renderLineRow(row visibleRow, selected bool) string {
 	}
 	l := row.line
 	span := fmt.Sprintf("#%d → #%d", l.PRs[0].Number, l.tip().Number)
-	return fmt.Sprintf("%s%s %-15s %s  %s  %s",
+	prefix := fmt.Sprintf("%s%s %-15s %s  %s  ",
 		cursor,
 		styleStack.Render("≡"),
 		span,
 		workspaceBadges(m.localOf(row), starting),
 		styleDim.Render(fmt.Sprintf("%2d layers", len(l.PRs))),
-		trim(l.tip().Title, 64),
 	)
+	w := m.prTitleWidth(lipgloss.Width(prefix))
+	if w == 0 {
+		w = 64
+	}
+	return prefix + trim(l.tip().Title, w)
 }
 
 // renderLayerRow draws one layer: its workspace, your review of it and
@@ -153,18 +157,20 @@ func (m model) renderLayerRow(row visibleRow, selected bool) string {
 	if row.pr.Author.Login != "" {
 		author = " (" + row.pr.Author.Login + ")"
 	}
-	title := styleStack.Render(row.treePrefix) + trim(row.pr.Title, max(64-lipgloss.Width(row.treePrefix), 24))
-	return fmt.Sprintf("%s#%-5d %s %s  %s %s %s%s%s",
+	prefix := fmt.Sprintf("%s#%-5d %s %s  %s %s %s",
 		cursor,
 		row.pr.Number,
 		badges(m.localOf(row), starting, verdictOf(row, m.me)),
 		checksGlyph(row.pr.CI),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
 		mark,
-		title,
-		draft,
-		author,
+		styleStack.Render(row.treePrefix),
 	)
+	w := m.prTitleWidth(lipgloss.Width(prefix))
+	if w == 0 {
+		w = max(64-lipgloss.Width(row.treePrefix), 24)
+	}
+	return strings.TrimRight(prefix+titleCell(row.pr.Title, draft, w)+author, " ")
 }
 
 // checksGlyph is the head commit's checks, as the mine pane draws
