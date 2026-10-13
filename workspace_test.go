@@ -989,6 +989,19 @@ func TestMatchesPR(t *testing.T) {
 	}
 }
 
+// TestAStackBranchIsNoStackWorkspace: owl checks a stack out detached,
+// so a branch called stack-… is somebody's own, and the worktree
+// holding it is not named for it — your PR on it keeps its pr-<N>
+// window, which close finds.
+func TestAStackBranchIsNoStackWorkspace(t *testing.T) {
+	if h := (worktree{Path: "/x/myrepo", Branch: "stack-auth-refactor"}).handle(); h != "" {
+		t.Errorf("handle = %q, want none", h)
+	}
+	if h := (worktree{Path: "/x/.worktrees.local/stack-desktop"}).handle(); h != "stack-desktop" {
+		t.Errorf("a stack worktree's handle = %q", h)
+	}
+}
+
 func TestMainRepo(t *testing.T) {
 	f := newFixture(t)
 	f.git(f.repo, "worktree", "add", "-q", filepath.Join(f.repo, ".worktrees.local", "pr-1"), "-b", "pr-1")

@@ -33,6 +33,9 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	if err != nil {
 		return err
 	}
+	if o.stack {
+		return runOpenStack(cfg, n, o.prompt, out, arrive)
+	}
 	repo, err := mainRepo(".")
 	if err != nil {
 		return err
@@ -187,12 +190,13 @@ type openArgs struct {
 	id     string // the PR number, issue key or project, as typed
 	prompt string // --prompt
 	base   string // --base: the issue side's branch point
+	stack  bool   // --stack: the pull request side's, the line through it
 }
 
-// parseOpenArgs accepts `<id> [--prompt TEXT] [--base BRANCH]` in any
-// order; noun and what name the id in the usage errors (pr, "PR
-// number"). --base is the issue side's: a PR's branch point is
-// whatever the PR says.
+// parseOpenArgs accepts `<id> [--prompt TEXT] [--base BRANCH]
+// [--stack]` in any order; noun and what name the id in the usage
+// errors (pr, "PR number"). --base is the issue side's: a PR's branch
+// point is whatever the PR says. --stack is the PR side's alone.
 func parseOpenArgs(noun, what string, args []string) (openArgs, error) {
 	var o openArgs
 	for i := 0; i < len(args); i++ {
@@ -213,6 +217,8 @@ func parseOpenArgs(noun, what string, args []string) (openArgs, error) {
 			i++
 		case strings.HasPrefix(a, "--base="):
 			o.base = strings.TrimPrefix(a, "--base=")
+		case a == "--stack" && noun == "pr":
+			o.stack = true
 		case strings.HasPrefix(a, "-"):
 			return openArgs{}, usageError(noun + " open: unknown flag " + a)
 		case o.id == "":

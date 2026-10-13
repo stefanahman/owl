@@ -29,11 +29,12 @@ type scope struct {
 	owns    func(cfg Config, window string) bool // whether a window name is one of ours
 }
 
-// reviews is the scope of PR reviews: windows named pr-<N>[-<slug>].
+// reviews is the scope of PR reviews: windows named pr-<N>[-<slug>],
+// and stack-<slug> for the review of a stack.
 var reviews = scope{
 	name:    "reviews",
 	session: func(cfg Config) string { return cfg.Tmux.Session },
-	owns:    func(_ Config, w string) bool { return prNumberOf(w) > 0 },
+	owns:    func(_ Config, w string) bool { return prNumberOf(w) > 0 || isStackName(w) },
 }
 
 // features is the scope of issues being worked on: windows named
