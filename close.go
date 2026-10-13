@@ -108,11 +108,18 @@ func featureWorkspaceOf(cfg Config, n int) string {
 // creates; a branch the user switched to meanwhile is theirs), and its
 // window. The agent's conversation on disk survives.
 func closeWorkspace(cfg Config, mx windows, label string, match func(name string) bool, force bool, out io.Writer) error {
-	window := findWindow(mx, match)
 	repo, err := mainRepo(".")
 	if err != nil {
 		return fmt.Errorf("close: not inside a git repository (default_repo makes owl work from anywhere)")
 	}
+	return closeWorkspaceIn(cfg, mx, repo, label, match, force, out)
+}
+
+// closeWorkspaceIn is closeWorkspace in the repository named rather
+// than the working directory's: an issue's, whose team may have one of
+// its own.
+func closeWorkspaceIn(cfg Config, mx windows, repo, label string, match func(name string) bool, force bool, out io.Writer) error {
+	window := findWindow(mx, match)
 	unlock, err := lockWorkspace(repo, label)
 	if err != nil {
 		return err
