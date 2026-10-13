@@ -21,6 +21,9 @@ func (m model) visibleRows() []visibleRow {
 	if m.drill != nil {
 		return m.visibleDrillRows()
 	}
+	if m.stack != nil {
+		return m.visibleStackRows()
+	}
 	switch m.kind {
 	case "issue":
 		return m.visibleIssueRows()
@@ -96,6 +99,12 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	}
 	if row.project != nil {
 		return m.renderProjectRow(row, selected)
+	}
+	if row.line != nil {
+		return m.renderLineRow(row, selected)
+	}
+	if m.stack != nil {
+		return m.renderLayerRow(row, selected)
 	}
 	cursor := "  "
 	if selected {
@@ -210,7 +219,7 @@ func (m model) actionRowView() string {
 // panes reports whether the list is the two-pane one. Only the PR
 // list is: a review queue and your own PRs are different questions
 // with different answers and different keys.
-func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
+func (m model) panes() bool { return m.kind == "pr" && m.drill == nil && m.stack == nil }
 
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
@@ -219,6 +228,9 @@ func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
 func (m model) hasData() bool {
 	if m.drill != nil {
 		return len(m.drillIssues) > 0
+	}
+	if m.stack != nil {
+		return m.stackGraph() != nil
 	}
 	switch m.kind {
 	case "issue":
@@ -234,6 +246,9 @@ func (m model) noun() string {
 	if m.drill != nil {
 		return "issues"
 	}
+	if m.stack != nil {
+		return "layers"
+	}
 	switch m.kind {
 	case "issue":
 		return "issues"
@@ -248,6 +263,9 @@ func (m model) noun() string {
 func (m model) countsSummary() string {
 	if m.drill != nil {
 		return m.drillCountsSummary()
+	}
+	if m.stack != nil {
+		return m.stackCountsSummary()
 	}
 	switch m.kind {
 	case "issue":
@@ -296,6 +314,8 @@ func (m model) titleLine(repo string) string {
 	if m.drill != nil {
 		// The project, not the repo: while drilled that is where you are.
 		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
+	} else if m.stack != nil {
+		left = styleHeader.Render(fmt.Sprintf("owl · the stack of #%d · %s", m.stack.at, m.stack.repo))
 	} else if m.kind != "pr" {
 		// The issue and project lists are not scoped by a repo — they are
 		// what is assigned to you and what you work in — so where several
@@ -376,12 +396,21 @@ func (m model) legend() string {
 	case "project":
 		return m.projectLegend()
 	}
+	if m.stack != nil {
+		return m.stackViewLegend()
+	}
 	// The two panes of the PR list carry different glyphs because they
 	// answer different questions, so the legend follows the focus the
 	// way the keys do.
 	if m.mineFocus {
 		return m.mineLegend()
 	}
+	return m.reviewLegend()
+}
+
+// reviewLegend explains the review pane's glyphs, which a layer of the
+// stack view carries too.
+func (m model) reviewLegend() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
 		fmt.Sprintf("  %s   a worktree exists for this row", styleWorktree.Render("⎇")),
@@ -457,6 +486,8 @@ func (m model) render() string {
 			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.cfg.Keys.Pane.label())
 		}
 		switch {
+		case m.stack != nil:
+			b.WriteString(fmt.Sprintf("\n#%d is no longer a layer of an open stack — %s goes back.\n", m.stack.at, m.cfg.Keys.Back.label()))
 		case m.search.Value() != "":
 			b.WriteString(fmt.Sprintf("\nno %s match /%s%s\n", m.noun(), m.search.Value(), where))
 		case m.kind == "project" && where != "":

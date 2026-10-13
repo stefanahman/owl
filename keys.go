@@ -56,7 +56,7 @@ func newKeyMap(k KeysConfig, bindings []Binding) keyMap {
 		Cleanup:  bind(k.Cleanup, "clean up worktree"),
 		Pane:     bind(k.Pane, "other pane"),
 		PaneBack: bind(k.PaneBack, "other pane"),
-		Drill:    bind(k.Drill, "the project's issues"),
+		Drill:    bind(k.Drill, "drill in"),
 		Back:     bind(k.Back, "back"),
 		Search:   bind(k.Search, "search"),
 		Cancel:   bind(k.Cancel, "cancel/clear"),

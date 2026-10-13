@@ -46,6 +46,13 @@ type visibleRow struct {
 	mine    bool
 	issue   *Issue
 	project *Project
+	// line marks a row of the stack view that is a whole line, not a
+	// layer: Enter opens its stack review. pr is then the line's tip,
+	// which is what the browser and yank keys act on.
+	line *stackLine
+	// treePrefix is what a layer row of the stack view draws before its
+	// title to show where the stack branches.
+	treePrefix string
 }
 
 // header reports whether the row is a section title.
@@ -67,6 +74,9 @@ func (r visibleRow) noun() string {
 // id names what the row is about, for inflight and the children: a
 // PR's number, an issue's key, a project's slug.
 func (r visibleRow) id() string {
+	if r.line != nil {
+		return "stack:" + strconv.Itoa(r.line.tip().Number)
+	}
 	if r.pr != nil {
 		return strconv.Itoa(r.pr.Number)
 	}
@@ -122,6 +132,11 @@ type model struct {
 	// stacks is every open pull request in scope, as one graph per
 	// repository: what places a row in its stack.
 	stacks map[string]*prGraph
+	// stack is the stack view, showing in place of the list; nil while
+	// the list is. stackRecords are this clone's stack workspaces, read
+	// with the local state, for a line row to find its own.
+	stack        *stackView
+	stackRecords []stackRecord
 	// stackCol is the stack column's width, worked out once per refresh
 	// rather than once per row: every row's label walks the graph.
 	stackCol int
@@ -252,6 +267,7 @@ func newProjectModel(cfg Config, repo string, tracker Tracker, cache *projectCac
 	m.keys.Browser.SetHelp(m.keys.Browser.Help().Key, "open project in Linear")
 	m.keys.Yank.SetHelp(m.keys.Yank.Help().Key, "yank project name")
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, "close the project workspace")
+	m.keys.Drill.SetHelp(m.keys.Drill.Help().Key, "the project's issues")
 	m.labelWorkspaceKey()
 	m.onlyWorkspace = m.configuredWorkspace("")
 	if cache != nil {
@@ -328,6 +344,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 	// kind comes from the caller: the model this closure sees is the
 	// one under construction, a review list, and the issue list is
 	// made from it afterwards.
+	m.labelKeysForPane()
 	m.runSelf = func(kind string, args ...string) error {
 		return runChild(newWindows(cfg, scopeOf(kind)).ChildEnv(), append(append(globalArgs(), kind), args...)...)
 	}
@@ -380,7 +397,21 @@ func (m model) fetches() []tea.Cmd {
 	// in the same request, and a `gh api user` of its own was half a
 	// second of round trip on every refresh for one string that never
 	// changes.
-	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine, m.fetchStacks}
+	cmds := []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine, m.fetchStacks}
+	if m.stack != nil {
+		cmds = append(cmds, m.fetchStackLayers)
+	}
+	return cmds
+}
+
+// listCursor is the list's row to come back to: the cursor, or while
+// the stack view shows, the row it was opened from — the view's own
+// cursor names a row of the view.
+func (m model) listCursor() int {
+	if m.stack != nil {
+		return m.stack.back
+	}
+	return m.cursor
 }
 
 // fetchStacks reads every open pull request in scope into the stack
@@ -420,6 +451,6 @@ func (m model) persistCache() {
 		Stacks:     cacheGraphs(m.stacks),
 		Me:         m.me,
 		FetchedAt:  m.lastFetched,
-		Cursor:     m.cursor,
+		Cursor:     m.listCursor(),
 	})
 }

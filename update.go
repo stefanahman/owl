@@ -168,8 +168,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.stacks = msg.graphs
+		m.clampCursor() // in the stack view the graph is the rows, and it can shrink
 		m.refreshList()
 		m.persistCache()
+
+	case stackLayersMsg:
+		if msg.gen != m.fetchGen || m.stack == nil || msg.repo != m.stack.repo || msg.at != m.stack.at {
+			break
+		}
+		if msg.err != nil {
+			m.notice = msg.err
+			break
+		}
+		// A copy: the view the commands in flight were made from keeps
+		// the layers it had.
+		v := *m.stack
+		v.layers = map[int]PR{}
+		for _, pr := range msg.prs {
+			v.layers[pr.Number] = pr
+		}
+		m.stack = &v
+		m.refreshList()
 
 	case mergedMsg:
 		if msg.gen != m.fetchGen {
@@ -183,6 +202,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localMsg:
 		m.localState = map[string]LocalState(msg)
 		m.projectStates = loadProjectStates()
+		if m.kind == "pr" && m.repoDir != "" {
+			m.stackRecords, _ = readStackRecords(m.repoDir)
+		}
 		m.refreshList()
 		// LocalState is derived from tmux/git — cheap to refetch, not cached.
 
@@ -357,6 +379,11 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.persistCache()
 		}
 	case key.Matches(msg, m.keys.Drill):
+		// From a stacked PR row, into its stacks: one level, as the
+		// project's is.
+		if m.kind == "pr" && m.stack == nil {
+			return m.enterStack()
+		}
 		// Only from a project row, and only into a project: the drill is
 		// one level, project to its issues.
 		if p := m.selectedProject(); p != nil {
@@ -368,6 +395,9 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.fetchDrillIssues, m.fetchIssuePRs, m.fetchLocal)
 		}
 	case key.Matches(msg, m.keys.Back):
+		if m.stack != nil {
+			return m.leaveStack()
+		}
 		if m.drill != nil {
 			m.drill, m.drillIssues = nil, nil
 			m.sc = projects
@@ -381,6 +411,14 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if other := m.elsewhere(row); other != "" {
 				m.notice = fmt.Errorf("#%d is in %s and owl is in %s — open it from there", row.pr.Number, other, m.repo)
 				return m, nil
+			}
+			if row.line != nil {
+				arrive := key.Matches(msg, m.keys.Enter)
+				verb := "starting "
+				if arrive {
+					verb = "opening "
+				}
+				return m.launch(row.id(), verb+row.label()+"…", m.openStack(row.id(), row.line.tip().Number, arrive), arrive)
 			}
 			if key.Matches(msg, m.keys.Enter) {
 				return m.launch(row.id(), "opening "+row.label()+"…", m.openWorkspace(row.noun(), row.id(), ""), true)
@@ -422,10 +460,16 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					m.notice = fmt.Errorf("#%d is in %s and owl is in %s — close it from there", row.pr.Number, other, m.repo)
 					return m, nil
 				}
+				if row.line != nil {
+					return m.launch(row.id(), "closing "+row.label()+"…", m.closeStack(row.id(), row.line.tip().Number), false)
+				}
 				return m.launch(row.id(), "closing "+row.label()+"…", m.closeWorkspace(row.noun(), row.id()), false)
 			}
 		}
 	case key.Matches(msg, m.keys.Search):
+		if m.stack != nil {
+			break // the view does not filter; ← and then / does
+		}
 		return m, m.search.Focus()
 	case key.Matches(msg, m.keys.Cancel):
 		if m.search.Value() != "" {
@@ -436,9 +480,10 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = true
 	default:
+		bindings := m.bindings()
 		for i, b := range m.keys.Bindings {
-			if key.Matches(msg, b) {
-				return m.press(m.bindings()[i])
+			if key.Matches(msg, b) && m.bindingFits(i) {
+				return m.press(bindings[i])
 			}
 		}
 	}

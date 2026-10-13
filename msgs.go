@@ -31,6 +31,16 @@ type stacksMsg struct {
 	graphs map[string]*prGraph
 }
 
+// stackLayersMsg carries the details of the stack view's layers, for
+// the view opened on repo's at.
+type stackLayersMsg struct {
+	gen  int
+	repo string
+	at   int
+	prs  []PR
+	err  error
+}
+
 type mergedMsg struct {
 	gen int
 	prs []PR

@@ -46,7 +46,9 @@ func (m model) stateScopes() []scope {
 	if sc.owns == nil {
 		sc = reviews
 	}
-	if m.panes() {
+	// The stack view too: a layer may be a PR of your own, in its
+	// branch's workspace.
+	if m.kind == "pr" && m.drill == nil {
 		return []scope{sc, features}
 	}
 	return []scope{sc}

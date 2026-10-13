@@ -141,6 +141,7 @@ func (m *model) labelKeysForPane() {
 	}
 	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, enter)
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, cleanup)
+	m.keys.Drill.SetHelp(m.keys.Drill.Help().Key, "the PR's stack")
 }
 
 // otherPaneRows is the pane that does not have the cursor.
