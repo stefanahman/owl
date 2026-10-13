@@ -52,7 +52,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr                           the PR list (run inside a git repo, or with default_repo set)
        owl pr open <N> [--prompt TEXT] [--stack]  open (or focus) the review of PR N; --stack reviews the line of the stack through N
        owl pr start <N> [--prompt TEXT] [--stack] the same without going there: no window selection, no after_open
-       owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
+       owl pr close [--force] [--stack] [<N>]     remove PR N's worktree, branch and window, or with --stack the stack workspace whose line holds N (or named, stack-…); --force discards uncommitted changes
        owl pr stack <N> [--json]        the stack PR N is a layer of: the line from the trunk through N, and where it forks
        owl pr --check                   say what has arrived in your court since owl last looked, for a scheduler
        owl issue                        the issues assigned to you, from Linear

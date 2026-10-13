@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,10 +46,13 @@ func closeFlags(args []string) (force bool, rest []string) {
 
 func runClose(cfg Config, args []string, out io.Writer) error {
 	force, rest := closeFlags(args)
+	mx := newWindows(cfg, reviews)
+	if i := slices.Index(rest, "--stack"); i >= 0 {
+		return runCloseStack(cfg, mx, slices.Delete(rest, i, i+1), force, out)
+	}
 	if len(rest) > 1 {
 		return usageError("pr close: expected at most one PR number")
 	}
-	mx := newWindows(cfg, reviews)
 	var n int
 	var err error
 	if len(rest) == 1 {

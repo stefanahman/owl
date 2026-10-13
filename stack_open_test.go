@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -147,6 +148,81 @@ func TestOpenStackRefusesALonePR(t *testing.T) {
 	}
 }
 
+// TestCloseStackKeepsItsRecord: close removes the worktree and the
+// window and keeps the record, so the line opens again under its name
+// and Claude resumes the conversation stored under it.
+func TestCloseStackKeepsItsRecord(t *testing.T) {
+	f := stackFixture(t, lineOfTwo()...)
+	name := "stack-fix-crash-on-startup"
+	f.open("42", "--stack")
+
+	var out strings.Builder
+	if err := runClose(f.cfg, []string{"--stack", "7"}, &out); err != nil {
+		t.Fatalf("close --stack 7: %v\n%s", err, out.String())
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) || slices.Contains(f.windows(), name) {
+		t.Errorf("still there after close: %v", f.windows())
+	}
+	if r := f.record(name); r.Tip != 42 {
+		t.Errorf("record after close: %+v", r)
+	}
+	var nothing nothingToCloseError
+	if err := runClose(f.cfg, []string{"--stack", "7"}, &out); !errors.As(err, &nothing) {
+		t.Errorf("second close: %v, want nothing to close", err)
+	}
+	if err := runClose(f.cfg, []string{"--stack", "99"}, &out); !errors.As(err, &nothing) {
+		t.Errorf("close of a PR in no stack: %v, want nothing to close", err)
+	}
+	if !strings.Contains(f.open("7", "--stack"), name+": ") {
+		t.Error("re-open after close took another name")
+	}
+}
+
+// TestCloseStackFromInside: without a number, the stack is the one
+// whose worktree the caller stands in.
+func TestCloseStackFromInside(t *testing.T) {
+	f := stackFixture(t, lineOfTwo()...)
+	name := "stack-fix-crash-on-startup"
+	f.open("42", "--stack")
+	wt := filepath.Join(f.repo, ".worktrees.local", name)
+	t.Chdir(wt)
+	if err := runClose(f.cfg, []string{"--stack"}, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("worktree still there: %v", err)
+	}
+}
+
+// TestCloseStackFollowsTheLine: close finds a workspace as open does,
+// by its tip on the line as it is now. A layer pushed on top of the
+// tip since the last open is on no record yet, and closing the line
+// by it still closes the workspace; so does its name.
+func TestCloseStackFollowsTheLine(t *testing.T) {
+	f := stackFixture(t, lineOfTwo()...)
+	name := "stack-fix-crash-on-startup"
+	f.open("42", "--stack")
+	f.setGraph(append(lineOfTwo(), stackPROn(43, "fortytwo", "fortythree"))...)
+
+	var out strings.Builder
+	if err := runClose(f.cfg, []string{"--stack", "43"}, &out); err != nil {
+		t.Fatalf("close --stack 43 on a line grown past the record: %v", err)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("the worktree is still there")
+	}
+
+	// Reopened, the worktree is made again at the line's tip, now #43.
+	f.git(f.origin, "update-ref", "refs/pull/43/head", "refs/pull/42/head")
+	f.open("7", "--stack")
+	if err := runClose(f.cfg, []string{"--stack", name}, &out); err != nil {
+		t.Fatalf("close --stack by name: %v", err)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("the worktree is still there after close by name")
+	}
+}
+
 func TestStackNamesAreWorkspaces(t *testing.T) {
 	for _, name := range []string{"stack-fix-crash", "stack-4974"} {
 		if !isWorkspaceName(name) || !reviews.owns(Config{}, name) {
@@ -161,5 +237,31 @@ func TestStackNamesAreWorkspaces(t *testing.T) {
 	}
 	if isStackName("stack-") || isStackName("stack-Upper") || isStackName("xstack-a") {
 		t.Error("isStackName accepts what open never names")
+	}
+}
+
+// TestCloseStackRefusesASharedLayer: two lines that share a layer are
+// two workspaces, and the shared layer names neither of them — by the
+// line as it is now, and by the records alone when GitHub is out of
+// reach.
+func TestCloseStackRefusesASharedLayer(t *testing.T) {
+	records := []stackRecord{
+		{name: "stack-desktop", Repo: "acme/app", Tip: 4974, PRs: []int{4969, 4970, 4971, 4972, 4973, 4974}},
+		{name: "stack-goods", Repo: "acme/app", Tip: 5065, PRs: []int{4969, 4970, 4971, 4972, 4973, 5065}},
+		{name: "stack-elsewhere", Repo: "acme/other", Tip: 9, PRs: []int{4973, 9}},
+	}
+	g := newPRGraph("acme/app", "main", cfiPRs())
+	for _, graph := range []*prGraph{g, nil} {
+		_, err := stackToClose(records, graph, "acme/app", "/repo", 4973)
+		if err == nil || !strings.Contains(err.Error(), "stack-desktop (to #4974), stack-goods (to #5065)") || strings.Contains(err.Error(), "elsewhere") {
+			t.Errorf("graph %v: stackToClose(4973) = %v, want both of acme/app's lines named", graph != nil, err)
+		}
+		if name, err := stackToClose(records, graph, "acme/app", "/repo", 5065); err != nil || name != "stack-goods" {
+			t.Errorf("graph %v: stackToClose(5065) = %q, %v", graph != nil, name, err)
+		}
+	}
+	// The remote's spelling of the repository need not be GitHub's.
+	if name, err := stackToClose(records, g, "Acme/App", "/repo", 4974); err != nil || name != "stack-desktop" {
+		t.Errorf("stackToClose(4974) under Acme/App = %q, %v", name, err)
 	}
 }

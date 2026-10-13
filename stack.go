@@ -205,6 +205,59 @@ func (l stackLine) numbers() []int {
 	return out
 }
 
+// layerPlace is a layer in a stack's tree: the pull request, and what
+// goes before its title, in the stack view, to show where it branches.
+type layerPlace struct {
+	n      int
+	prefix string
+}
+
+// stackLayers are the layers of every line through at, in tree order:
+// the path from the bottom up to at, then everything above it, a fork's
+// branches drawn as a tree. Layers on lines that do not pass through
+// at — a sibling off a lower layer — are not its stack.
+func stackLayers(g *prGraph, at int) []layerPlace {
+	l, err := g.line(at)
+	if err != nil {
+		return nil
+	}
+	var out []layerPlace
+	seen := map[int]bool{}
+	for _, p := range l.PRs {
+		out = append(out, layerPlace{n: p.Number})
+		seen[p.Number] = true
+		if p.Number == at {
+			break
+		}
+	}
+	var walk func(n int, prefix string)
+	walk = func(n int, prefix string) {
+		up := g.above(n)
+		if len(up) == 1 {
+			if !seen[up[0]] {
+				seen[up[0]] = true
+				out = append(out, layerPlace{n: up[0], prefix: prefix})
+				walk(up[0], prefix)
+			}
+			return
+		}
+		for i, c := range up {
+			if seen[c] {
+				continue
+			}
+			seen[c] = true
+			branch, under := "├─ ", "│  "
+			if i == len(up)-1 {
+				branch, under = "└─ ", "   "
+			}
+			out = append(out, layerPlace{n: c, prefix: prefix + branch})
+			walk(c, prefix+under)
+		}
+	}
+	walk(at, "")
+	return out
+}
+
 // prList names pull requests for a message: #1, #2 and #3.
 func prList(nums []int) string {
 	names := make([]string, len(nums))

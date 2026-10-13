@@ -256,6 +256,104 @@ func ensureStackWorktree(cfg Config, repo, name string, tip int, out io.Writer) 
 	return path, nil
 }
 
+// runCloseStack is `owl pr close --stack [<N>|<name>]`: the stack
+// workspace PR N names, the one called name, or the one the caller is
+// in. Its record stays, so opening the line again resumes the
+// conversation under its name.
+func runCloseStack(cfg Config, mx windows, args []string, force bool, out io.Writer) error {
+	if len(args) > 1 {
+		return usageError("pr close --stack: expected at most one PR number or stack workspace")
+	}
+	repo, err := mainRepo(".")
+	if err != nil {
+		return err
+	}
+	var name string
+	switch {
+	case len(args) == 1 && isStackName(args[0]):
+		name = args[0]
+	case len(args) == 1:
+		n, err := parsePRNumber(args[0])
+		if err != nil {
+			return err
+		}
+		records, err := readStackRecords(repo)
+		if err != nil {
+			return err
+		}
+		slug := currentRepo(cfg.Remote)
+		// The line as it is now, when GitHub answers; the records alone
+		// when it does not.
+		g, gerr := repoGraph(repo, slug)
+		if gerr != nil {
+			g = nil
+		}
+		if name, err = stackToClose(records, g, slug, repo, n); err != nil {
+			return err
+		}
+	default:
+		if name = inferStack(mx, repo, cfg.WorktreesDir); name == "" {
+			return usageError("pr close --stack: PR number or stack workspace required (or run it from inside a stack-<…> worktree or window)")
+		}
+	}
+	return closeWorkspace(cfg, mx, name, func(s string) bool { return s == name }, force, out)
+}
+
+// stackToClose is the stack workspace PR n names. First by the rule
+// open and the stack view find one by: its record's tip on a line
+// through n as the line is now, so a layer pushed on top since the
+// last open still names it. Then, for a line changed past recognising
+// or a graph that could not be read (g nil), by the line the record
+// held at its last open. Two workspaces either way name neither.
+func stackToClose(records []stackRecord, g *prGraph, slug, repo string, n int) (string, error) {
+	pick := func(match func(stackRecord) bool) []stackRecord {
+		var out []stackRecord
+		for _, r := range records {
+			if strings.EqualFold(r.Repo, slug) && match(r) {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	var found []stackRecord
+	if g != nil {
+		on := map[int]bool{}
+		for _, lp := range stackLayers(g, n) {
+			on[lp.n] = true
+		}
+		found = pick(func(r stackRecord) bool { return on[r.Tip] })
+	}
+	if len(found) == 0 {
+		found = pick(func(r stackRecord) bool { return slices.Contains(r.PRs, n) })
+	}
+	switch len(found) {
+	case 0:
+		return "", nothingToCloseError{label: fmt.Sprintf("#%d stack", n), repo: repo}
+	case 1:
+		return found[0].name, nil
+	}
+	slices.SortFunc(found, func(a, b stackRecord) int { return strings.Compare(a.name, b.name) })
+	names := make([]string, len(found))
+	for i, r := range found {
+		names[i] = fmt.Sprintf("%s (to #%d)", r.name, r.Tip)
+	}
+	return "", fmt.Errorf("#%d is a layer of %d stack workspaces, %s: close one by its name or its tip", n, len(found), strings.Join(names, ", "))
+}
+
+// inferStack is the stack workspace the caller is in: the worktree's
+// directory, else the multiplexer's current window, else "".
+func inferStack(mx windows, repo, worktreesDir string) string {
+	if top, err := git(".", "rev-parse", "--show-toplevel"); err == nil {
+		if filepath.Dir(top) == filepath.Join(repo, worktreesDir) && isStackName(filepath.Base(top)) {
+			return filepath.Base(top)
+		}
+	}
+	if w, ok := mx.Current(); ok && isStackName(w) {
+		return w
+	}
+	return ""
+}
+
 // stackPrompt is the first prompt of a fresh stack review.
 func stackPrompt(cfg Config, l stackLine) string {
 	return strings.NewReplacer(
