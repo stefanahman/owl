@@ -461,3 +461,29 @@ linear:
 		t.Errorf("one nameless workspace: %v", err)
 	}
 }
+
+// repos sends a team's issues to its own repository. The keys are team
+// keys in any case, the paths are absolute after ~, and a team no
+// workspace names is a typo.
+func TestReposRouteTeamsToRepositories(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := parseConfig([]byte("linear:\n  team: VI\nrepos:\n  vi: ~/src/voyage\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.Repos["VI"], filepath.Join(home, "src/voyage"); got != want {
+		t.Errorf("repos.VI = %q, want %q", got, want)
+	}
+	for _, c := range []struct{ yaml, want string }{
+		{"linear:\n  team: VI\nrepos:\n  VI: src/voyage\n", "not an absolute path"},
+		{"linear:\n  team: VI\nrepos:\n  NOR: /src/norrbrunn\n", "no Linear workspace names that team"},
+		{"repos:\n  vi: /a\n  VI: /b\n", "named twice"},
+	} {
+		if _, err := parseConfig([]byte(c.yaml)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: %v, want an error saying %q", c.yaml, err, c.want)
+		}
+	}
+}

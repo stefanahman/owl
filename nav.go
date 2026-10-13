@@ -169,15 +169,17 @@ func (m model) started(r visibleRow) bool {
 	if ls := m.localOf(r); ls.Window != "" || ls.Worktree != "" {
 		return true
 	}
+	// Nothing local: Claude may still hold the conversation from a
+	// workspace that has been closed since, under the directory that
+	// workspace had — for an issue, in its team's repository.
+	if r.issue != nil {
+		repo, err := m.cfg.repoFor(r.issue.Key)
+		return err == nil && hasConversationFor(filepath.Join(repo, m.cfg.WorktreesDir, r.issue.Branch))
+	}
 	if m.repoDir == "" {
 		return false
 	}
-	// Nothing local: Claude may still hold the conversation from a
-	// workspace that has been closed since, under the directory that
-	// workspace had.
 	switch {
-	case r.issue != nil:
-		return hasConversationFor(filepath.Join(m.repoDir, m.cfg.WorktreesDir, r.issue.Branch))
 	case r.pr != nil && r.mine:
 		// One of yours has two possible names and the TUI cannot ask
 		// GitHub which: the branch's, when it carries an issue key, and

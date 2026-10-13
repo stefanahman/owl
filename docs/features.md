@@ -73,6 +73,21 @@ Linear workspaces the list shows one at a time and `tab` moves to the
 next, `shift+tab` to the previous, as on the project list ([projects.md](projects.md#several-workspaces)).
 Off a terminal, `owl issue` prints a table of the open ones.
 
+The workspace opens in the repository owl runs in, unless `repos` names
+one for the issue's team. With several workspaces, one list holds teams
+whose code lives in different repositories, and
+
+```yaml
+repos:
+  NOR: ~/src/norrbrunn
+  VI: ~/src/voyage-interieur
+```
+
+sends NOR-176 and VI-12 to their own repositories from whichever list
+they were opened in; `start` and `close` follow, and the list shows
+their worktrees from there. A team `repos` leaves out, such as one whose
+work spans several repositories, keeps opening where owl runs.
+
 A feature workspace is a worktree for the issue. `open` looks for the
 work that already exists before making any of its own:
 

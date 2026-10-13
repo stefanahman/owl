@@ -2,6 +2,9 @@ package main
 
 import (
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -428,5 +431,42 @@ func TestBacklogLeadsWithPriority(t *testing.T) {
 	// Recency, untouched by the urgent one below it.
 	if got, want := order["In progress"], []string{"BAR-9001", "BAR-9002"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("in-progress order = %v, want %v — started sections keep recency", got, want)
+	}
+}
+
+// A closed feature's conversation is looked for where open would put its
+// worktree: in its team's repository when repos names one, even from a
+// list that runs in another. Otherwise `when: conversation` bindings go
+// dark for every routed issue the moment its workspace closes.
+func TestStartedFindsAConversationInTheTeamsRepo(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	own, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "init", "-q", own).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
+	m.cfg.Repos = map[string]string{"BAR": own}
+	m.repoDir = t.TempDir() // the list runs in another repository
+	is := mkIssue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted", 2, time.Hour)
+	row := visibleRow{issue: &is}
+	if m.started(row) {
+		t.Fatal("an issue with no conversation anywhere reads as started")
+	}
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(projects, encodeProjectPath(filepath.Join(own, m.cfg.WorktreesDir, is.Branch)))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.started(row) {
+		t.Error("the conversation in the team's repository is not found from a list run elsewhere")
 	}
 }

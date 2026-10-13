@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,27 +26,28 @@ import (
 // key means. Obtain one via loadConfig (or defaultConfig in tests) so
 // it has been validated and the derived fields are set.
 type Config struct {
-	Mux          string           `yaml:"mux"`
-	Tmux         TmuxConfig       `yaml:"tmux"`
-	Herdr        HerdrConfig      `yaml:"herdr"`
-	Remote       string           `yaml:"remote"`
-	WorktreesDir string           `yaml:"worktrees_dir"`
-	DefaultRepo  string           `yaml:"default_repo"`
-	Agent        AgentConfig      `yaml:"agent"`
-	OpenCmd      string           `yaml:"open_cmd"`
-	OnOpen       string           `yaml:"on_open"`
-	Hooks        HooksConfig      `yaml:"hooks"`
-	Theme        ThemeConfig      `yaml:"theme"`
-	Keys         KeysConfig       `yaml:"keys"`
-	Bindings     BindingsConfig   `yaml:"bindings"`
-	Linear       LinearWorkspaces `yaml:"linear"`
-	PR           PRConfig         `yaml:"pr"`
-	Issue        IssueConfig      `yaml:"issue"`
-	Mine         MineConfig       `yaml:"mine"`
-	Project      ProjectConfig    `yaml:"project"`
-	Groups       GroupsConfig     `yaml:"groups"`
-	MergedWindow Window           `yaml:"merged_window"`
-	DoneWindow   Window           `yaml:"done_window"`
+	Mux          string            `yaml:"mux"`
+	Tmux         TmuxConfig        `yaml:"tmux"`
+	Herdr        HerdrConfig       `yaml:"herdr"`
+	Remote       string            `yaml:"remote"`
+	WorktreesDir string            `yaml:"worktrees_dir"`
+	DefaultRepo  string            `yaml:"default_repo"`
+	Repos        map[string]string `yaml:"repos"`
+	Agent        AgentConfig       `yaml:"agent"`
+	OpenCmd      string            `yaml:"open_cmd"`
+	OnOpen       string            `yaml:"on_open"`
+	Hooks        HooksConfig       `yaml:"hooks"`
+	Theme        ThemeConfig       `yaml:"theme"`
+	Keys         KeysConfig        `yaml:"keys"`
+	Bindings     BindingsConfig    `yaml:"bindings"`
+	Linear       LinearWorkspaces  `yaml:"linear"`
+	PR           PRConfig          `yaml:"pr"`
+	Issue        IssueConfig       `yaml:"issue"`
+	Mine         MineConfig        `yaml:"mine"`
+	Project      ProjectConfig     `yaml:"project"`
+	Groups       GroupsConfig      `yaml:"groups"`
+	MergedWindow Window            `yaml:"merged_window"`
+	DoneWindow   Window            `yaml:"done_window"`
 }
 
 // Window is how far back a "what just finished" section reaches, as
@@ -814,6 +816,11 @@ func parseConfig(data []byte) (Config, error) {
 	cfg.Bindings.Mine = mergeBindings(defaults.Mine, cfg.Bindings.Mine)
 	cfg.Bindings.Issue = mergeBindings(defaults.Issue, cfg.Bindings.Issue)
 	cfg.DefaultRepo = expandHome(cfg.DefaultRepo)
+	repos, err := normalRepos(cfg.Repos)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Repos = repos
 	for k, v := range cfg.Hooks.AfterOpen {
 		cfg.Hooks.AfterOpen[k] = expandHome(v)
 	}
@@ -844,6 +851,9 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("worktrees_dir must be a relative path inside the repo, got %q", cfg.WorktreesDir)
 	}
 	if err := cfg.Linear.validate(); err != nil {
+		return err
+	}
+	if err := cfg.validateRepos(); err != nil {
 		return err
 	}
 	switch cfg.OnOpen {
@@ -904,6 +914,61 @@ func (cfg *Config) validate() error {
 		}
 	}
 	return validateBindings(cfg.Keys, cfg.Bindings)
+}
+
+// normalRepos is repos as owl looks it up: team keys upper-cased, as
+// issue keys are, and ~ expanded. Empty is nil, the default.
+func normalRepos(in map[string]string) (map[string]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(in))
+	for team, dir := range in {
+		key := strings.ToUpper(team)
+		if _, dup := out[key]; dup {
+			return nil, fmt.Errorf("repos: team %s is named twice", key)
+		}
+		out[key] = expandHome(dir)
+	}
+	return out, nil
+}
+
+// validateRepos refuses a repos entry owl could not act on: a path that
+// would mean something different from each directory owl runs in, and a
+// team no Linear workspace names, which is a typo rather than a choice.
+func (cfg *Config) validateRepos() error {
+	teams := cfg.Linear.TeamKeys()
+	for _, team := range slices.Sorted(maps.Keys(cfg.Repos)) {
+		dir := cfg.Repos[team]
+		if !filepath.IsAbs(dir) {
+			return fmt.Errorf("repos.%s: %q is not an absolute path (~ is expanded)", team, dir)
+		}
+		if len(teams) > 0 && !slices.ContainsFunc(teams, func(t string) bool { return strings.EqualFold(t, team) }) {
+			return fmt.Errorf("repos.%s: no Linear workspace names that team (teams: %s)", team, strings.Join(teams, ", "))
+		}
+	}
+	return nil
+}
+
+// repoFor is the repository an issue's work happens in: the one repos
+// names for its team, else the one owl runs in. owl merges several
+// workspaces into one list, and a team with a repository of its own
+// opens there from any list, so one company's branch never lands in
+// another's repository.
+func (c Config) repoFor(key string) (string, error) {
+	team, _, _ := strings.Cut(strings.ToUpper(key), "-")
+	if dir, ok := c.Repos[team]; ok {
+		repo, err := mainRepo(dir)
+		if err != nil {
+			return "", fmt.Errorf("repos.%s: %s is not a git repository", team, dir)
+		}
+		return repo, nil
+	}
+	repo, err := mainRepo(".")
+	if err != nil {
+		return "", errors.New("not inside a git repository (default_repo makes owl work from anywhere)")
+	}
+	return repo, nil
 }
 
 var colorRe = regexp.MustCompile(`^(#[0-9a-fA-F]{6}|[0-9]{1,3})$`)

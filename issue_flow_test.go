@@ -354,6 +354,48 @@ func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
 	}
 }
 
+// A team with a repository of its own opens there, from whichever
+// repository the list runs in: owl merges several companies' issues into
+// one list, and one's branch must never land in another's repo. The list
+// sees the worktree from where it runs, and close finds it there too.
+func TestIssueGoesToItsTeamsRepo(t *testing.T) {
+	f, _ := issueFixture(t)
+	own := filepath.Join(f.root, "bar-repo")
+	f.git(f.root, "clone", "-q", f.origin, own)
+	f.cfg.Repos = map[string]string{"BAR": own}
+	t.Chdir(f.repo)
+
+	f.openIssue("BAR-4160")
+	name := "bar-4160-per-tenant-override"
+	wt := filepath.Join(own, ".worktrees.local", name)
+	if !f.exists(wt) {
+		t.Fatalf("no worktree in the team's repository at %s", wt)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("the issue was opened in the repository the list runs in")
+	}
+	if got := readWorktrees(f.cfg)[name].Path; got != wt {
+		t.Errorf("the list, run in another repository, has the worktree at %q", got)
+	}
+	var out strings.Builder
+	if err := runIssue(f.cfg, []string{"close", "BAR-4160"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(wt) {
+		t.Errorf("close left the worktree in the team's repository:\n%s", out.String())
+	}
+}
+
+func TestIssueOpenNamesTheRepoThatIsNotOne(t *testing.T) {
+	f, _ := issueFixture(t)
+	f.cfg.Repos = map[string]string{"BAR": filepath.Join(f.root, "nowhere")}
+	t.Chdir(f.repo)
+	err := runIssue(f.cfg, []string{"open", "BAR-4160"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "repos.BAR") {
+		t.Fatalf("open with a repo that is not one: %v, want an error naming repos.BAR", err)
+	}
+}
+
 func TestIssueClose(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)

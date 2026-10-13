@@ -9,6 +9,10 @@
 package main
 
 import (
+	"maps"
+	"slices"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -100,7 +104,7 @@ func withStates(local map[string]LocalState, windows map[string]string) map[stri
 // fetchLocalIn is fetchLocal for the given scopes. Window names are
 // disjoint by shape between them, so the merge cannot collide.
 func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
-	worktrees := readWorktrees()
+	worktrees := readWorktrees(m.cfg)
 	windows := statesIn(m.cfg, m.stateDriver, scopes...)
 
 	out := make(map[string]LocalState)
@@ -125,7 +129,9 @@ func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
 
 // readWorktrees lists the review worktrees of the repo in cwd, keyed
 // by handle (directory name `pr-<N>[-<slug>]`, or the branch as a
-// fallback — see worktree.handle).
+// fallback — see worktree.handle), and the features of each team that
+// repos sends elsewhere, from that team's repository: the list runs in
+// one repository and shows every team's issues.
 //
 // Path-based keying is primary because `owl pr open` names its
 // worktrees `<repo>/<worktrees_dir>/pr-<N>-<slug>` and they often end
@@ -133,16 +139,28 @@ func (m model) fetchLocalIn(scopes ...scope) tea.Msg {
 // checked out detached, branch-only matching drops them entirely — a
 // review vanished from the overlay that way once.
 //
-// Failure returns nil — the TUI still renders without wt badges.
-func readWorktrees() map[string]worktree {
-	list, err := listWorktrees(".")
-	if err != nil {
-		return nil
-	}
+// A repository git cannot list is skipped — the TUI still renders,
+// without wt badges for what it holds.
+func readWorktrees(cfg Config) map[string]worktree {
 	result := make(map[string]worktree)
-	for _, wt := range list {
-		if h := wt.handle(); h != "" {
-			result[h] = wt
+	if list, err := listWorktrees("."); err == nil {
+		for _, wt := range list {
+			if h := wt.handle(); h != "" {
+				result[h] = wt
+			}
+		}
+	}
+	// A routed team's features are the ones in its own repository: open
+	// goes there, so that is the worktree the row has.
+	for _, team := range slices.Sorted(maps.Keys(cfg.Repos)) {
+		list, err := listWorktrees(cfg.Repos[team])
+		if err != nil {
+			continue
+		}
+		for _, wt := range list {
+			if h := wt.handle(); strings.HasPrefix(issueKeyOf(h), team+"-") {
+				result[h] = wt
+			}
 		}
 	}
 	return result

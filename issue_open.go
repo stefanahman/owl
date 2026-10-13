@@ -21,7 +21,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 	if err != nil {
 		return err
 	}
-	repo, err := mainRepo(".")
+	repo, err := cfg.repoFor(key)
 	if err != nil {
 		return err
 	}
@@ -255,19 +255,21 @@ func runIssueClose(cfg Config, args []string, out io.Writer) error {
 		return err
 	}
 	isIt := func(name string) bool { return matchesIssue(name, key) }
+	repo, err := cfg.repoFor(key)
+	if err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
 	// A feature's branch may hold commits that exist nowhere else;
 	// only --force deletes those. A review's branch is a copy of the
 	// PR's, so PR close has no such check.
 	if !force {
-		if repo, err := mainRepo("."); err == nil {
-			for _, br := range localBranches(repo, isIt) {
-				if ahead := unpushed(repo, br); ahead != "" {
-					return fmt.Errorf("%s: branch %s has %s (close --force deletes them)", key, br, ahead)
-				}
+		for _, br := range localBranches(repo, isIt) {
+			if ahead := unpushed(repo, br); ahead != "" {
+				return fmt.Errorf("%s: branch %s has %s (close --force deletes them)", key, br, ahead)
 			}
 		}
 	}
-	return closeWorkspace(cfg, mx, key, isIt, force, out)
+	return closeWorkspaceIn(cfg, mx, repo, key, isIt, force, out)
 }
 
 // unpushed describes the commits of a branch that its upstream does
