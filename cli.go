@@ -53,6 +53,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl pr open <N> [--prompt TEXT]  open (or focus) the review of PR N
        owl pr start <N> [--prompt TEXT] the same without going there: no window selection, no after_open
        owl pr close [--force] [<N>]     remove PR N's worktree, branch and window; --force discards uncommitted changes
+       owl pr stack <N> [--json]        the stack PR N is a layer of: the line from the trunk through N, and where it forks
        owl pr --check                   say what has arrived in your court since owl last looked, for a scheduler
        owl issue                        the issues assigned to you, from Linear
        owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY; --base starts it on another branch, for a layer of a stack
@@ -102,7 +103,7 @@ func main() {
 			args = args[1:]
 			if len(args) > 0 {
 				switch args[0] {
-				case "open", "start", "close", "--check", "--here":
+				case "open", "start", "close", "stack", "--check", "--here":
 				default:
 					exitOn(usageError("pr: unknown command " + args[0]))
 				}
@@ -182,6 +183,8 @@ func main() {
 		err = runOpen(cfg, args[1:], os.Stdout, false)
 	case args[0] == "close":
 		err = runClose(cfg, args[1:], os.Stdout)
+	case args[0] == "stack":
+		err = runStack(cfg, args[1:], os.Stdout)
 	}
 	exitOn(err)
 }

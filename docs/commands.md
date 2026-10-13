@@ -7,6 +7,7 @@ owl pr                                the PR list
 owl pr open <N> [--prompt TEXT]       open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent
 owl pr start <N> [--prompt TEXT]      the same without going there: no window selection, no after_open
 owl pr close [--force] [<N>]          remove the worktree, branch and window; N is inferred from inside a workspace
+owl pr stack <N> [--json]             the stack PR N is a layer of: the line from the trunk through N, the tips where it forks, and the notes directory
 owl issue                             the open issues assigned to you; a table when stdout is not a terminal
 owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY, and claim the issue
 owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
