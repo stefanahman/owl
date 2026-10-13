@@ -52,6 +52,13 @@ engineer would and never posts without you:
 6. **One atomic post** — after your explicit go, `gh api` posts verdict
    and comments as a single review and prints the URL.
 
+`/owl:review <tip> stack` reviews a stack's line, the trunk up to that
+tip, as one piece: the overview bottom up first, each finding on the
+layer whose diff holds it, the checks once at the tip, and a draft per
+layer that is posted only when you approve it. Sessions on the same
+stack leave each other notes, and none posts on a head that already
+has your review without asking.
+
 The skills are the process. Everything specific to a codebase —
 tracker, build commands, house rules, review voice — comes from a file
 in the repository, read by all three, so the same plugin serves a Go

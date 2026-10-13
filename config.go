@@ -368,9 +368,12 @@ type HerdrConfig struct {
 }
 
 type AgentConfig struct {
-	Cmd       string   `yaml:"cmd"`
-	Prompt    string   `yaml:"prompt"`
-	LinkLocal []string `yaml:"link_local"`
+	Cmd    string `yaml:"cmd"`
+	Prompt string `yaml:"prompt"`
+	// StackPrompt is the first prompt of a stack review: {pr} is the
+	// line's tip, {prs} every layer, bottom first.
+	StackPrompt string   `yaml:"stack_prompt"`
+	LinkLocal   []string `yaml:"link_local"`
 }
 
 // BindingsConfig is the user's keys on a row, one list per list: what
@@ -685,9 +688,10 @@ func defaultConfig() Config {
 	}
 	c.WorktreesDir = ".worktrees.local"
 	c.Agent = AgentConfig{
-		Cmd:       "claude --permission-mode auto",
-		Prompt:    "/owl:review {pr}",
-		LinkLocal: []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
+		Cmd:         "claude --permission-mode auto",
+		Prompt:      "/owl:review {pr}",
+		StackPrompt: "/owl:review {pr} stack",
+		LinkLocal:   []string{".claude/settings.local.json", ".claude/*.local.md", ".claude/skills/*.local"},
 	}
 	c.Bindings = defaultBindings()
 	c.OnOpen = "auto"
@@ -829,6 +833,7 @@ func (cfg *Config) validate() error {
 		{"worktrees_dir", cfg.WorktreesDir},
 		{"agent.cmd", cfg.Agent.Cmd},
 		{"agent.prompt", cfg.Agent.Prompt},
+		{"agent.stack_prompt", cfg.Agent.StackPrompt},
 	}
 	for _, r := range required {
 		if r.value == "" {

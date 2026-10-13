@@ -1,7 +1,8 @@
 // A workspace is a git worktree, the branch checked out in it, and a
 // window in the multiplexer (mux.go), under one name: `pr-<N>` or
-// `pr-<N>-<slug>` for a review, the branch Linear names for a feature
-// (`<team>-<n>-<slug>`), `proj-<slug>` for a project. That name is the
+// `pr-<N>-<slug>` for a review, `stack-<slug>` for the review of a
+// stack, the branch Linear names for a feature (`<team>-<n>-<slug>`),
+// `proj-<slug>` for a project. That name is the
 // identity — isWorkspaceName says what counts as one, and the scope a
 // workspace belongs to is read from it — so every name owl assigns has
 // to be one, or the window it just opened is one it cannot find again.
@@ -52,15 +53,23 @@ func prNumberOf(name string) int {
 	return n
 }
 
+// stackHandleRe matches a stack review's workspace name: `stack-` and
+// the slug of its tip's title, or the tip's number.
+var stackHandleRe = regexp.MustCompile(`^stack-[a-z0-9][a-z0-9-]*$`)
+
+// isStackName reports whether name is a stack review's workspace.
+func isStackName(name string) bool { return stackHandleRe.MatchString(name) }
+
 // issueHandleRe matches a feature's workspace name: the branch Linear
 // names for an issue, `<team>-<n>` followed by a slug, in either case.
 var issueHandleRe = regexp.MustCompile(`^([A-Za-z]+-[0-9]+)(-.*)?$`)
 
 // issueKeyOf extracts the issue key from a feature's workspace name
 // (bar-4159-company-fuzzy-match → BAR-4159), or "" — a review's
-// pr-<N> name is never an issue's.
+// pr-<N> name is never an issue's, and neither is a stack's, though
+// `stack-4974` has the shape of one.
 func issueKeyOf(name string) string {
-	if prHandleRe.MatchString(name) {
+	if prHandleRe.MatchString(name) || isStackName(name) {
 		return ""
 	}
 	m := issueHandleRe.FindStringSubmatch(name)
@@ -277,7 +286,10 @@ func (w worktree) handle() string {
 	if base := filepath.Base(w.Path); isWorkspaceName(base) {
 		return base
 	}
-	if isWorkspaceName(w.Branch) {
+	// Not a stack's name: owl checks a stack out detached, so a branch
+	// called stack-… is somebody's own, and naming the window after it
+	// would hide your PR's from close.
+	if isWorkspaceName(w.Branch) && !isStackName(w.Branch) {
 		return w.Branch
 	}
 	return ""
@@ -397,10 +409,10 @@ func matchesProject(name string, p Project, st projectState, taken map[string]bo
 	return slices.Contains(projectNames(p, st, taken), name)
 }
 
-// isWorkspaceName reports whether a name is a review's, a feature's or
-// a project's.
+// isWorkspaceName reports whether a name is a review's, a stack's, a
+// feature's or a project's.
 func isWorkspaceName(name string) bool {
-	return prHandleRe.MatchString(name) || issueKeyOf(name) != "" || projectSlugOf(name) != ""
+	return prHandleRe.MatchString(name) || isStackName(name) || issueKeyOf(name) != "" || projectSlugOf(name) != ""
 }
 
 // listWorktrees parses `git worktree list --porcelain` for the repo

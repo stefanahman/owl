@@ -30,6 +30,7 @@ done_window: 3d                  # the same for the issue list's Done section
 agent:
   cmd: claude --permission-mode auto   # Claude Code, with your flags (e.g. --model claude-opus-5); -c is appended when the worktree has a prior conversation
   prompt: "/owl:review {pr}"           # first prompt of a fresh review
+  stack_prompt: "/owl:review {pr} stack"   # first prompt of a fresh stack review; {pr} the tip, {prs} every layer
   link_local:                          # symlinked from the repo into each new worktree (keep them gitignored there)
     - .claude/settings.local.json
     - .claude/*.local.md

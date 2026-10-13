@@ -1,8 +1,8 @@
 ---
 name: review
-description: Review a pull request end to end - gather context, read the diff with its surrounding code, verify locally, draft the review as a file the user approves, then post it with gh as one atomic review. Invoke manually with a PR number; do not auto-trigger.
-argument-hint: "[pr-number]"
-arguments: [pr]
+description: Review a pull request end to end - gather context, read the diff with its surrounding code, verify locally, draft the review as a file the user approves, then post it with gh as one atomic review. With `stack`, review a stack's line from the trunk to that PR as a whole and draft a review per layer. Invoke manually with a PR number; do not auto-trigger.
+argument-hint: "[pr-number] [stack]"
+arguments: [pr, mode]
 disable-model-invocation: true
 compatibility: Requires git, an authenticated gh CLI, and network access. Modules may need more (Linear MCP tools, pnpm).
 allowed-tools:
@@ -11,6 +11,7 @@ allowed-tools:
   - Bash(gh pr diff *)
   - Bash(gh pr checkout *)
   - Bash(gh issue view *)
+  - Bash(owl pr stack *)
   - Bash(git worktree add *)
   - Bash(git worktree list *)
   - Bash(git worktree remove *)
@@ -29,6 +30,8 @@ allowed-tools:
 # PR Review Workflow
 
 Review pull request #$pr end to end: gather context, read the code carefully, run local checks, draft the review, get approval, post. If `$pr` is empty, ask for the PR number and stop.
+
+If `$mode` is `stack`, #$pr is the tip of a stack and the review covers its whole line: read "Stack mode" below before Step 1, and apply it at every step.
 
 ## Golden rule: the user posts, not you
 
@@ -73,6 +76,41 @@ brief: file                        # the design brief of Step 2: file (default),
 For each name in `modules`, read `${CLAUDE_SKILL_DIR}/modules/<name>.md` and apply it at the step its first line names (`Applies to: Step N`). Shipped modules: `linear`, `github-issues`, `pnpm-turbo`, `mongodb`, `service-boundaries`. An unknown name is not an error — say so once and continue.
 
 With no project file, run the core workflow only. Nothing here pauses the workflow.
+
+## Stack mode
+
+A stack is open pull requests built on each other: each one's base is the head branch of the one below, and the bottom's base is the trunk. A line is the path from the trunk to one tip, and it is exactly the code the tip would merge. `owl pr open <N> --stack` opens a worktree detached at the tip's head, so its tree holds every layer. Each step below still applies; this section says what changes.
+
+**The line.** Run `owl pr stack $pr --json`. `prs` is the line, bottom first, in gh's field names; `notes` is the notes directory. **The tip is the last PR in `prs`**: #$pr when the review was opened, or a PR pushed on top of it since, which the line now runs to. Everything below that says the tip means that PR, never `$pr`. If `tips` is not empty, the stack forked above the line: name the tips and ask which line to review, then stop.
+
+**Notes.** Read every file in the notes directory before Step 1. `pr-<N>.md` is what a session reviewing PR N alone wrote, and `stack-<…>.md` is what a stack session wrote. Take what they found and what they posted as context, never as findings of your own: verify a finding before you repeat it. Write your own notes to `<notes>/<workspace>.md`: the worktree directory's name when owl opened it (`stack-…`), else `stack-<tip>`. Write them after Step 2 and again after Step 5, and never write another session's file. A layer's base at review is the head of the layer below, and for the bottom the trunk's commit; full shas, since a re-review diffs against them:
+
+```markdown
+# <workspace>, line #<bottom> → #<tip>
+
+| PR | base at review | head at review | verdict | state |
+|---|---|---|---|---|
+| #<N> | <sha> | <sha> | comment | drafted · posted <review url> · not reviewed (draft PR) |
+
+## Findings
+- #<N> <path>:<line> · blocking · <the defect, one sentence> · drafted / posted / dropped (<why>)
+```
+
+**Step 1, per layer.** Run the metadata call and `gh pr checks` for every layer. A draft layer is context: read it for the overview, and give it no review of its own unless the user asks. Do not stop for it.
+
+**Step 2, the overview first.** Before any finding, print the line bottom up: for each layer, two or three sentences on what it does, and what the layers above it rely on from it (file:symbol). This overview is printed on every stack review, whatever else the user asked for. A structural line gets one design brief for the whole line, named `stack-<tip>-brief.md`. Then read each layer's diff (`gh pr diff <N>`) with the lenses, in the tip's tree.
+
+**Each finding belongs to one layer:** the one whose diff holds the line it cites. GitHub rejects a review whose comment sits on a line outside the PR's diff, and the layer that introduced a defect is the one where it is fixed. A defect that only shows in the combination, such as an upper layer relying on something a lower one does not guarantee, goes on the upper layer's line that relies on it, and its text names the lower layer.
+
+**Step 3 runs once, at the tip.** In the `stack-…` worktree owl opened, skip Step 3's setup: the worktree holds the tip's head as of the first open. Compare `git rev-parse HEAD` with the tip's `headRefOid`; when they differ and `git status --porcelain` is empty, fetch `pull/<tip>/head` from the remote and `git checkout --detach FETCH_HEAD`. Anywhere else, never move a checkout owl did not open: fetch `pull/<tip>/head`, run `git worktree add --detach <path> FETCH_HEAD`, check there, and remove it afterwards as Step 3 says. A failing check belongs to the layer that introduced the failing code.
+
+**Step 4, a draft per layer.** Write one draft file per layer that has findings or a verdict to post: `stack-<tip>-pr-<N>-review-draft.md`, a name no review of PR N alone writes, each verified cold as Step 4.3 says. Present a table first, one row per layer with its verdict, its number of findings and its draft's path, then each draft in full. Posting is optional per layer, and the user picks which to post. The golden rule holds per file: each draft needs its own explicit approval.
+
+**Step 5, one review per layer.** Post each approved draft as its own atomic review on its own PR. Before each one, re-read the notes and run `gh pr view <N> --json reviews,headRefOid`. When a review by your account (`gh api user -q .login`) has `commit.oid` equal to `headRefOid` and a body that is not empty, that head already has your review, from another session or by hand: show its URL and ask before posting a second. A reply in a review thread is recorded as a review of its own, with an empty body, on the head of the moment; it is no review of the code. Use `reviews`, not `latestReviews`, whose `commit.oid` gh leaves empty.
+
+**Re-review.** A rebase of one layer moves the head of every layer above it, so a new head says nothing about whether a layer changed. For each layer, compare `git diff -U0 <base at review>...<head at review> | git patch-id --stable` from the notes with the same over its current base and head. The same id means the layer moved and none of its code changed. Re-read only the layers whose id differs, and say which. Diff against the base recorded at review, never the base branch as it is now: when a layer below was rewritten, the old head's diff against the new base also holds the old commits of the layer below, and the ids differ for nothing. Without notes, the old head is the `commit.oid` of your newest review with a body, and `git range-diff <current base> <old head> <current head>` names the layer's changed commits; the commits of a rewritten layer below show there as removed, and are not this layer's.
+
+**A single PR in a stack.** Without `stack`, run `owl pr stack $pr --json` in Step 1 when the `owl` command exists. When the PR is a layer (`prs` holds more than one PR, or `tips` is not empty), read the notes directory as above, say in the summary where the PR sits in the line, write your notes to `<notes>/pr-$pr.md`, and before posting in Step 5 run the same check for a review already on the head.
 
 ## Step 1: Gather context
 

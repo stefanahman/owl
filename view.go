@@ -21,6 +21,9 @@ func (m model) visibleRows() []visibleRow {
 	if m.drill != nil {
 		return m.visibleDrillRows()
 	}
+	if m.stack != nil {
+		return m.visibleStackRows()
+	}
 	switch m.kind {
 	case "issue":
 		return m.visibleIssueRows()
@@ -42,6 +45,7 @@ func (m model) visibleRows() []visibleRow {
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
 	m.focusWhereTheRowsAre()
+	m.stackCol, m.stackBadges = m.stackColumn()
 	rows := m.visibleRows()
 	h := m.contentHeight
 	if m.panes() {
@@ -96,6 +100,12 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	if row.project != nil {
 		return m.renderProjectRow(row, selected)
 	}
+	if row.line != nil {
+		return m.renderLineRow(row, selected)
+	}
+	if m.stack != nil {
+		return m.renderLayerRow(row, selected)
+	}
 	cursor := "  "
 	if selected {
 		cursor = "▸ "
@@ -124,33 +134,39 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		// you. The title gives up the width they need, down to a floor —
 		// a row with three keys on it still has to read as a title.
 		chips := issueChips(issueKeysFor(row.pr.HeadRefName, m.cfg.Linear.TeamKeys()))
-		repo := m.repoCell(row.pr)
-		width := max(68-lipgloss.Width(chips)-lipgloss.Width(repo), 24)
-		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s%s%s",
+		prefix := fmt.Sprintf("%s#%-5d %s %s  %s %s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
-			repo,
-			trim(row.pr.Title, width),
-			draft,
-			chips,
-		), " ")
+			m.stackCell(row.pr),
+			m.repoCell(row.pr),
+		)
+		title := ""
+		if w := m.prTitleWidth(lipgloss.Width(prefix)); w > 0 {
+			title = titleCell(row.pr.Title, draft, w)
+		} else {
+			// No window size yet: the width this row always had.
+			title = trim(row.pr.Title, max(68-lipgloss.Width(chips)-lipgloss.Width(m.repoCell(row.pr)), 24)) + draft
+		}
+		return strings.TrimRight(prefix+title+chips, " ")
 	}
-	repo := m.repoCell(row.pr)
-	out := fmt.Sprintf(
-		"%s#%-5d %s %s  %s%s%s (%s)",
+	prefix := fmt.Sprintf("%s#%-5d %s %s  %s%s",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, verdictOf(row, m.me)),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
-		repo,
-		trim(row.pr.Title, 70-lipgloss.Width(repo)),
-		draft,
-		row.pr.Author.Login,
+		m.stackCell(row.pr),
+		m.repoCell(row.pr),
 	)
+	title := ""
+	if w := m.prTitleWidth(lipgloss.Width(prefix)); w > 0 {
+		title = titleCell(row.pr.Title, draft, w)
+	} else {
+		title = trim(row.pr.Title, 70-lipgloss.Width(m.repoCell(row.pr))) + draft
+	}
+	out := fmt.Sprintf("%s%s (%s)", prefix, title, row.pr.Author.Login)
 	// Asked of your team and not of you: present, with a lower claim on
 	// you, which is what dim means everywhere else in owl. Stripped of
 	// its colours first — dimming over them leaves the escape codes
@@ -207,7 +223,7 @@ func (m model) actionRowView() string {
 // panes reports whether the list is the two-pane one. Only the PR
 // list is: a review queue and your own PRs are different questions
 // with different answers and different keys.
-func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
+func (m model) panes() bool { return m.kind == "pr" && m.drill == nil && m.stack == nil }
 
 // hasData reports whether there is a list to show — from a fetch or
 // the cache.
@@ -216,6 +232,9 @@ func (m model) panes() bool { return m.kind == "pr" && m.drill == nil }
 func (m model) hasData() bool {
 	if m.drill != nil {
 		return len(m.drillIssues) > 0
+	}
+	if m.stack != nil {
+		return m.stackGraph() != nil
 	}
 	switch m.kind {
 	case "issue":
@@ -231,6 +250,9 @@ func (m model) noun() string {
 	if m.drill != nil {
 		return "issues"
 	}
+	if m.stack != nil {
+		return "layers"
+	}
 	switch m.kind {
 	case "issue":
 		return "issues"
@@ -245,6 +267,9 @@ func (m model) noun() string {
 func (m model) countsSummary() string {
 	if m.drill != nil {
 		return m.drillCountsSummary()
+	}
+	if m.stack != nil {
+		return m.stackCountsSummary()
 	}
 	switch m.kind {
 	case "issue":
@@ -293,6 +318,8 @@ func (m model) titleLine(repo string) string {
 	if m.drill != nil {
 		// The project, not the repo: while drilled that is where you are.
 		left = styleHeader.Render(fmt.Sprintf("owl · %s", trim(m.drill.Name, 48)))
+	} else if m.stack != nil {
+		left = styleHeader.Render(fmt.Sprintf("owl · the stack of #%d · %s", m.stack.at, m.stack.repo))
 	} else if m.kind != "pr" {
 		// The issue and project lists are not scoped by a repo — they are
 		// what is assigned to you and what you work in — so where several
@@ -373,12 +400,21 @@ func (m model) legend() string {
 	case "project":
 		return m.projectLegend()
 	}
+	if m.stack != nil {
+		return m.stackViewLegend()
+	}
 	// The two panes of the PR list carry different glyphs because they
 	// answer different questions, so the legend follows the focus the
 	// way the keys do.
 	if m.mineFocus {
 		return m.mineLegend()
 	}
+	return m.reviewLegend()
+}
+
+// reviewLegend explains the review pane's glyphs, which a layer of the
+// stack view carries too.
+func (m model) reviewLegend() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		styleHeader.Render("Legend"),
 		fmt.Sprintf("  %s   a worktree exists for this row", styleWorktree.Render("⎇")),
@@ -391,6 +427,7 @@ func (m model) legend() string {
 		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
 		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
 		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
+		stackLegend,
 		"",
 		styleDim.Render("  a dim row was asked of a team you are in, not of you — `n` walks past it"),
 	)
@@ -453,6 +490,8 @@ func (m model) render() string {
 			where = fmt.Sprintf(" in %s — %s for the next workspace", m.onlyWorkspace, m.cfg.Keys.Pane.label())
 		}
 		switch {
+		case m.stack != nil:
+			b.WriteString(fmt.Sprintf("\n#%d is no longer a layer of an open stack — %s goes back.\n", m.stack.at, m.cfg.Keys.Back.label()))
 		case m.search.Value() != "":
 			b.WriteString(fmt.Sprintf("\nno %s match /%s%s\n", m.noun(), m.search.Value(), where))
 		case m.kind == "project" && where != "":

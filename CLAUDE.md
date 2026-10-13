@@ -95,7 +95,8 @@ facts as tables, one voice. docs/design/ holds the design notes
 before the project layer and now part built: the list, the workspace
 and the named conversation shipped, the fork-and-join model and the
 shared-branch mode did not, and its Open section is where the next
-session starts); owl/README.md is the plugin. The config
+session starts; stacks.md, the stack review, built as written);
+owl/README.md is the plugin. The config
 template lives in config.go (`owl config init`) and, abridged, in
 docs/configuration.md: keys and defaults in step
 (TestTemplateMatchesDefaults checks the code side). A new or changed

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -27,9 +28,22 @@ func TestMain(m *testing.M) {
 }
 
 // isolated runs the tests with XDG_CONFIG_HOME, XDG_CACHE_HOME,
-// XDG_STATE_HOME and XDG_DATA_HOME in a folder of their own, and no
-// OWL_CONFIG.
+// XDG_STATE_HOME and XDG_DATA_HOME in a folder of their own, no
+// OWL_CONFIG, and none of git's repository-local variables.
+//
+// The last because git exports GIT_DIR to what `git rebase --exec`
+// runs, and in a linked worktree it is an absolute path: every
+// fixture's git — init, commit, update-ref — then acted on the
+// repository the tests were run from, and set core.bare on it. git
+// names those variables itself.
 func isolated(m *testing.M) int {
+	local := []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"}
+	if out, err := exec.Command("git", "rev-parse", "--local-env-vars").Output(); err == nil {
+		local = strings.Fields(string(out))
+	}
+	for _, name := range local {
+		os.Unsetenv(name)
+	}
 	root, err := os.MkdirTemp("", "owl-test-xdg-")
 	if err != nil {
 		panic(err)
@@ -40,6 +54,37 @@ func isolated(m *testing.M) int {
 	}
 	os.Unsetenv("OWL_CONFIG")
 	return m.Run()
+}
+
+// TestTheSuiteIgnoresAnInheritedGitDir runs a test on newFixture — the
+// fixture whose git init, commits and update-ref once landed in this
+// repository — as a child with the GIT_DIR git hands what `git rebase
+// --exec` runs in a linked worktree, pointed at a canary repository.
+// Nothing of the fixture's may land in the canary.
+func TestTheSuiteIgnoresAnInheritedGitDir(t *testing.T) {
+	canary := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", canary).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestMainRepo$", "-test.count=1", "-test.v")
+	child.Env = append(os.Environ(), "GIT_DIR="+filepath.Join(canary, ".git"))
+	out, err := child.CombinedOutput()
+	switch {
+	case strings.Contains(string(out), "--- SKIP: TestMainRepo"):
+		t.Skip("TestMainRepo skipped in the child (no tmux), so the fixture never ran")
+	case err != nil || !strings.Contains(string(out), "--- PASS: TestMainRepo"):
+		t.Fatalf("TestMainRepo under an inherited GIT_DIR: %v\n%s", err, out)
+	}
+	read := func(args ...string) string {
+		out, _ := exec.Command("git", append([]string{"-C", canary}, args...)...).Output()
+		return strings.TrimSpace(string(out))
+	}
+	if refs := read("for-each-ref"); refs != "" {
+		t.Errorf("the fixture's refs landed in the canary:\n%s", refs)
+	}
+	if bare := read("config", "--get", "core.bare"); bare != "false" {
+		t.Errorf("core.bare = %q in the canary", bare)
+	}
 }
 
 func TestNewWindowsPicksTheMultiplexer(t *testing.T) {

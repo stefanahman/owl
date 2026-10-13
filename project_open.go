@@ -164,14 +164,14 @@ func findProject(tracker Tracker, id string) (Project, error) {
 }
 
 func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arrive bool) error {
-	id, prompt, base, err := parseOpenArgs("project", "project", args)
+	o, err := parseOpenArgs("project", "project", args)
 	if err != nil {
 		return err
 	}
-	if base != "" {
+	if o.base != "" {
 		return usageError("project open: --base is the issue side's; a project's conversation has no branch")
 	}
-	p, err := findProject(tracker, id)
+	p, err := findProject(tracker, o.id)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 			"OWL_PROJECT_SESSION": st.Session,
 		},
 	}
-	return ws.open(cfg, newWindows(cfg, projects), repo, prompt, arrive, out)
+	return ws.open(cfg, newWindows(cfg, projects), repo, o.prompt, arrive, out)
 }
 
 // ensureProjectWorktree returns the project's worktree and the name it

@@ -13,11 +13,11 @@ import (
 )
 
 func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arrive bool) error {
-	id, prompt, base, err := parseOpenArgs("issue", "issue key", args)
+	o, err := parseOpenArgs("issue", "issue key", args)
 	if err != nil {
 		return err
 	}
-	key, err := parseIssueKey(id)
+	key, err := parseIssueKey(o.id)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		return err
 	}
 	defer unlock()
-	name, wt, err := ensureIssueWorktree(cfg, repo, key, base, tracker, out)
+	name, wt, err := ensureIssueWorktree(cfg, repo, key, o.base, tracker, out)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		first: strings.ReplaceAll(cfg.Issue.Prompt, "{key}", key),
 		env:   map[string]string{"OWL_ISSUE": key, "OWL_BRANCH": name},
 	}
-	if err := ws.open(cfg, newWindows(cfg, features), repo, prompt, arrive, out); err != nil {
+	if err := ws.open(cfg, newWindows(cfg, features), repo, o.prompt, arrive, out); err != nil {
 		return err
 	}
 	if cfg.Issue.Claim {

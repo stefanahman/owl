@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,6 +39,25 @@ func (m model) startWorkspace(noun, id, prompt string) tea.Cmd {
 			args = append(args, "--prompt", prompt)
 		}
 		return openedMsg{id, m.runSelf(noun, args...)}
+	}
+}
+
+// openStack runs `owl pr open|start <tip> --stack`: the stack review
+// of the line to tip. id is the row's, for inflight.
+func (m model) openStack(id string, tip int, arrive bool) tea.Cmd {
+	verb := "start"
+	if arrive {
+		verb = "open"
+	}
+	return func() tea.Msg {
+		return openedMsg{id, m.runSelf("pr", verb, strconv.Itoa(tip), "--stack")}
+	}
+}
+
+// closeStack runs `owl pr close --stack <tip>`.
+func (m model) closeStack(id string, tip int) tea.Cmd {
+	return func() tea.Msg {
+		return closedMsg{id, m.runSelf("pr", "close", "--stack", strconv.Itoa(tip))}
 	}
 }
 
@@ -165,7 +185,11 @@ func (m model) bindings() []Binding {
 	}
 	// Your own PR answers to different keys than someone else's: the
 	// review pane's f re-reads the feedback you are giving, the mine
-	// pane's the review you were given.
+	// pane's the review you were given. The stack view holds both kinds
+	// of layer, so it carries both lists, and bindingFits picks.
+	if m.stack != nil {
+		return append(slices.Clip(m.cfg.Bindings.PR), m.cfg.Bindings.Mine...)
+	}
 	if m.mineFocus {
 		return m.cfg.Bindings.Mine
 	}
@@ -183,6 +207,12 @@ func (m model) press(b Binding) (tea.Model, tea.Cmd) {
 	var id, label, text string
 	var ok bool
 	row, _ := m.selectedRow()
+	if row.line != nil {
+		// A binding is a layer's: f on a line would send the tip's own
+		// review a prompt about the whole line.
+		m.notice = fmt.Errorf("%s acts on a layer: pick one under Layers", b.Name)
+		return m, nil
+	}
 	if b.When == whenConversation && !m.started(row) {
 		return m, nil
 	}

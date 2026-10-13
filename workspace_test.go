@@ -951,13 +951,13 @@ func TestParseOpenArgs(t *testing.T) {
 		"equals":       {"42", "--prompt=hi"},
 	}
 	for name, args := range ok {
-		id, prompt, _, err := parseOpenArgs("pr", "PR number", args)
-		if err != nil || id != "42" || (len(args) > 1 && prompt != "hi") {
-			t.Errorf("%s: got %q %q %v", name, id, prompt, err)
+		o, err := parseOpenArgs("pr", "PR number", args)
+		if err != nil || o.id != "42" || (len(args) > 1 && o.prompt != "hi") {
+			t.Errorf("%s: got %q %q %v", name, o.id, o.prompt, err)
 		}
 	}
 	for _, args := range [][]string{nil, {"42", "7"}, {"42", "--bogus"}, {"42", "--prompt"}, {"42", "--base"}} {
-		if _, _, _, err := parseOpenArgs("pr", "PR number", args); err == nil {
+		if _, err := parseOpenArgs("pr", "PR number", args); err == nil {
 			t.Errorf("%v: expected an error", args)
 		}
 	}
@@ -967,9 +967,9 @@ func TestParseOpenArgs(t *testing.T) {
 		"equals": {"BAR-1", "--base=bar-2-below"},
 		"first":  {"--base", "bar-2-below", "BAR-1"},
 	} {
-		id, _, base, err := parseOpenArgs("issue", "issue key", args)
-		if err != nil || id != "BAR-1" || base != "bar-2-below" {
-			t.Errorf("%s: got %q base %q %v", name, id, base, err)
+		o, err := parseOpenArgs("issue", "issue key", args)
+		if err != nil || o.id != "BAR-1" || o.base != "bar-2-below" {
+			t.Errorf("%s: got %q base %q %v", name, o.id, o.base, err)
 		}
 	}
 	// The id's shape is the scope's business: a PR number must be one.
@@ -986,6 +986,19 @@ func TestMatchesPR(t *testing.T) {
 	}
 	if prNumberOf("pr-12-fix") != 12 || prNumberOf("pr-12") != 12 || prNumberOf("pr-x") != 0 || prNumberOf("main") != 0 {
 		t.Error("prNumberOf is wrong")
+	}
+}
+
+// TestAStackBranchIsNoStackWorkspace: owl checks a stack out detached,
+// so a branch called stack-… is somebody's own, and the worktree
+// holding it is not named for it — your PR on it keeps its pr-<N>
+// window, which close finds.
+func TestAStackBranchIsNoStackWorkspace(t *testing.T) {
+	if h := (worktree{Path: "/x/myrepo", Branch: "stack-auth-refactor"}).handle(); h != "" {
+		t.Errorf("handle = %q, want none", h)
+	}
+	if h := (worktree{Path: "/x/.worktrees.local/stack-desktop"}).handle(); h != "stack-desktop" {
+		t.Errorf("a stack worktree's handle = %q", h)
 	}
 }
 

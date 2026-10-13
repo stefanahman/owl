@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -140,6 +141,7 @@ func (m *model) labelKeysForPane() {
 	}
 	m.keys.Enter.SetHelp(m.keys.Enter.Help().Key, enter)
 	m.keys.Cleanup.SetHelp(m.keys.Cleanup.Help().Key, cleanup)
+	m.keys.Drill.SetHelp(m.keys.Drill.Help().Key, "the PR's stack")
 }
 
 // otherPaneRows is the pane that does not have the cursor.
@@ -263,6 +265,157 @@ func splitPaneHeights(avail, want, otherWant int) (int, int) {
 		return avail - otherWant, otherWant
 	}
 	return half, avail - half
+}
+
+// stackLegend explains the stack column, in both panes' legends.
+var stackLegend = lipgloss.JoinVertical(lipgloss.Left,
+	fmt.Sprintf("  %s  the stack whose bottom is #4969, layer 3 of 6; %s is below a fork",
+		styleStack.Render("≡4969 3/6"), styleStack.Render("≡4969 3")),
+	fmt.Sprintf("  %s  after it: a stack review holds the layer — → then ↵ on its line goes there",
+		styleWorktree.Render("⎇")+" "+styleClaudeWorking.Render("©")),
+)
+
+// graphOf is the stack graph of the repository a pull request is in,
+// or nil before the list has one.
+func (m model) graphOf(pr *PR) *prGraph {
+	repo := pr.Repo
+	if repo == "" {
+		repo = m.repo
+	}
+	return m.stacks[repo]
+}
+
+// stackLabel is where a stacked row sits: the stack, named by its
+// bottom PR so the rows of one stack read alike down the list, and the
+// layer — ≡4969 3/6, the third of a line six long, or ≡4969 3 where the
+// stack forks above it and the length is not one number. "" for a row
+// that is no layer.
+func (m model) stackLabel(pr *PR) string {
+	g := m.graphOf(pr)
+	// Merged is no layer, whatever a graph fetched before the merge
+	// still holds: the merged rows land in a fetch of their own.
+	if g == nil || pr.MergedAt != "" {
+		return ""
+	}
+	l, err := g.line(pr.Number)
+	if err != nil || !l.stacked() {
+		return ""
+	}
+	layer := slices.Index(l.numbers(), pr.Number) + 1
+	if len(l.Tips) > 0 {
+		return fmt.Sprintf("≡%d %d", l.PRs[0].Number, layer)
+	}
+	return fmt.Sprintf("≡%d %d/%d", l.PRs[0].Number, layer, len(l.PRs))
+}
+
+// stackColumn is the stack column's shape over the open rows of both
+// panes, so it lines up from one pane to the other: the widest label —
+// 0, and no column at all, while no row is a layer — and whether any
+// row has a stack review open on it, which is what the column's badges
+// need room for. Merged rows are never layers: the graph holds the open
+// pull requests.
+func (m model) stackColumn() (width int, badges bool) {
+	for _, list := range [][]PR{m.prs, m.mine} {
+		for i := range list {
+			width = max(width, lipgloss.Width(m.stackLabel(&list[i])))
+			if _, ok := m.stackReview(&list[i]); ok {
+				badges = true
+			}
+		}
+	}
+	return width, badges
+}
+
+// stackCell is the row's stack column: its label in the stack colour,
+// padded to the column, then the stack review's badges when one holds
+// the row — blank on a row that is no layer.
+func (m model) stackCell(pr *PR) string {
+	if m.stackCol == 0 {
+		return ""
+	}
+	label := m.stackLabel(pr)
+	cell := strings.Repeat(" ", max(m.stackCol-lipgloss.Width(label), 0))
+	if label != "" {
+		cell = styleStack.Render(label) + cell
+	}
+	if m.stackBadges {
+		ls, ok := m.stackReview(pr)
+		if !ok {
+			ls = LocalState{}
+		}
+		cell += " " + workspaceBadges(ls, "")
+	}
+	return cell + "  "
+}
+
+// stackReview is the stack review that holds a row: the workspace of a
+// line whose record held the pull request at its last open, while its
+// worktree or its window is there. A layer below a fork can be on
+// several lines under review, and the one whose Claude most wants you
+// speaks for them — the row's own ⎇ © slots stay its own review's,
+// which is what ↵ opens.
+func (m model) stackReview(pr *PR) (LocalState, bool) {
+	repo := pr.Repo
+	if repo == "" {
+		repo = m.repo
+	}
+	var best LocalState
+	found := false
+	for _, r := range m.stackRecords {
+		if !strings.EqualFold(r.Repo, repo) || !slices.Contains(r.PRs, pr.Number) {
+			continue
+		}
+		ls, ok := m.localState[r.name]
+		if !ok || ls.Worktree == "" && ls.Window == "" {
+			continue // a closed stack keeps its record, and holds nothing
+		}
+		if !found || stateClaim(ls.ClaudeState) > stateClaim(best.ClaudeState) {
+			best, found = ls, true
+		}
+	}
+	return best, found
+}
+
+// stateClaim orders agent states by how much they want you: blocked on you,
+// then done and unread, then working, then idle.
+func stateClaim(state string) int {
+	switch state {
+	case agentBlocked:
+		return 4
+	case agentDone:
+		return 3
+	case agentWorking:
+		return 2
+	case agentIdle:
+		return 1
+	}
+	return 0
+}
+
+// PR titles take what the window leaves them, between a floor that
+// still reads as a title and a ceiling past which a row stops being
+// one line of reading. The suffix is reserved for what follows the
+// title: the author, or a pull request's issue chips.
+const (
+	prTitleFloor   = 24
+	prTitleCeiling = 100
+	prSuffix       = 20
+)
+
+// prTitleWidth is the title column after a prefix this wide; 0 before
+// the window has a size, and the caller keeps its old fixed width.
+func (m model) prTitleWidth(prefix int) int {
+	if m.width == 0 {
+		return 0
+	}
+	return clampInt(m.width-prefix-prSuffix, prTitleFloor, prTitleCeiling)
+}
+
+// titleCell is a title and its draft mark cut together to w and padded
+// to it, so what follows lines up down the list.
+func titleCell(title, draft string, w int) string {
+	s := trim(title, w-lipgloss.Width(draft)) + draft
+	return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0))
 }
 
 // badges renders a fixed-width block of colored state glyphs.

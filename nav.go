@@ -86,6 +86,9 @@ func (m model) selectedProject() *Project {
 
 // label is how the action row names the row: #42, BAR-4159.
 func (r visibleRow) label() string {
+	if r.line != nil {
+		return "the stack to #" + strconv.Itoa(r.line.tip().Number)
+	}
 	if r.pr != nil {
 		return "#" + strconv.Itoa(r.pr.Number)
 	}
@@ -124,6 +127,13 @@ func stateUnlessSection(name, section string) string {
 // localOf is the row's overlay: the worktree, window and agent state
 // of its workspace.
 func (m model) localOf(r visibleRow) LocalState {
+	if r.line != nil {
+		name := m.stackWorkspaceOf(r.line)
+		if name == "" {
+			return LocalState{}
+		}
+		return findLocalBy(m.localState, func(n string) bool { return n == name })
+	}
 	if r.pr != nil {
 		// One of your own opens into its branch's workspace, whose name
 		// carries the issue key and not the PR number.
@@ -202,7 +212,7 @@ func (m *model) jumpToNextAttention() {
 		// into one is the key doing the opposite of its job. The row
 		// stays in the list and stays reachable with j/k; only the
 		// attention key stops treating it as attention.
-		if r.pr != nil && r.status == StatusTodo && !r.merged && !r.pr.teamAskedNotYou(m.me) {
+		if r.pr != nil && r.line == nil && r.status == StatusTodo && !r.merged && !r.pr.teamAskedNotYou(m.me) {
 			return true
 		}
 		ls := m.localOf(r)

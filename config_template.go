@@ -25,6 +25,7 @@ default_repo: ""                 # repo to use when owl is started outside a git
 agent:
   cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)
   prompt: "/owl:review {pr}"    # first prompt of a fresh review; {pr} is the PR number
+  stack_prompt: "/owl:review {pr} stack"   # first prompt of a fresh stack review (owl pr open --stack); {pr} is the line's tip, {prs} every layer, bottom first
   link_local:                            # globs relative to the repo root, symlinked into each new worktree
     - .claude/settings.local.json
     - .claude/*.local.md

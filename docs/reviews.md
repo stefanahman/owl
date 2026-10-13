@@ -17,6 +17,8 @@ cache until the live one lands (one per repo, or one for the list across
 | amber `✓` / `·` | the author pushed after that review; it no longer covers the head |
 | `⚠` | someone requested changes |
 | `[draft]` | a draft PR |
+| `≡4969 3/6` | a layer of the stack whose bottom is #4969: the third of a line six long; `≡4969 3` is the third below a fork. A column of its own before the title, in a colour no other glyph wears |
+| `≡4969 3/6 ⎇ ©` | a stack review is open on a line holding the layer: its worktree and its Claude. The row's own `⎇` `©` stay its own review's, which is what `↵` opens |
 | a dim row | your **team** was asked, you were not |
 
 ## A push after your review
@@ -31,6 +33,71 @@ no context lines, and compares their `git patch-id`: the same id means a
 rebase or a squash moved the code and changed none of it, and otherwise
 `git range-diff` names the commits that changed. Its answer opens with
 that, before the findings.
+
+## Stacks
+
+A stack is open pull requests built on each other: each one's base is
+the head branch of the one below, and the bottom's base is the trunk.
+owl reads it from those branches, so it sees a stack whatever tool
+made it, and it sees where one forks: two pull requests on one base
+are parallel work, and common.
+
+A stack review covers one **line**, the path from the trunk to one
+tip, because that is exactly the code the tip would merge. #5013 runs
+on #4969 through #4993, and on nothing from the line to #4974 beside
+it.
+
+```
+#4969 ─ #4970 ─ #4971 ─ #4972 ─ #4973 ─┬─ #4974
+                                       ├─ #4993 ─ #5013
+                                       └─ #5065
+```
+
+**`→` on a stacked row** shows its stack in place of the list, and `←`
+comes back to the row. On top, one row per line through the PR: `↵`
+opens that line's stack review, `s` starts it and `c` closes it. Below,
+the layers of those lines as a tree, each with its workspace, your
+review of it and its checks; `↵` there opens the layer's own review,
+as the list does, and `f` sends it the binding a row of its kind takes:
+the feedback you gave on someone else's layer, the review you were
+given on your own.
+
+| | a stack review |
+|---|---|
+| command | `owl pr open <N> --stack`, where N is the tip; below a fork it refuses and names the tips |
+| workspace | `stack-<slug of the tip's title>`, beside the `pr-<N>` ones, named once and never renamed |
+| worktree | detached at the tip's head, whose tree holds every layer |
+| first prompt | `agent.stack_prompt`: `/owl:review {pr} stack` |
+| close | `owl pr close --stack [<N>]`, or `c` on the line |
+
+The workspace follows its line. A layer pushed on top of the tip
+extends the line and keeps the workspace; a fork below the tip is
+another line, with a workspace of its own. owl keeps one record per
+stack workspace in the clone's git directory, and `close` keeps it, so
+opening the line again resumes the conversation under the same name.
+
+In stack mode the review skill prints the overview of the whole line
+first, bottom up, then reviews each layer in the tip's tree. A finding
+goes on the layer whose diff holds its line, since GitHub rejects a
+comment anywhere else and that layer is where the fix belongs. The
+checks run once, at the tip. Each layer gets its own draft, and you
+pick which to post; each needs its own approval.
+
+Any layer can be reviewed on its own while its stack is open, and the
+sessions leave each other notes, one file per writer, in
+`$XDG_STATE_HOME/owl/reviews/<owner>/<repo>/`: `pr-<N>.md` from a
+review of one PR, `stack-….md` from a stack review. A session reads
+them all before it drafts, and before it posts on a head that already
+has a review of yours it shows that review and asks. `owl pr stack <N>` prints the line through N, the
+tips where it forks, and that directory.
+
+A rebase low in the stack moves every head above it, so every layer
+you reviewed goes amber at once. The skill tells a rebase from a
+change per layer: the same `git patch-id` over the layer's diff
+against the base it had when reviewed means its code did not change.
+The `f` prompt does not do that yet: it diffs against the base as it
+is now, so after a rewrite below it a layer reads as changed when it
+is not, and its range-diff lists the old commits of the layer below.
 
 ## Asked of you, or of your team
 
