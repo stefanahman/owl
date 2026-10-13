@@ -139,7 +139,7 @@ Only for a branch with a base (Step 1.3). Everything here is about not rewriting
 
 - **The layer below changed.** `git fetch <remote> && git rebase <remote>/<base>`, then `git push --force-with-lease`. Rebase onto the *base*, never onto the trunk: onto the trunk you would drop the layer below's commits out from under your own.
 - **The bottom merged.** GitHub rebases the remaining branches server-side, so your remote branch was rewritten while you were not looking. `git fetch <remote>` and rebase onto what is there now *before* touching anything — a force-push over it would undo GitHub's rebase and take the other layers with it.
-- **Something sits above you.** Your force-push moves the ground under it. Say so, and let whoever owns that layer rebase; `gh stack view` lists what is above.
+- **Something sits above you.** Your force-push moves the ground under it. Say so, and let whoever owns that layer rebase; `owl pr stack <your PR>` lists the line above you up to a fork and the tips past it; every PR between you and a tip needs the rebase too, and `→` on your row in owl's list draws them all.
 
 When the base branch is gone from the remote and your PR now targets the trunk, the stack is behind you: the base key is stale, and `git config --unset branch.<branch>.owlBase` retires it.
 

@@ -110,7 +110,7 @@ While a stack is in flight:
 
 - **It merges bottom-up, in one go.** Merging a layer takes every unmerged PR below it with it, atomically. **Auto-merge does not work on a stack**, so nobody can set it and walk away — the merge is someone's deliberate act.
 - **A force-push low in the stack moves the ground under every layer above.** When a lower layer takes review changes, the layers above need a rebase onto it before they are readable again. Their agents do that; this conversation is where the order is known, so it is where the word comes from.
-- **Ask GitHub, not your memory of it.** `gh stack view` in any of the worktrees prints the stack and each layer's state.
+- **Ask GitHub, not your memory of it.** `owl pr stack <N>` prints the line through any layer and the tips where it forks, read from each PR's base and head branches. `gh stack view` in any of the worktrees prints the stack and each layer's state.
 
 A chain of two is usually not worth it. Split into layers when a reviewer would otherwise read one pile, or when the second half cannot start until the first lands — not because the work has two parts.
 
