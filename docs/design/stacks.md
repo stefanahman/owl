@@ -1,6 +1,12 @@
 # Stack reviews
 
-A design note, written before the code. A stack is two or more open
+A design note, written before the code and built as written on
+2026-10-13, with two changes. The stack view gives each line a row of
+its own, and `↵` on it opens the stack review, so `↵` on a tip still
+opens the tip's own review. And the row's mark is a coloured column
+before the title naming the stack by its bottom: the first try, a dim
+`≡3/6` after the title, went unseen in the live list, past the `…` of
+a cut title. docs/reviews.md is the reference. A stack is two or more open
 pull requests where each one's base is the head branch of the one
 below it; the bottom's base is the trunk. owl reviews one PR at a time,
 and a stack asks for the picture across the layers as well: what the
@@ -140,12 +146,14 @@ skill, and is never run for every row of the list.
 
 ## In the list
 
-A stacked row carries `≡3/6`: third layer of a six-layer line. Below
-a fork the total is not one number, so the row carries `≡3`. `right`
-on a stacked row opens the stack view: the line, or the tree where it
-forks, one row per layer with its CI, your review state and the `⎇`
-of an open workspace. Enter on a layer opens its own review, and Enter
-on a tip opens the stack review of its line.
+A stacked row carries `≡4969 3/6` in a column of its own before the
+title: the stack, named by its bottom so the rows of one stack read
+alike, and the third layer of a six-layer line. Below a fork the total
+is not one number, so the row carries `≡4969 3`. `right`
+on a stacked row opens the stack view: one row per line through the
+PR, whose Enter opens that line's stack review, then the layers as a
+tree, each with its CI, your review state and the `⎇` of an open
+workspace. Enter on a layer opens its own review.
 
 ## Not in this design
 

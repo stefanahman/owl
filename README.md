@@ -45,6 +45,9 @@ is written twice and nothing goes stale in a second place.
 - **The agent's state in the list.** `©` shows whether Claude is
   working, blocked on you, or done and unread. `n` jumps to the next
   row that needs you.
+- **Stacks.** A stacked row names its stack and its layer, `≡4969 3/6`. `→` shows
+  the stack, and `↵` on a line opens one review of all of it, with a
+  draft per layer.
 - **Prompts on a key.** `f` sends the feedback prompt: on a review,
   check what changed since your last review; on an issue, go through
   the review you were given. `bindings` add your own prompts and URLs.
@@ -103,7 +106,7 @@ there.
 ## Docs
 
 - [Reviews](docs/reviews.md): `owl pr`, its two panes, your own PRs,
-  and `owl pr --check` for news while the list is closed
+  stacks, and `owl pr --check` for news while the list is closed
 - [Features](docs/features.md): `owl issue`, and how an issue finds its
   branch
 - [Projects](docs/projects.md): `owl project` and the project
