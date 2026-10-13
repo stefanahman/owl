@@ -42,6 +42,7 @@ func (m model) visibleRows() []visibleRow {
 // always at YOffset 0; scrolling = re-slicing on cursor move.
 func (m *model) refreshList() {
 	m.focusWhereTheRowsAre()
+	m.stackCol = m.stackColumnWidth()
 	rows := m.visibleRows()
 	h := m.contentHeight
 	if m.panes() {
@@ -127,12 +128,13 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 		repo := m.repoCell(row.pr)
 		width := max(68-lipgloss.Width(chips)-lipgloss.Width(repo), 24)
 		return strings.TrimRight(fmt.Sprintf(
-			"%s#%-5d %s %s  %s %s%s%s%s",
+			"%s#%-5d %s %s  %s %s%s%s%s%s",
 			cursor,
 			row.pr.Number,
 			workspaceBadges(local, starting),
 			mineBadges(*row.pr),
 			styleDim.Render(fmt.Sprintf("%3s", age)),
+			m.stackCell(row.pr),
 			repo,
 			trim(row.pr.Title, width),
 			draft,
@@ -141,11 +143,12 @@ func (m model) renderRow(row visibleRow, selected bool) string {
 	}
 	repo := m.repoCell(row.pr)
 	out := fmt.Sprintf(
-		"%s#%-5d %s %s  %s%s%s (%s)",
+		"%s#%-5d %s %s  %s%s%s%s (%s)",
 		cursor,
 		row.pr.Number,
 		badges(local, starting, verdictOf(row, m.me)),
 		styleDim.Render(fmt.Sprintf("%3s", age)),
+		m.stackCell(row.pr),
 		repo,
 		trim(row.pr.Title, 70-lipgloss.Width(repo)),
 		draft,
@@ -391,6 +394,7 @@ func (m model) legend() string {
 		fmt.Sprintf("  %s   I engaged — commented or requested changes, no approval", styleDim.Render("·")),
 		fmt.Sprintf("  %s %s the author pushed after that review — it no longer covers the head", styleReviewStale.Render("✓"), styleReviewStale.Render("·")),
 		fmt.Sprintf("  %s   changes requested by any reviewer (PR blocked)", styleChangesReqd.Render("⚠")),
+		stackLegend,
 		"",
 		styleDim.Render("  a dim row was asked of a team you are in, not of you — `n` walks past it"),
 	)

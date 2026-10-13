@@ -23,6 +23,14 @@ type prsMsg struct {
 	// api user` for one string is a whole round trip on every refresh.
 	me string
 }
+
+// stacksMsg carries the stack graphs of the list's scope, one per
+// repository; nil when the fetch failed, and the last ones stay.
+type stacksMsg struct {
+	gen    int
+	graphs map[string]*prGraph
+}
+
 type mergedMsg struct {
 	gen int
 	prs []PR

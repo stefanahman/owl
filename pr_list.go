@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -263,6 +264,71 @@ func splitPaneHeights(avail, want, otherWant int) (int, int) {
 		return avail - otherWant, otherWant
 	}
 	return half, avail - half
+}
+
+// stackLegend explains the stack column, in both panes' legends.
+var stackLegend = fmt.Sprintf("  %s  a layer of the stack whose bottom is #4969: the third of a line six long; %s the third below a fork",
+	styleStack.Render("≡4969 3/6"), styleStack.Render("≡4969 3"))
+
+// graphOf is the stack graph of the repository a pull request is in,
+// or nil before the list has one.
+func (m model) graphOf(pr *PR) *prGraph {
+	repo := pr.Repo
+	if repo == "" {
+		repo = m.repo
+	}
+	return m.stacks[repo]
+}
+
+// stackLabel is where a stacked row sits: the stack, named by its
+// bottom PR so the rows of one stack read alike down the list, and the
+// layer — ≡4969 3/6, the third of a line six long, or ≡4969 3 where the
+// stack forks above it and the length is not one number. "" for a row
+// that is no layer.
+func (m model) stackLabel(pr *PR) string {
+	g := m.graphOf(pr)
+	// Merged is no layer, whatever a graph fetched before the merge
+	// still holds: the merged rows land in a fetch of their own.
+	if g == nil || pr.MergedAt != "" {
+		return ""
+	}
+	l, err := g.line(pr.Number)
+	if err != nil || !l.stacked() {
+		return ""
+	}
+	layer := slices.Index(l.numbers(), pr.Number) + 1
+	if len(l.Tips) > 0 {
+		return fmt.Sprintf("≡%d %d", l.PRs[0].Number, layer)
+	}
+	return fmt.Sprintf("≡%d %d/%d", l.PRs[0].Number, layer, len(l.PRs))
+}
+
+// stackColumnWidth is the widest label among the open rows of both
+// panes, so the column lines up from one pane to the other; 0, and no
+// column at all, while no row is a layer. Merged rows are never layers:
+// the graph holds the open pull requests.
+func (m model) stackColumnWidth() int {
+	w := 0
+	for _, list := range [][]PR{m.prs, m.mine} {
+		for i := range list {
+			w = max(w, lipgloss.Width(m.stackLabel(&list[i])))
+		}
+	}
+	return w
+}
+
+// stackCell is the row's stack column: its label in the stack colour,
+// padded to the column, or blank on a row that is no layer.
+func (m model) stackCell(pr *PR) string {
+	if m.stackCol == 0 {
+		return ""
+	}
+	label := m.stackLabel(pr)
+	pad := strings.Repeat(" ", m.stackCol-lipgloss.Width(label)+2)
+	if label == "" {
+		return pad
+	}
+	return styleStack.Render(label) + pad
 }
 
 // badges renders a fixed-width block of colored state glyphs.

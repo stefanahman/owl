@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -441,4 +443,99 @@ func draftMark(draft bool) string {
 		return " [draft]"
 	}
 	return ""
+}
+
+// scopeGraphQuery is every open pull request a list's scope spans,
+// with the repository each is in: the PR list asks across all of them
+// at once, where the repository query would take one call per repo.
+const scopeGraphQuery = `query($q: String!, $endCursor: String) {
+  search(query: $q, type: ISSUE_ADVANCED, first: 100, after: $endCursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest { ` + stackFields + ` repository { nameWithOwner defaultBranchRef { name } } } }
+  }
+}`
+
+// scopeGraphs is one graph per repository the scope's open pull
+// requests are in.
+func scopeGraphs(scope string) (map[string]*prGraph, error) {
+	out, err := runOut(exec.Command("gh", "api", "graphql", "--paginate",
+		"-f", "query="+scopeGraphQuery, "-f", "q="+scope+" is:pr is:open"))
+	if err != nil {
+		return nil, err
+	}
+	type node struct {
+		stackPR
+		Repository struct {
+			NameWithOwner    string `json:"nameWithOwner"`
+			DefaultBranchRef struct {
+				Name string `json:"name"`
+			} `json:"defaultBranchRef"`
+		} `json:"repository"`
+	}
+	byRepo := map[string][]stackPR{}
+	trunks := map[string]string{}
+	err = eachPage(out, func(raw []byte) error {
+		var page struct {
+			Data struct {
+				Search struct {
+					Nodes []node `json:"nodes"`
+				} `json:"search"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil {
+			return err
+		}
+		for _, n := range page.Data.Search.Nodes {
+			repo := n.Repository.NameWithOwner
+			if repo == "" || n.Number == 0 {
+				continue // a search hit that is not a pull request
+			}
+			byRepo[repo] = append(byRepo[repo], n.stackPR)
+			trunks[repo] = n.Repository.DefaultBranchRef.Name
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open pull requests of %s: %w", scope, err)
+	}
+	graphs := make(map[string]*prGraph, len(byRepo))
+	for repo, prs := range byRepo {
+		graphs[repo] = newPRGraph(repo, trunks[repo], prs)
+	}
+	return graphs, nil
+}
+
+// stackGraphCache is a graph as the list's cache holds it.
+type stackGraphCache struct {
+	Repo  string    `json:"repo"`
+	Trunk string    `json:"trunk"`
+	PRs   []stackPR `json:"prs"`
+}
+
+// cacheGraphs is the graphs in the cache's shape, in a stable order
+// so the file does not churn on the map's.
+func cacheGraphs(graphs map[string]*prGraph) []stackGraphCache {
+	out := make([]stackGraphCache, 0, len(graphs))
+	for _, repo := range slices.Sorted(maps.Keys(graphs)) {
+		g := graphs[repo]
+		c := stackGraphCache{Repo: g.repo, Trunk: g.trunk}
+		for _, n := range slices.Sorted(maps.Keys(g.prs)) {
+			c.PRs = append(c.PRs, g.prs[n])
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// graphsFromCache is cacheGraphs read back; nil for a cache from
+// before owl kept them.
+func graphsFromCache(cached []stackGraphCache) map[string]*prGraph {
+	if len(cached) == 0 {
+		return nil
+	}
+	graphs := make(map[string]*prGraph, len(cached))
+	for _, c := range cached {
+		graphs[c.Repo] = newPRGraph(c.Repo, c.Trunk, c.PRs)
+	}
+	return graphs
 }

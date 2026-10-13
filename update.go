@@ -163,6 +163,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshList()
 		m.persistCache()
 
+	case stacksMsg:
+		if msg.gen != m.fetchGen || msg.graphs == nil {
+			break
+		}
+		m.stacks = msg.graphs
+		m.refreshList()
+		m.persistCache()
+
 	case mergedMsg:
 		if msg.gen != m.fetchGen {
 			break

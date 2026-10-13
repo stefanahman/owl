@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func stackPROn(n int, base, head string) stackPR {
@@ -298,5 +299,169 @@ func TestPrintLineSaysWhenTheBaseIsNotTheTrunk(t *testing.T) {
 	printLine(&out, l)
 	if !strings.HasPrefix(out.String(), "acme/app, on spike, which is not main and no open pull request's branch\n") {
 		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+// searchGraphPage is one page of the scope search's answer.
+func searchGraphPage(t *testing.T, repo, trunk string, prs []stackPR) string {
+	t.Helper()
+	type node struct {
+		stackPR
+		Repository struct {
+			NameWithOwner    string `json:"nameWithOwner"`
+			DefaultBranchRef struct {
+				Name string `json:"name"`
+			} `json:"defaultBranchRef"`
+		} `json:"repository"`
+	}
+	var page struct {
+		Data struct {
+			Search struct {
+				Nodes []node `json:"nodes"`
+			} `json:"search"`
+		} `json:"data"`
+	}
+	for _, p := range prs {
+		n := node{stackPR: p}
+		n.Repository.NameWithOwner, n.Repository.DefaultBranchRef.Name = repo, trunk
+		page.Data.Search.Nodes = append(page.Data.Search.Nodes, n)
+	}
+	b, err := json.Marshal(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// TestScopeGraphsGroupByRepository: a list spanning owners asks once,
+// and a #7 in one repository is not built on a branch of another.
+func TestScopeGraphsGroupByRepository(t *testing.T) {
+	argsFile := fakeGHPages(t,
+		searchGraphPage(t, "acme/app", "main", cfiPRs()[:6]),
+		searchGraphPage(t, "acme/tool", "trunk", []stackPR{stackPROn(7, "trunk", "rules")}),
+	)
+	graphs, err := scopeGraphs("user:acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(graphs) != 2 || graphs["acme/app"].trunk != "main" || graphs["acme/tool"].trunk != "trunk" {
+		t.Fatalf("graphs: %v", graphs)
+	}
+	if up := graphs["acme/app"].above(4969); !slices.Equal(up, []int{4970}) {
+		t.Errorf("above #4969 in acme/app: %v", up)
+	}
+	if up := graphs["acme/tool"].above(7); len(up) != 0 {
+		t.Errorf("acme/tool's #7 has %v on it, from another repository", up)
+	}
+	args := strings.Split(strings.TrimSpace(string(mustRead(t, argsFile))), "\n")
+	if !slices.Contains(args, "--paginate") || !slices.Contains(args, "q=user:acme is:pr is:open") {
+		t.Errorf("gh args: %v", args)
+	}
+}
+
+// stackModel is the PR list with the CFI stack's graph, as if the
+// stacks fetch had landed, and the rows given.
+func stackModel(t *testing.T, prs ...PR) model {
+	t.Helper()
+	m := testModel(t)
+	m.prs = prs
+	m.ready = true
+	m.width, m.height = 160, 30
+	m.resizeViewport()
+	next, _ := m.Update(stacksMsg{gen: m.fetchGen, graphs: map[string]*prGraph{
+		"acme/example": newPRGraph("acme/example", "main", cfiPRs()),
+	}})
+	return next.(model)
+}
+
+func TestStackMark(t *testing.T) {
+	row := func(n int, title string) PR {
+		p := PR{Number: n, Title: title}
+		p.Author.Login = "alice"
+		return p
+	}
+	m := stackModel(t, row(4971, "pr 4971"), row(4974, "feat(calculate): key the middle factor gap"), row(3582, "pr 3582"))
+	check := func(when string, m model) {
+		t.Helper()
+		raw := m.render()
+		screen := stripANSI(raw)
+		// The stack is named by its bottom, and coloured: the column is
+		// what tells a layer from a lone PR at a glance.
+		for _, label := range []string{"≡4969 3", "≡4969 6/6"} {
+			if !strings.Contains(raw, styleStack.Render(label)) {
+				t.Errorf("%s: no %q in the stack colour:\n%s", when, label, screen)
+			}
+		}
+		// One column: every title starts where the others do, a lone
+		// PR's included.
+		col := map[int]bool{}
+		for _, title := range []string{"pr 4971", "feat(calculate)", "pr 3582"} {
+			for _, line := range strings.Split(screen, "\n") {
+				if i := strings.Index(line, title); i >= 0 {
+					col[len([]rune(line[:i]))] = true
+				}
+			}
+		}
+		if len(col) != 1 {
+			t.Errorf("%s: titles start in columns %v:\n%s", when, col, screen)
+		}
+	}
+	check("after the fetch", m)
+	// A failed fetch keeps the graphs it had: offline, the rows still
+	// know where they sit.
+	failed, _ := m.Update(stacksMsg{gen: m.fetchGen})
+	check("after a failed fetch", failed.(model))
+
+}
+
+// TestNoStackColumnWithoutStacks: a list with no layer in it spends no
+// width on the column.
+func TestNoStackColumnWithoutStacks(t *testing.T) {
+	m := stackModel(t, PR{Number: 3582, Title: "lone"})
+	if m.stackCol != 0 || m.stackCell(&m.prs[0]) != "" {
+		t.Errorf("column %d, cell %q", m.stackCol, m.stackCell(&m.prs[0]))
+	}
+}
+
+// TestAMergedRowIsNoLayer: a pull request that merged is no layer,
+// whatever a graph fetched before the merge still says. The merged
+// fetch can land before the stacks one, and a merged row with a label
+// wider than the open rows' column once made the padding negative and
+// took the list down.
+func TestAMergedRowIsNoLayer(t *testing.T) {
+	m := testModel(t)
+	m.ready = true
+	m.width, m.height = 160, 30
+	m.resizeViewport()
+	m.stacks = map[string]*prGraph{"acme/example": newPRGraph("acme/example", "main", []stackPR{
+		stackPROn(12, "main", "a"), stackPROn(13, "a", "b"), stackPROn(14, "a", "c"),
+		stackPROn(4969, "main", "x"), stackPROn(4970, "x", "y"),
+	})}
+	m.prs = []PR{{Number: 12, Title: "small"}}
+	landed := PR{Number: 4969, Title: "landed", MergedAt: time.Now().UTC().Format(time.RFC3339)}
+	m.merged = []PR{landed}
+	m.refreshList()
+	screen := stripANSI(m.render())
+	if strings.Contains(screen, "≡4969") {
+		t.Errorf("the merged #4969 carries a stack label:\n%s", screen)
+	}
+	if !strings.Contains(screen, "≡12 1") {
+		t.Errorf("the open #12 lost its label:\n%s", screen)
+	}
+}
+
+func TestStackGraphsSurviveTheCache(t *testing.T) {
+	m := stackModel(t)
+	m.persistCache()
+	c := loadCache(prCacheKey(m.cfg.PR, m.repo, m.here))
+	if c == nil {
+		t.Fatal("no cache written")
+	}
+	back := graphsFromCache(c.Stacks)
+	if g := back["acme/example"]; g == nil || len(g.prs) != len(cfiPRs()) || g.trunk != "main" {
+		t.Fatalf("graphs read back: %v", back)
+	}
+	if l, err := back["acme/example"].line(4974); err != nil || len(l.PRs) != 6 {
+		t.Errorf("line(4974) from the cache: %v %v", l.numbers(), err)
 	}
 }

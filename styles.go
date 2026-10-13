@@ -31,6 +31,7 @@ var (
 	// not so it competes with the work that is still alive.
 	styleSectionCancelled = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("244"))
 	styleDraft            = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // dim for [draft]
+	styleStack            = lipgloss.NewStyle().Foreground(lipgloss.Color("170")) // magenta ≡  a layer of a stack; no other glyph wears it
 	styleSearchLabel      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	// styleTabCurrent is the Linear workspace showing, among the others
 	// named dim in the title.

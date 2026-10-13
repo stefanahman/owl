@@ -119,6 +119,12 @@ type model struct {
 	merged       []PR
 	mine         []PR // your own open PRs: the mine pane
 	mineMerged   []PR // your own PRs merged inside merged_window
+	// stacks is every open pull request in scope, as one graph per
+	// repository: what places a row in its stack.
+	stacks map[string]*prGraph
+	// stackCol is the stack column's width, worked out once per refresh
+	// rather than once per row: every row's label walks the graph.
+	stackCol int
 	// mineFocus says the mine pane has the cursor and the keys. Only
 	// the PR list has two panes; the other lists leave it false.
 	// otherCursor holds the row the unfocused pane was left on, and the
@@ -335,6 +341,7 @@ func newModel(cfg Config, repo string, cache *cacheFile) model {
 		m.merged = cache.Merged
 		m.mine = cache.Mine
 		m.mineMerged = cache.MineMerged
+		m.stacks = graphsFromCache(cache.Stacks)
 		m.me = cache.Me
 		m.ready = true
 		m.lastFetched = cache.FetchedAt
@@ -373,7 +380,22 @@ func (m model) fetches() []tea.Cmd {
 	// in the same request, and a `gh api user` of its own was half a
 	// second of round trip on every refresh for one string that never
 	// changes.
-	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine}
+	return []tea.Cmd{m.fetchPRs, m.fetchMerged, m.fetchMine, m.fetchStacks}
+}
+
+// fetchStacks reads every open pull request in scope into the stack
+// graphs. A failure keeps the last ones: the rows still list, without
+// knowing where they sit.
+func (m model) fetchStacks() tea.Msg {
+	gen := m.fetchGen
+	if m.scope() == "" {
+		return stacksMsg{gen, nil}
+	}
+	graphs, err := scopeGraphs(m.scope())
+	if err != nil {
+		return stacksMsg{gen, nil}
+	}
+	return stacksMsg{gen, graphs}
 }
 
 // persistCache writes the list's snapshot and the cursor row to its
@@ -395,6 +417,7 @@ func (m model) persistCache() {
 		Merged:     m.merged,
 		Mine:       m.mine,
 		MineMerged: m.mineMerged,
+		Stacks:     cacheGraphs(m.stacks),
 		Me:         m.me,
 		FetchedAt:  m.lastFetched,
 		Cursor:     m.cursor,
