@@ -76,7 +76,7 @@ keys:                            # rebind any action: a key name or a list
 linear:                          # the issue tracker behind `owl issue`
   token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key; Read for the lists, Write for issue.claim and `owl hoot`
   account: ""                    # the 1Password account the item is in, when several are signed in
-  team: ""                       # the team's key (BAR in BAR-123): where `owl hoot` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
+  team: ""                       # the team's key (ENG in ENG-123): where `owl hoot` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
   # teams: [DEV, LIFE]           # every team you file work under; defaults to the single team above
 
 bindings:                        # your own keys on a row: a prompt for its agent, or a URL to open

@@ -72,7 +72,7 @@ func claim(tracker Tracker, key string, out io.Writer) {
 //     someone else made, used where it stands.
 //  2. A branch carrying the key, local or on the remote. The work on an
 //     issue rarely lives on the slug Linear names: it is pushed from
-//     `bar-4098-credit-flip-uniform-sets` or `fix/bar-4157-projection`,
+//     `eng-4098-cursor-flip-uniform-sets` or `fix/eng-4157-projection`,
 //     and creating a fresh branch beside it strands the real one.
 //  3. Only when nothing carries the key, the branch Linear names,
 //     started from the remote's default branch.

@@ -224,7 +224,7 @@ For each candidate, write:
 - **File and line** — exact `path:line` (or range).
 - **Severity** — `blocking`, `non-blocking`, or `nit` (same taxonomy Step 4 uses).
 - **Defect** — one sentence.
-- **Failure scenario** — concrete inputs/state → wrong output/behavior. Example: *"when `activity.originalCurrency` is null (existing prod data), `resolveRate()` throws `TypeError` instead of falling back to tenant currency"*.
+- **Failure scenario** — concrete inputs/state → wrong output/behavior. Example: *"when `order.originalCurrency` is null (existing prod data), `resolveRate()` throws `TypeError` instead of falling back to the account's currency"*.
 
 If you can't articulate the failure concretely, **drop the finding**. Vague suspicions train the reviewer to ignore you.
 

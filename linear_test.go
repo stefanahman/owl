@@ -48,7 +48,7 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	f.queries = append(f.queries, req.Query)
 	issue := func(key, title, branch, state, stype string) map[string]any {
-		return map[string]any{"id": "uuid-" + key, "identifier": key, "title": title, "branchName": branch, "priority": 2, "priorityLabel": "High", "url": "https://linear.app/x/issue/" + key, "updatedAt": "2026-09-08T13:55:43.474Z", "state": map[string]string{"name": state, "type": stype}, "project": nil, "team": map[string]string{"key": "BAR"}}
+		return map[string]any{"id": "uuid-" + key, "identifier": key, "title": title, "branchName": branch, "priority": 2, "priorityLabel": "High", "url": "https://linear.app/x/issue/" + key, "updatedAt": "2026-09-08T13:55:43.474Z", "state": map[string]string{"name": state, "type": stype}, "project": nil, "team": map[string]string{"key": "ENG"}}
 	}
 	// A project, as Linear sends it on the issues that belong to one.
 	inProject := func(n map[string]any, slug, name string) map[string]any {
@@ -74,7 +74,7 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			if f.doneSince == "" {
 				f.t.Errorf("the done query carries no completedAt bound: %v", filter)
 			}
-			n := issue("BAR-4286", "Open update-activity fields", "bar-4286-open-update-activity", "Done", "completed")
+			n := issue("ENG-4286", "Open update-customer fields", "eng-4286-open-update-customer", "Done", "completed")
 			n["completedAt"] = "2026-09-09T09:00:00.000Z"
 			nodes = []any{inProject(n, "5b16b5f4", "Endpoint Validation")}
 		case stype["eq"] == "canceled":
@@ -86,14 +86,14 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			if f.cancelledSince == "" {
 				f.t.Errorf("the cancelled query carries no canceledAt bound: %v", filter)
 			}
-			n := issue("BAR-4287", "Drop the shadow validation", "bar-4287-drop-shadow-validation", "Cancelled", "canceled")
+			n := issue("ENG-4287", "Drop the shadow validation", "eng-4287-drop-shadow-validation", "Cancelled", "canceled")
 			n["canceledAt"] = "2026-09-09T12:00:00.000Z"
 			nodes = []any{n}
 		case len(stype["nin"].([]any)) == 2:
 			// Two pages of one: the client must follow the cursor.
-			nodes, page = []any{inProject(issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started"), "a76d38ca8527", "Sequential Capture redesign")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
+			nodes, page = []any{inProject(issue("ENG-4159", "Address fuzzy match", "eng-4159-address-fuzzy-match", "In Review", "started"), "b00000000008", "Background Indexer redesign")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
 			if after, _ := req.Variables["after"].(string); after == "cursor-1" {
-				nodes, page = []any{issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
+				nodes, page = []any{issue("ENG-4160", "Per-tenant override", "eng-4160-per-tenant-override", "Todo", "unstarted")}, map[string]any{"hasNextPage": false, "endCursor": nil}
 			} else if after != "" {
 				f.t.Errorf("issues query with an unknown cursor %q", after)
 			}
@@ -106,10 +106,10 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		// `owl project open <id>` takes.
 		f.projectLookups++
 		switch id, _ := req.Variables["id"].(string); id {
-		case "a76d38ca8527", "uuid-a76d38ca8527":
+		case "b00000000008", "uuid-b00000000008":
 			data = map[string]any{"project": map[string]any{
-				"id": "uuid-a76d38ca8527", "name": "Sequential Capture redesign", "slugId": "a76d38ca8527",
-				"url": "https://linear.app/x/project/a76d38ca8527", "progress": 0.62, "scope": 127,
+				"id": "uuid-b00000000008", "name": "Background Indexer redesign", "slugId": "b00000000008",
+				"url": "https://linear.app/x/project/b00000000008", "progress": 0.62, "scope": 127,
 				"updatedAt": "2026-09-08T13:55:43.474Z",
 				"status":    map[string]string{"name": "In Progress", "type": "started"},
 				"lead":      map[string]string{"name": "Stefan Åhman"},
@@ -149,7 +149,7 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(req.Query, "$since") {
 			// The Done window. Its bound is recorded for the assertion.
 			f.doneProjectsSince, _ = req.Variables["since"].(string)
-			done := project("Rule-driven activity grouping", "f6824f4cbe9e", "Completed", "completed", 1, 16, nil)
+			done := project("Rule-driven customer grouping", "b0000000000c", "Completed", "completed", 1, 16, nil)
 			done["completedAt"] = time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339)
 			data = map[string]any{"projects": map[string]any{
 				"nodes":    []any{done},
@@ -162,11 +162,11 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		milestone := func(name string, progress float64) map[string]any {
 			return map[string]any{"id": "ms-" + name, "name": name, "progress": progress}
 		}
-		nodes, page := []any{project("Sequential Capture redesign", "a76d38ca8527", "In Progress", "started", 0.62, 127,
+		nodes, page := []any{project("Background Indexer redesign", "b00000000008", "In Progress", "started", 0.62, 127,
 			[]any{milestone("M3.5 — Downstream compatibility", 0.8), milestone("M5 — Output evaluation", 0.1)})},
 			map[string]any{"hasNextPage": true, "endCursor": "proj-1"}
 		if after, _ := req.Variables["after"].(string); after == "proj-1" {
-			nodes, page = []any{project("Raw-data JSON ingest", "eb528db32d42", "Backlog", "backlog", 0.12, 12, nil)},
+			nodes, page = []any{project("Raw-data JSON ingest", "b0000000000b", "Backlog", "backlog", 0.12, 12, nil)},
 				map[string]any{"hasNextPage": false, "endCursor": nil}
 		} else if after != "" {
 			f.t.Errorf("projects query with an unknown cursor %q", after)
@@ -190,15 +190,15 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		key, _ := req.Variables["id"].(string)
 		var n map[string]any
 		switch {
-		case key == "BAR-4159":
+		case key == "ENG-4159":
 			n = at("In Review", "started", me)
-		case key == "BAR-4160" && f.claimed["uuid-BAR-4160"]:
+		case key == "ENG-4160" && f.claimed["uuid-ENG-4160"]:
 			n = at("In Progress", "started", me)
-		case key == "BAR-4160":
+		case key == "ENG-4160":
 			n = at("Todo", "unstarted", nil)
-		case key == "BAR-4161" && f.claimed["uuid-BAR-4161"]:
+		case key == "ENG-4161" && f.claimed["uuid-ENG-4161"]:
 			n = at("In Progress", "started", anna)
-		case key == "BAR-4161":
+		case key == "ENG-4161":
 			n = at("Backlog", "backlog", anna)
 		default:
 			_, _ = io.WriteString(w, `{"errors":[{"message":"Entity not found: Issue","extensions":{"code":"INVALID_INPUT"}}]}`)
@@ -223,12 +223,12 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 		data = map[string]any{"issueUpdate": map[string]any{"success": true}}
 	case strings.Contains(req.Query, "issue(id: $id)"):
 		switch key, _ := req.Variables["id"].(string); key {
-		case "BAR-4159":
-			data = map[string]any{"issue": issue("BAR-4159", "Company fuzzy match", "bar-4159-company-fuzzy-match", "In Review", "started")}
-		case "BAR-4160":
-			data = map[string]any{"issue": issue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted")}
-		case "BAR-4161":
-			data = map[string]any{"issue": issue("BAR-4161", "Held elsewhere", "bar-4161-held-elsewhere", "Backlog", "backlog")}
+		case "ENG-4159":
+			data = map[string]any{"issue": issue("ENG-4159", "Address fuzzy match", "eng-4159-address-fuzzy-match", "In Review", "started")}
+		case "ENG-4160":
+			data = map[string]any{"issue": issue("ENG-4160", "Per-tenant override", "eng-4160-per-tenant-override", "Todo", "unstarted")}
+		case "ENG-4161":
+			data = map[string]any{"issue": issue("ENG-4161", "Held elsewhere", "eng-4161-held-elsewhere", "Backlog", "backlog")}
 		default:
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, `{"errors":[{"message":"Entity not found: Issue - Could not find referenced Issue.","extensions":{"code":"INVALID_INPUT"}}]}`)
@@ -237,18 +237,18 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(req.Query, "teams(filter"):
 		key, _ := req.Variables["key"].(string)
 		nodes := []any{}
-		if key == "BAR" {
-			nodes = append(nodes, map[string]string{"id": "team-bar"})
+		if key == "ENG" {
+			nodes = append(nodes, map[string]string{"id": "team-eng"})
 		}
 		data = map[string]any{"viewer": map[string]string{"id": "me-uuid"}, "teams": map[string]any{"nodes": nodes}}
 	case strings.Contains(req.Query, "issueCreate"):
 		input, _ := req.Variables["input"].(map[string]any)
-		if input["teamId"] != "team-bar" || input["assigneeId"] != "me-uuid" {
+		if input["teamId"] != "team-eng" || input["assigneeId"] != "me-uuid" {
 			f.t.Errorf("issueCreate input = %v", input)
 		}
 		title, _ := input["title"].(string)
 		f.created = append(f.created, title)
-		data = map[string]any{"issueCreate": map[string]any{"success": true, "issue": issue("BAR-9001", title, "bar-9001-"+strings.ToLower(strings.ReplaceAll(title, " ", "-")), "Todo", "unstarted")}}
+		data = map[string]any{"issueCreate": map[string]any{"success": true, "issue": issue("ENG-9001", title, "eng-9001-"+strings.ToLower(strings.ReplaceAll(title, " ", "-")), "Todo", "unstarted")}}
 	default:
 		f.t.Errorf("unexpected query: %s", req.Query)
 	}
@@ -265,17 +265,17 @@ func newFakeLinear(t *testing.T, key string) (*fakeLinear, *httptest.Server) {
 func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	f, srv := newFakeLinear(t, "lin_key")
-	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "BAR", Endpoint: srv.URL}
+	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "ENG", Endpoint: srv.URL}
 	issues, err := l.Issues()
-	if err != nil || len(issues) != 2 || issues[0].Key != "BAR-4159" || issues[0].Branch != "bar-4159-company-fuzzy-match" || issues[0].State.Type != "started" || issues[0].PriorityLabel != "High" || issues[0].UpdatedAt.IsZero() {
+	if err != nil || len(issues) != 2 || issues[0].Key != "ENG-4159" || issues[0].Branch != "eng-4159-address-fuzzy-match" || issues[0].State.Type != "started" || issues[0].PriorityLabel != "High" || issues[0].UpdatedAt.IsZero() {
 		t.Fatalf("Issues() = %+v, %v", issues, err)
 	}
-	if pages := len(f.queries); pages != 2 || issues[1].Key != "BAR-4160" {
+	if pages := len(f.queries); pages != 2 || issues[1].Key != "ENG-4160" {
 		t.Errorf("Issues() read %d pages for two; second issue %q", pages, issues[1].Key)
 	}
 	// The project comes back where there is one, and an issue outside a
 	// project reads as empty rather than failing to parse.
-	if issues[0].Project.Name != "Sequential Capture redesign" || issues[0].Project.ID == "" || issues[1].Project.Name != "" {
+	if issues[0].Project.Name != "Background Indexer redesign" || issues[0].Project.ID == "" || issues[1].Project.Name != "" {
 		t.Errorf("projects = %q, %q", issues[0].Project.Name, issues[1].Project.Name)
 	}
 	// An open issue has no completedAt: Linear sends null.
@@ -286,7 +286,7 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	// the done filter is a query Linear accepts and then answers by
 	// state type alone, ignoring both windows.
 	cancelled, err := l.Cancelled(time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
-	if err != nil || len(cancelled) != 1 || cancelled[0].Key != "BAR-4287" || cancelled[0].State.Type != "canceled" || cancelled[0].CanceledAt.IsZero() {
+	if err != nil || len(cancelled) != 1 || cancelled[0].Key != "ENG-4287" || cancelled[0].State.Type != "canceled" || cancelled[0].CanceledAt.IsZero() {
 		t.Fatalf("Cancelled() = %+v, %v", cancelled, err)
 	}
 	if f.cancelledSince != "2026-09-07T12:00:00Z" {
@@ -295,7 +295,7 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 
 	since := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	done, err := l.Done(since)
-	if err != nil || len(done) != 1 || done[0].Key != "BAR-4286" || done[0].State.Type != "completed" || done[0].CompletedAt.IsZero() {
+	if err != nil || len(done) != 1 || done[0].Key != "ENG-4286" || done[0].State.Type != "completed" || done[0].CompletedAt.IsZero() {
 		t.Fatalf("Done() = %+v, %v", done, err)
 	}
 	if f.doneSince != "2026-09-08T12:00:00Z" {
@@ -309,7 +309,7 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 		t.Fatalf("Projects() = %+v, %v", projects, err)
 	}
 	p := projects[0]
-	if p.Name != "Sequential Capture redesign" || p.SlugID != "a76d38ca8527" || p.State.Type != "started" || p.Lead.Name != "Stefan Åhman" {
+	if p.Name != "Background Indexer redesign" || p.SlugID != "b00000000008" || p.State.Type != "started" || p.Lead.Name != "Stefan Åhman" {
 		t.Errorf("first project = %+v", p)
 	}
 	if projects[1].Name != "Raw-data JSON ingest" || len(projects[1].Milestones.Nodes) != 0 {
@@ -330,15 +330,15 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 		t.Errorf("DoneProjects() asked for completedAt >= %q", f.doneProjectsSince)
 	}
 
-	one, err := l.Issue("BAR-4159")
-	if err != nil || one.Title != "Company fuzzy match" || one.Team.Key != "BAR" {
+	one, err := l.Issue("ENG-4159")
+	if err != nil || one.Title != "Address fuzzy match" || one.Team.Key != "ENG" {
 		t.Errorf("Issue() = %+v, %v", one, err)
 	}
-	if _, err := l.Issue("BAR-1"); err == nil || !strings.Contains(err.Error(), "Could not find") {
+	if _, err := l.Issue("ENG-1"); err == nil || !strings.Contains(err.Error(), "Could not find") {
 		t.Errorf("unknown issue: %v", err)
 	}
 	made, err := l.Create("Fix the owl")
-	if err != nil || made.Key != "BAR-9001" || made.Branch != "bar-9001-fix-the-owl" {
+	if err != nil || made.Key != "ENG-9001" || made.Branch != "eng-9001-fix-the-owl" {
 		t.Errorf("Create() = %+v, %v", made, err)
 	}
 	if _, err := (Linear{Token: l.Token, Endpoint: srv.URL}).Create("x"); err == nil || !strings.Contains(err.Error(), "no team configured") {
@@ -358,36 +358,36 @@ func TestLinearClaim(t *testing.T) {
 	f, srv := newFakeLinear(t, "lin_key")
 	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Endpoint: srv.URL}
 
-	got, err := l.Claim("BAR-4160")
+	got, err := l.Claim("ENG-4160")
 	if want := (Claimed{From: "Todo", To: "In Progress", Assigned: true}); err != nil || got != want {
-		t.Fatalf("Claim(BAR-4160) = %+v, %v; want %+v", got, err, want)
+		t.Fatalf("Claim(ENG-4160) = %+v, %v; want %+v", got, err, want)
 	}
 	// In Progress at position 2, not In Review, which Linear lists first.
-	if want := []string{"uuid-BAR-4160 state-in-progress me-uuid"}; !slices.Equal(f.updates, want) {
+	if want := []string{"uuid-ENG-4160 state-in-progress me-uuid"}; !slices.Equal(f.updates, want) {
 		t.Errorf("updates = %q, want %q", f.updates, want)
 	}
-	if got, err := l.Claim("BAR-4160"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
+	if got, err := l.Claim("ENG-4160"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
 		t.Errorf("a second claim = %+v, %v, %d updates; want nothing written", got, err, len(f.updates))
 	}
 
 	// In review and the user's: read, and left exactly where it is.
-	if got, err := l.Claim("BAR-4159"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
-		t.Errorf("Claim(BAR-4159) = %+v, %v, %d updates; want nothing written", got, err, len(f.updates))
+	if got, err := l.Claim("ENG-4159"); err != nil || got != (Claimed{}) || len(f.updates) != 1 {
+		t.Errorf("Claim(ENG-4159) = %+v, %v, %d updates; want nothing written", got, err, len(f.updates))
 	}
 
 	// Someone else's: the state moves, the assignee stays and is named.
-	got, err = l.Claim("BAR-4161")
+	got, err = l.Claim("ENG-4161")
 	if want := (Claimed{From: "Backlog", To: "In Progress", HeldBy: "Anna Berg"}); err != nil || got != want {
-		t.Fatalf("Claim(BAR-4161) = %+v, %v; want %+v", got, err, want)
+		t.Fatalf("Claim(ENG-4161) = %+v, %v; want %+v", got, err, want)
 	}
-	if last := f.updates[len(f.updates)-1]; last != "uuid-BAR-4161 state-in-progress -" {
+	if last := f.updates[len(f.updates)-1]; last != "uuid-ENG-4161 state-in-progress -" {
 		t.Errorf("update = %q: the assignee was sent", last)
 	}
-	if got, err := l.Claim("BAR-4161"); err != nil || got != (Claimed{HeldBy: "Anna Berg"}) || len(f.updates) != 2 {
+	if got, err := l.Claim("ENG-4161"); err != nil || got != (Claimed{HeldBy: "Anna Berg"}) || len(f.updates) != 2 {
 		t.Errorf("a second claim on someone else's = %+v, %v, %d updates", got, err, len(f.updates))
 	}
 
-	if _, err := l.Claim("BAR-1"); err == nil || !strings.Contains(err.Error(), "Entity not found") {
+	if _, err := l.Claim("ENG-1"); err == nil || !strings.Contains(err.Error(), "Entity not found") {
 		t.Errorf("unknown issue: %v", err)
 	}
 }
@@ -464,7 +464,7 @@ func TestLinearScopeErrorNamesTheRemedy(t *testing.T) {
 		}})
 	}))
 	t.Cleanup(srv.Close)
-	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "BAR", Endpoint: srv.URL}
+	l := Linear{Token: secret{name: "linear", ref: "lin_key"}, Team: "ENG", Endpoint: srv.URL}
 
 	_, err := l.Create("a title")
 	if err == nil {

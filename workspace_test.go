@@ -833,7 +833,7 @@ func TestClosingTakesThePromptFile(t *testing.T) {
 // the shell ever parses.
 func TestPromptSurvivesItsSize(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	prompt := "## Stacked PR\n\nIt puts `emissionFactor.grade` on the calculation's schema.\n\n    git fetch origin bar-4927\n\n$(rm -rf /) and \"quotes\"\n"
+	prompt := "## Stacked PR\n\nIt puts `order.total` on the invoice's schema.\n\n    git fetch origin eng-4927\n\n$(rm -rf /) and \"quotes\"\n"
 	prompt += strings.Repeat("A paragraph of instructions that makes this realistic.\n\n", 400)
 	if len(prompt) < 20000 {
 		t.Fatalf("the fixture is only %d bytes; the bug needs thousands", len(prompt))
@@ -859,12 +859,12 @@ func TestPromptSurvivesItsSize(t *testing.T) {
 
 func TestProjectSlug(t *testing.T) {
 	cases := []struct{ name, want string }{
-		{"Sequential Capture redesign", "sequential-capture-redesign"},
+		{"Background Indexer redesign", "background-indexer-redesign"},
 		// Over 32 characters it cuts at the last dash, so a window name
 		// ends on a whole word.
-		{"Emission Categories — Plumbing / data modelling", "emission-categories-plumbing"},
-		{"Sven v2 — Deterministic harness + autofix", "sven-v2-deterministic-harness"},
-		{"Bardo Backstage (BACKEND / bardo-system)", "bardo-backstage-backend-bardo"},
+		{"Billing Categories — Plumbing / data modelling", "billing-categories-plumbing"},
+		{"Lint v2 — Deterministic harness + autofix", "lint-v2-deterministic-harness"},
+		{"Admin Console (BACKEND / admin-system)", "admin-console-backend-admin"},
 		{"  ", ""},
 	}
 	for _, c := range cases {
@@ -874,21 +874,21 @@ func TestProjectSlug(t *testing.T) {
 	}
 	// The workspace name round-trips, and does not collide with the
 	// other two kinds.
-	name := "proj-" + projectSlug("Sequential Capture redesign")
-	if projectSlugOf(name) != "sequential-capture-redesign" {
+	name := "proj-" + projectSlug("Background Indexer redesign")
+	if projectSlugOf(name) != "background-indexer-redesign" {
 		t.Errorf("projectSlugOf(%q) = %q", name, projectSlugOf(name))
 	}
 	if !isWorkspaceName(name) || issueKeyOf(name) != "" || prNumberOf(name) != 0 {
 		t.Errorf("%q is not cleanly a project's workspace name", name)
 	}
-	if projectSlugOf("pr-42") != "" || projectSlugOf("bar-4159-thing") != "" {
+	if projectSlugOf("pr-42") != "" || projectSlugOf("eng-4159-thing") != "" {
 		t.Error("a review's or a feature's name reads as a project's")
 	}
 }
 
 func TestMatchesProject(t *testing.T) {
-	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
-	current, first := "proj-sequential-capture-redesign", "proj-capture-redesign-draft"
+	p := Project{ID: "uuid-b00000000008", Name: "Background Indexer redesign", SlugID: "b00000000008"}
+	current, first := "proj-background-indexer-redesign", "proj-indexer-redesign-draft"
 	none := map[string]bool{}
 
 	// Never opened: only the name it has.
@@ -900,7 +900,7 @@ func TestMatchesProject(t *testing.T) {
 		t.Errorf("not renamed: %v", got)
 	}
 	// Renamed since: the first name before the current one.
-	renamed := projectState{Name: "Capture redesign draft"}
+	renamed := projectState{Name: "Indexer redesign draft"}
 	if got := projectNames(p, renamed, none); !reflect.DeepEqual(got, []string{first, current}) {
 		t.Errorf("renamed: %v", got)
 	}
@@ -909,19 +909,19 @@ func TestMatchesProject(t *testing.T) {
 			t.Errorf("%s is not the renamed project's", name)
 		}
 	}
-	if matchesProject("proj-sequential", p, renamed, none) {
+	if matchesProject("proj-background", p, renamed, none) {
 		t.Error("a prefix of the name matches")
 	}
 	// A recorded workspace wins over the name of the first open: it is
 	// where the worktree is, wherever that came from.
-	if got := projectNames(p, projectState{Name: "Capture redesign draft", Workspace: "proj-moved-by-hand"}, none); !reflect.DeepEqual(got, []string{"proj-moved-by-hand", current}) {
+	if got := projectNames(p, projectState{Name: "Indexer redesign draft", Workspace: "proj-moved-by-hand"}, none); !reflect.DeepEqual(got, []string{"proj-moved-by-hand", current}) {
 		t.Errorf("recorded: %v", got)
 	}
 
 	// A name another project holds is not this one's. Here its only
 	// name is taken, so it gets Linear's slug id on the end.
-	taken := takenNames(map[string]projectState{"uuid-other": {Name: "Sequential Capture redesign"}}, p.ID)
-	if got := projectNames(p, projectState{}, taken); !reflect.DeepEqual(got, []string{current + "-a76d38ca8527"}) {
+	taken := takenNames(map[string]projectState{"uuid-other": {Name: "Background Indexer redesign"}}, p.ID)
+	if got := projectNames(p, projectState{}, taken); !reflect.DeepEqual(got, []string{current + "-b00000000008"}) {
 		t.Errorf("taken: %v", got)
 	}
 	if matchesProject(current, p, projectState{}, taken) {
@@ -936,7 +936,7 @@ func TestMatchesProject(t *testing.T) {
 	if got := projectNames(blank, projectState{}, none); !reflect.DeepEqual(got, []string{"proj-0ff1ce0ff1ce"}) || projectSlugOf(got[0]) == "" {
 		t.Errorf("no letters: %v", got)
 	}
-	for _, name := range []string{"pr-42", "bar-4159-thing", current, "proj-"} {
+	for _, name := range []string{"pr-42", "eng-4159-thing", current, "proj-"} {
 		if matchesProject(name, blank, projectState{}, none) {
 			t.Errorf("%s matches a project whose name has no letters", name)
 		}
@@ -963,12 +963,12 @@ func TestParseOpenArgs(t *testing.T) {
 	}
 	// --base, in both spellings and in either position.
 	for name, args := range map[string][]string{
-		"space":  {"BAR-1", "--base", "bar-2-below"},
-		"equals": {"BAR-1", "--base=bar-2-below"},
-		"first":  {"--base", "bar-2-below", "BAR-1"},
+		"space":  {"ENG-1", "--base", "eng-2-below"},
+		"equals": {"ENG-1", "--base=eng-2-below"},
+		"first":  {"--base", "eng-2-below", "ENG-1"},
 	} {
 		o, err := parseOpenArgs("issue", "issue key", args)
-		if err != nil || o.id != "BAR-1" || o.base != "bar-2-below" {
+		if err != nil || o.id != "ENG-1" || o.base != "eng-2-below" {
 			t.Errorf("%s: got %q base %q %v", name, o.id, o.base, err)
 		}
 	}

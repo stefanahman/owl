@@ -30,9 +30,9 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
 
-	// The fake serves Sequential Capture redesign under this slug.
+	// The fake serves Background Indexer redesign under this slug.
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	// One lookup by id, and not the filtered list of every project the
@@ -45,7 +45,7 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 			t.Errorf("open by id fetched the whole project list:\n%s", q)
 		}
 	}
-	name := "proj-sequential-capture-redesign"
+	name := "proj-background-indexer-redesign"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
 	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "started projects:"+name) {
 		t.Errorf("output: %q", out.String())
@@ -71,38 +71,38 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 	if err := json.Unmarshal(b, &states); err != nil {
 		t.Fatal(err)
 	}
-	st, ok := states["uuid-a76d38ca8527"]
-	if !ok || len(st.Session) != 36 || st.Name != "Sequential Capture redesign" {
+	st, ok := states["uuid-b00000000008"]
+	if !ok || len(st.Session) != 36 || st.Name != "Background Indexer redesign" {
 		t.Fatalf("project state = %+v", states)
 	}
 
 	// Opening again finds the window and keeps the same id: the
 	// conversation is the project's, not one per visit.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "selected projects:"+name) {
 		t.Errorf("second open: %q", out.String())
 	}
-	if again := loadProjectStates()["uuid-a76d38ca8527"]; again.Session != st.Session {
+	if again := loadProjectStates()["uuid-b00000000008"]; again.Session != st.Session {
 		t.Errorf("session id changed from %q to %q", st.Session, again.Session)
 	}
 	if got := f.projectWindows(); len(got) != 2 {
 		t.Errorf("second open added a window: %v", got)
 	}
 
-	// A name fragment resolves too, so `owl project open sequential`
+	// A name fragment resolves too, so `owl project open background`
 	// works from a terminal.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"start", "sequential"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"start", "background"}, &out); err != nil {
 		t.Errorf("open by name fragment: %v", err)
 	}
 
 	// close removes the worktree and the window; the id survives, so a
 	// later open resumes rather than starting cold.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"close", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"removed worktree " + wt, "closed window projects:" + name} {
@@ -113,7 +113,7 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 	if f.exists(wt) {
 		t.Error("the worktree is still there")
 	}
-	if kept := loadProjectStates()["uuid-a76d38ca8527"]; kept.Session != st.Session {
+	if kept := loadProjectStates()["uuid-b00000000008"]; kept.Session != st.Session {
 		t.Errorf("close forgot the session id: %+v", kept)
 	}
 }
@@ -140,7 +140,7 @@ func TestProjectOpenRefusesAnAmbiguousName(t *testing.T) {
 func seedRenamed(t *testing.T, f *fixture, name string) string {
 	t.Helper()
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	if err := saveProjectState("uuid-a76d38ca8527", projectState{Session: "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47", Name: "Capture redesign draft"}); err != nil {
+	if err := saveProjectState("uuid-b00000000008", projectState{Session: "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47", Name: "Indexer redesign draft"}); err != nil {
 		t.Fatal(err)
 	}
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
@@ -172,26 +172,26 @@ func nameAgent(t *testing.T, f *fixture) string {
 func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
-	// Opened as "Capture redesign draft", renamed in Linear since: the
-	// fake serves it as Sequential Capture redesign.
-	first := "proj-capture-redesign-draft"
+	// Opened as "Indexer redesign draft", renamed in Linear since: the
+	// fake serves it as Background Indexer redesign.
+	first := "proj-indexer-redesign-draft"
 	wt := seedRenamed(t, f, first)
 	f.git(f.repo, "worktree", "add", "--detach", wt, "origin/main")
 	named := nameAgent(t, f)
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	// The workspace keeps the first name; the conversation is named for
 	// the project as it is called now, as one argument.
-	f.waitFile(named, "Sequential Capture redesign\n")
+	f.waitFile(named, "Background Indexer redesign\n")
 	// The worktree it already has, and the conversation in it: a second
 	// one under the new name would start that conversation over.
 	if strings.Contains(out.String(), "creating") || !strings.Contains(out.String(), "started projects:"+first+", resuming the conversation") {
 		t.Errorf("open: %q", out.String())
 	}
-	if f.exists(filepath.Join(f.repo, ".worktrees.local", "proj-sequential-capture-redesign")) {
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", "proj-background-indexer-redesign")) {
 		t.Error("open made a second worktree under the new name")
 	}
 	if got, want := f.projectWindows(), []string{"scratch", first}; !reflect.DeepEqual(got, want) {
@@ -201,12 +201,12 @@ func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 	// The name in the window list resolves, though it no longer matches
 	// the project's name.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"start", "capture-redesign-draft"}, &out); err != nil || out.String() != "ready projects:"+first+"\n" {
+	if err := runProject(f.cfg, []string{"start", "indexer-redesign-draft"}, &out); err != nil || out.String() != "ready projects:"+first+"\n" {
 		t.Errorf("open by the first name: %v, %q", err, out.String())
 	}
 
 	out.Reset()
-	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"close", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"removed worktree " + wt, "closed window projects:" + first} {
@@ -218,7 +218,7 @@ func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 	// Closed, then opened again: the worktree comes back under the name
 	// Claude keeps the conversation by, and the conversation resumes.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "resuming the conversation") {
@@ -231,19 +231,19 @@ func TestProjectOpenKeepsARenamedProjectsWorkspace(t *testing.T) {
 func TestProjectOpenFindsAWorktreeUnderItsCurrentName(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
-	current := "proj-sequential-capture-redesign"
+	current := "proj-background-indexer-redesign"
 	wt := seedRenamed(t, f, current)
 	f.git(f.repo, "worktree", "add", "--detach", wt, "origin/main")
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "creating") || !strings.Contains(out.String(), "started projects:"+current+", resuming the conversation") {
 		t.Errorf("open: %q", out.String())
 	}
 	out.Reset()
-	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"close", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "removed worktree "+wt) {
@@ -254,7 +254,7 @@ func TestProjectOpenFindsAWorktreeUnderItsCurrentName(t *testing.T) {
 	// worktree, so the worktree comes back under the current name, not
 	// the first, or the conversation would be left behind.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "creating "+wt+" detached at origin/main") || !strings.Contains(out.String(), "resuming the conversation") {
@@ -273,22 +273,22 @@ func TestProjectOpenReadsTheStateUnderTheLock(t *testing.T) {
 	t.Chdir(f.repo)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	unlock, err := lockWorkspace(f.repo, "proj-sequential-capture-redesign")
+	unlock, err := lockWorkspace(f.repo, "proj-background-indexer-redesign")
 	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- runProject(f.cfg, []string{"open", "a76d38ca8527"}, io.Discard) }()
+	go func() { done <- runProject(f.cfg, []string{"open", "b00000000008"}, io.Discard) }()
 	time.Sleep(500 * time.Millisecond) // long enough to have read the state and reached the lock
-	first := projectState{Session: "11111111-1111-4111-8111-111111111111", Name: "Sequential Capture redesign"}
-	if err := saveProjectState("uuid-a76d38ca8527", first); err != nil {
+	first := projectState{Session: "11111111-1111-4111-8111-111111111111", Name: "Background Indexer redesign"}
+	if err := saveProjectState("uuid-b00000000008", first); err != nil {
 		t.Fatal(err)
 	}
 	unlock()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if got := loadProjectStates()["uuid-a76d38ca8527"]; got.Session != first.Session {
+	if got := loadProjectStates()["uuid-b00000000008"]; got.Session != first.Session {
 		t.Errorf("session = %q, want the first open's %q", got.Session, first.Session)
 	}
 }
@@ -341,23 +341,23 @@ func TestProjectCloseTakesOneWorkspace(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	if err := saveProjectState("uuid-a76d38ca8527", projectState{Session: "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47", Name: "Zebra capture"}); err != nil {
+	if err := saveProjectState("uuid-b00000000008", projectState{Session: "0c3e2a4b-7d1f-4e8a-9b6c-5f2d1a0e3c47", Name: "Zebra indexer"}); err != nil {
 		t.Fatal(err)
 	}
-	current := filepath.Join(f.repo, ".worktrees.local", "proj-sequential-capture-redesign")
-	first := filepath.Join(f.repo, ".worktrees.local", "proj-zebra-capture")
+	current := filepath.Join(f.repo, ".worktrees.local", "proj-background-indexer-redesign")
+	first := filepath.Join(f.repo, ".worktrees.local", "proj-zebra-indexer")
 	f.git(f.repo, "worktree", "add", "--detach", current, "origin/main") // listed first, by age and by name
 	f.git(f.repo, "worktree", "add", "--detach", first, "origin/main")
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "projects:proj-zebra-capture") {
+	if !strings.Contains(out.String(), "projects:proj-zebra-indexer") {
 		t.Fatalf("open: %q", out.String())
 	}
 	out.Reset()
-	if err := runProject(f.cfg, []string{"close", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"close", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !f.exists(current) || f.exists(first) {
@@ -373,21 +373,21 @@ func TestProjectOpenLeavesAnotherProjectsWorkspace(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	// Raw-data JSON ingest was first opened as Sequential Capture redesign.
-	other := projectState{Session: "22222222-2222-4222-8222-222222222222", Name: "Sequential Capture redesign"}
-	if err := saveProjectState("uuid-eb528db32d42", other); err != nil {
+	// Raw-data JSON ingest was first opened as Background Indexer redesign.
+	other := projectState{Session: "22222222-2222-4222-8222-222222222222", Name: "Background Indexer redesign"}
+	if err := saveProjectState("uuid-b0000000000b", other); err != nil {
 		t.Fatal(err)
 	}
-	theirs := filepath.Join(f.repo, ".worktrees.local", "proj-sequential-capture-redesign")
+	theirs := filepath.Join(f.repo, ".worktrees.local", "proj-background-indexer-redesign")
 	f.git(f.repo, "worktree", "add", "--detach", theirs, "origin/main")
 	seedConversation(t, theirs, other.Session)
 	args := argsAgent(t, f)
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.String(), "projects:proj-sequential-capture-redesign\n") || strings.Contains(out.String(), "projects:proj-sequential-capture-redesign,") {
+	if strings.Contains(out.String(), "projects:proj-background-indexer-redesign\n") || strings.Contains(out.String(), "projects:proj-background-indexer-redesign,") {
 		t.Errorf("open took the other project's workspace: %q", out.String())
 	}
 	if got := waitArgs(t, args); got[0] != "--session-id" {
@@ -402,15 +402,15 @@ func TestProjectResumesOnlyItsOwnConversation(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	wt := filepath.Join(f.repo, ".worktrees.local", "proj-sequential-capture-redesign")
+	wt := filepath.Join(f.repo, ".worktrees.local", "proj-background-indexer-redesign")
 	seedConversation(t, wt, "33333333-3333-4333-8333-333333333333") // someone else's, in the same directory
 	args := argsAgent(t, f)
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	st := loadProjectStates()["uuid-a76d38ca8527"]
+	st := loadProjectStates()["uuid-b00000000008"]
 	got := waitArgs(t, args)
 	if len(got) < 2 || got[0] != "--session-id" || got[1] != st.Session {
 		t.Errorf("agent args %v, want --session-id %s", got, st.Session)
@@ -449,16 +449,16 @@ func TestProjectOpenFindsItsConversationUnderAnyName(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	st := projectState{Session: "44444444-4444-4444-8444-444444444444", Name: "Capture redesign draft"}
-	if err := saveProjectState("uuid-a76d38ca8527", st); err != nil {
+	st := projectState{Session: "44444444-4444-4444-8444-444444444444", Name: "Indexer redesign draft"}
+	if err := saveProjectState("uuid-b00000000008", st); err != nil {
 		t.Fatal(err)
 	}
-	middle := filepath.Join(f.repo, ".worktrees.local", "proj-capture-redesign-v2")
+	middle := filepath.Join(f.repo, ".worktrees.local", "proj-indexer-redesign-v2")
 	seedConversation(t, middle, st.Session)
 	args := argsAgent(t, f)
 
 	var out strings.Builder
-	if err := runProject(f.cfg, []string{"open", "a76d38ca8527"}, &out); err != nil {
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "creating "+middle+" ") {
@@ -467,14 +467,14 @@ func TestProjectOpenFindsItsConversationUnderAnyName(t *testing.T) {
 	if got := waitArgs(t, args); got[0] != "--resume" || got[1] != st.Session {
 		t.Errorf("agent args %v, want --resume %s", got, st.Session)
 	}
-	if rec := loadProjectStates()["uuid-a76d38ca8527"]; rec.Workspace != "proj-capture-redesign-v2" || rec.Session != st.Session {
+	if rec := loadProjectStates()["uuid-b00000000008"]; rec.Workspace != "proj-indexer-redesign-v2" || rec.Session != st.Session {
 		t.Errorf("state after open: %+v, want the workspace recorded", rec)
 	}
 
 	// Its worktree there now, a later open finds it rather than making
 	// another.
 	out.Reset()
-	if err := runProject(f.cfg, []string{"start", "a76d38ca8527"}, &out); err != nil || strings.Contains(out.String(), "creating") {
+	if err := runProject(f.cfg, []string{"start", "b00000000008"}, &out); err != nil || strings.Contains(out.String(), "creating") {
 		t.Errorf("second open: %v, %q", err, out.String())
 	}
 }

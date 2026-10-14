@@ -23,7 +23,7 @@ Examples:
 
 - `issue (blocking): retries lose ordering here. Switch to the keyed queue or document why ordering does not matter.`
 - `suggestion (non-blocking): extracting X to a helper would simplify the two call sites, but skip if you have a reason.`
-- `question: was bypassing the enrichment cache here intentional?`
+- `question: was bypassing the response cache here intentional?`
 - `nitpick (if-minor): variable name reads as a boolean but holds a count.`
 - `suggestion (if-minor): nullish coalescing reads clearer here.`
 

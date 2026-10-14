@@ -41,7 +41,7 @@ type Tracker interface {
 	// ProjectIssues lists a project's open issues, whoever they belong
 	// to — the project's own view, not the user's slice of it.
 	ProjectIssues(id string) ([]Issue, error)
-	// Issue fetches one by its identifier (BAR-123).
+	// Issue fetches one by its identifier (ENG-123).
 	Issue(key string) (Issue, error)
 	// Create files an issue in the configured team, assigned to the
 	// user, and returns it.
@@ -88,7 +88,7 @@ func (c Claimed) String() string {
 // Issue is what owl shows and acts on.
 type Issue struct {
 	ID            string    `json:"id"`         // Linear's UUID
-	Key           string    `json:"identifier"` // BAR-123
+	Key           string    `json:"identifier"` // ENG-123
 	Title         string    `json:"title"`
 	Branch        string    `json:"branchName"`    // the branch Linear wants the work on
 	Priority      int       `json:"priority"`      // 0 none, 1 urgent … 4 low
@@ -131,7 +131,7 @@ type Issue struct {
 		IsMe bool   `json:"isMe"`
 	} `json:"assignee"`
 	Team struct {
-		Key string `json:"key"` // BAR
+		Key string `json:"key"` // ENG
 	} `json:"team"`
 	// Workspace is the Linear workspace this came from, stamped by the
 	// tracker set as it merges. Empty with one workspace configured,
@@ -526,7 +526,7 @@ func (l Linear) Issue(key string) (Issue, error) {
 // Create files an issue in the team, assigned to the user.
 func (l Linear) Create(title string) (Issue, error) {
 	if l.Team == "" {
-		return Issue{}, errors.New("linear: no team configured (linear.team, the key in BAR-123)")
+		return Issue{}, errors.New("linear: no team configured (linear.team, the key in ENG-123)")
 	}
 	var ids struct {
 		Viewer struct {

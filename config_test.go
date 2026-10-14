@@ -109,8 +109,8 @@ bindings:
 		t.Fatalf("no binding on %q in %+v", key, list)
 		return Binding{}
 	}
-	is := &Issue{Key: "BAR-9", Title: "Fix the owl", Branch: "bar-9-fix-the-owl", URL: "https://linear.app/x/issue/BAR-9"}
-	if text, ok := byKey(cfg.Bindings.Issue, "p").forIssue("acme/app", is); !ok || text != "Continue BAR-9 on bar-9-fix-the-owl" {
+	is := &Issue{Key: "ENG-9", Title: "Fix the owl", Branch: "eng-9-fix-the-owl", URL: "https://linear.app/x/issue/ENG-9"}
+	if text, ok := byKey(cfg.Bindings.Issue, "p").forIssue("acme/app", is); !ok || text != "Continue ENG-9 on eng-9-fix-the-owl" {
 		t.Errorf("issue prompt: %q, %v", text, ok)
 	}
 	if url, ok := byKey(cfg.Bindings.Issue, "l").forIssue("acme/app", is); !ok || url != is.URL {
@@ -374,12 +374,12 @@ func TestLinearOneOrSeveral(t *testing.T) {
 	one, err := parseConfig([]byte(`
 linear:
   token: lin_key
-  team: BAR
+  team: ENG
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(one.Linear) != 1 || one.Linear[0].Team != "BAR" || one.Linear[0].Token != "lin_key" {
+	if len(one.Linear) != 1 || one.Linear[0].Team != "ENG" || one.Linear[0].Token != "lin_key" {
 		t.Fatalf("a mapping parsed to %+v, want one workspace", one.Linear)
 	}
 	// A lone workspace keeps the cache file it already fetched into, so

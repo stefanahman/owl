@@ -60,7 +60,7 @@ func (r visibleRow) header() bool { return r.pr == nil && r.issue == nil && r.pr
 
 // noun is the owl command that acts on this row — `owl <noun> open`.
 // It follows the row and not the list, because a drilled project list
-// shows issue rows, and `owl project open BAR-4079` is not a thing.
+// shows issue rows, and `owl project open ENG-4079` is not a thing.
 func (r visibleRow) noun() string {
 	switch {
 	case r.issue != nil:

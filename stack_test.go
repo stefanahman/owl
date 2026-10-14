@@ -16,27 +16,27 @@ func stackPROn(n int, base, head string) stackPR {
 	return stackPR{Number: n, Title: "pr " + head, BaseRefName: base, HeadRefName: head}
 }
 
-// cfiPRs is the shape bardo-system's CFI stack had on 2026-10-13: it
+// forkedStackPRs is the shape of a stack seen in a production monorepo: it
 // forks twice, and the second fork has a line of two above it.
 //
-//	4969 ─┬─ 4970 ─ 4971 ─ 4972 ─ 4973 ─┬─ 4974
-//	      └─ 5124                       ├─ 4984
-//	                                    ├─ 4993 ─ 5013
-//	                                    └─ 5065
-func cfiPRs() []stackPR {
+//	1201 ─┬─ 1202 ─ 1203 ─ 1204 ─ 1205 ─┬─ 1206
+//	      └─ 1211                       ├─ 1207
+//	                                    ├─ 1208 ─ 1209
+//	                                    └─ 1210
+func forkedStackPRs() []stackPR {
 	return []stackPR{
-		stackPROn(4969, "main", "rules"),
-		stackPROn(4970, "rules", "gaps"),
-		stackPROn(4971, "gaps", "run"),
-		stackPROn(4972, "run", "footprint"),
-		stackPROn(4973, "footprint", "improvement"),
-		stackPROn(4974, "improvement", "desktop"),
-		stackPROn(4984, "improvement", "connection"),
-		stackPROn(4993, "improvement", "uncovered"),
-		stackPROn(5013, "uncovered", "uncovered-run"),
-		stackPROn(5065, "improvement", "goods"),
-		stackPROn(5124, "rules", "levels"),
-		stackPROn(3582, "main", "lone"),
+		stackPROn(1201, "main", "base"),
+		stackPROn(1202, "base", "schema"),
+		stackPROn(1203, "schema", "api"),
+		stackPROn(1204, "api", "report"),
+		stackPROn(1205, "report", "review"),
+		stackPROn(1206, "review", "ui"),
+		stackPROn(1207, "review", "pool"),
+		stackPROn(1208, "review", "queue"),
+		stackPROn(1209, "queue", "queue-run"),
+		stackPROn(1210, "review", "export"),
+		stackPROn(1211, "base", "levels"),
+		stackPROn(1212, "main", "lone"),
 	}
 }
 
@@ -51,17 +51,17 @@ func numbersOf(prs []stackPR) []int {
 // TestStackLine: the line through a PR runs from the bottom up to its
 // one tip, or up to where it forks, and then names every tip above.
 func TestStackLine(t *testing.T) {
-	g := newPRGraph("acme/app", "main", cfiPRs())
+	g := newPRGraph("acme/app", "main", forkedStackPRs())
 	cases := []struct {
 		at        int
 		prs, tips []int
 	}{
-		{4974, []int{4969, 4970, 4971, 4972, 4973, 4974}, nil},
-		{4972, []int{4969, 4970, 4971, 4972, 4973}, []int{4974, 4984, 5013, 5065}},
-		{4993, []int{4969, 4970, 4971, 4972, 4973, 4993, 5013}, nil},
-		{5124, []int{4969, 5124}, nil},
-		{4969, []int{4969}, []int{4974, 4984, 5013, 5065, 5124}},
-		{3582, []int{3582}, nil},
+		{1206, []int{1201, 1202, 1203, 1204, 1205, 1206}, nil},
+		{1204, []int{1201, 1202, 1203, 1204, 1205}, []int{1206, 1207, 1209, 1210}},
+		{1208, []int{1201, 1202, 1203, 1204, 1205, 1208, 1209}, nil},
+		{1211, []int{1201, 1211}, nil},
+		{1201, []int{1201}, []int{1206, 1207, 1209, 1210, 1211}},
+		{1212, []int{1212}, nil},
 	}
 	for _, c := range cases {
 		l, err := g.line(c.at)
@@ -78,25 +78,25 @@ func TestStackLine(t *testing.T) {
 			t.Errorf("line(%d): base %q at %d", c.at, l.Base, l.At)
 		}
 	}
-	if l, _ := g.line(3582); l.stacked() {
+	if l, _ := g.line(1212); l.stacked() {
 		t.Error("a PR with nothing below or above counts as stacked")
 	}
 }
 
 // TestStackLineIgnoresForks: a fork's branch is never a base in this
 // repository, however it is named — a fork's PR from a branch called
-// `improvement` is not what #4974 is built on, and nothing is built on
+// `improvement` is not what #1206 is built on, and nothing is built on
 // it.
 func TestStackLineIgnoresForks(t *testing.T) {
-	fork := stackPROn(9, "main", "improvement")
+	fork := stackPROn(9, "main", "review")
 	fork.IsCrossRepository = true
-	g := newPRGraph("acme/app", "main", append(cfiPRs(), fork))
-	l, err := g.line(4974)
+	g := newPRGraph("acme/app", "main", append(forkedStackPRs(), fork))
+	l, err := g.line(1206)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := numbersOf(l.PRs); len(got) != 6 || got[4] != 4973 {
-		t.Errorf("line(4974) = %v: the fork's PR got into it", got)
+	if got := numbersOf(l.PRs); len(got) != 6 || got[4] != 1205 {
+		t.Errorf("line(1206) = %v: the fork's PR got into it", got)
 	}
 	if up := g.above(9); len(up) != 0 {
 		t.Errorf("above the fork's PR: %v", up)
@@ -135,7 +135,7 @@ func TestStackLineEndsOnACycle(t *testing.T) {
 }
 
 func TestStackLineOfAClosedPR(t *testing.T) {
-	g := newPRGraph("acme/app", "main", cfiPRs())
+	g := newPRGraph("acme/app", "main", forkedStackPRs())
 	if _, err := g.line(1); !errors.Is(err, errNotOpen) {
 		t.Errorf("line(1) = %v, want errNotOpen", err)
 	}
@@ -203,10 +203,10 @@ func fakeGHPages(t *testing.T, pages ...string) (argsFile string) {
 	return argsFile
 }
 
-// TestRepoGraphReadsEveryPage: bardo-system has more open pull requests
+// TestRepoGraphReadsEveryPage: a busy repository has more open pull requests
 // than one page holds, and a layer on the second page is still a layer.
 func TestRepoGraphReadsEveryPage(t *testing.T) {
-	prs := cfiPRs()
+	prs := forkedStackPRs()
 	argsFile := fakeGHPages(t, repoGraphPage(t, "main", prs[:5]), repoGraphPage(t, "main", prs[5:]))
 	g, err := repoGraph(t.TempDir(), "acme/app")
 	if err != nil {
@@ -224,7 +224,7 @@ func TestRepoGraphReadsEveryPage(t *testing.T) {
 }
 
 // stackRepo is a git repository whose remote names acme/app, and a
-// fake gh that answers the CFI stack, with the working directory in
+// fake gh that answers the forked stack, with the working directory in
 // it and owl's state in a directory of the test's own.
 func stackRepo(t *testing.T) Config {
 	t.Helper()
@@ -239,22 +239,22 @@ func stackRepo(t *testing.T) Config {
 		t.Fatal(err)
 	}
 	t.Chdir(repo)
-	fakeGHPages(t, repoGraphPage(t, "main", cfiPRs()))
+	fakeGHPages(t, repoGraphPage(t, "main", forkedStackPRs()))
 	return defaultConfig()
 }
 
 func TestRunStack(t *testing.T) {
 	cfg := stackRepo(t)
 	var out strings.Builder
-	if err := runStack(cfg, []string{"4972"}, &out); err != nil {
+	if err := runStack(cfg, []string{"1204"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	notes := filepath.Join(os.Getenv("XDG_STATE_HOME"), "owl", "reviews", "acme", "app")
 	for _, want := range []string{
 		"acme/app, on main\n",
-		"▸ #4972  pr footprint\n",
-		"it forks above #4973, into 4 lines that end at:\n",
-		"    #5013  pr uncovered-run\n",
+		"▸ #1204  pr report\n",
+		"it forks above #1205, into 4 lines that end at:\n",
+		"    #1209  pr queue-run\n",
 		"notes: " + notes + "\n",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -263,7 +263,7 @@ func TestRunStack(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runStack(cfg, []string{"--json", "4974"}, &out); err != nil {
+	if err := runStack(cfg, []string{"--json", "1206"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	var got struct {
@@ -275,7 +275,7 @@ func TestRunStack(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
 		t.Fatalf("%v:\n%s", err, out.String())
 	}
-	if got.At != 4974 || len(got.PRs) != 6 || len(got.Tips) != 0 || got.Notes != notes {
+	if got.At != 1206 || len(got.PRs) != 6 || len(got.Tips) != 0 || got.Notes != notes {
 		t.Errorf("json: at %d, %d PRs, %d tips, notes %q", got.At, len(got.PRs), len(got.Tips), got.Notes)
 	}
 
@@ -338,8 +338,8 @@ func searchGraphPage(t *testing.T, repo, trunk string, prs []stackPR) string {
 // and a #7 in one repository is not built on a branch of another.
 func TestScopeGraphsGroupByRepository(t *testing.T) {
 	argsFile := fakeGHPages(t,
-		searchGraphPage(t, "acme/app", "main", cfiPRs()[:6]),
-		searchGraphPage(t, "acme/tool", "trunk", []stackPR{stackPROn(7, "trunk", "rules")}),
+		searchGraphPage(t, "acme/app", "main", forkedStackPRs()[:6]),
+		searchGraphPage(t, "acme/tool", "trunk", []stackPR{stackPROn(7, "trunk", "base")}),
 	)
 	graphs, err := scopeGraphs("user:acme")
 	if err != nil {
@@ -348,8 +348,8 @@ func TestScopeGraphsGroupByRepository(t *testing.T) {
 	if len(graphs) != 2 || graphs["acme/app"].trunk != "main" || graphs["acme/tool"].trunk != "trunk" {
 		t.Fatalf("graphs: %v", graphs)
 	}
-	if up := graphs["acme/app"].above(4969); !slices.Equal(up, []int{4970}) {
-		t.Errorf("above #4969 in acme/app: %v", up)
+	if up := graphs["acme/app"].above(1201); !slices.Equal(up, []int{1202}) {
+		t.Errorf("above #1201 in acme/app: %v", up)
 	}
 	if up := graphs["acme/tool"].above(7); len(up) != 0 {
 		t.Errorf("acme/tool's #7 has %v on it, from another repository", up)
@@ -360,7 +360,7 @@ func TestScopeGraphsGroupByRepository(t *testing.T) {
 	}
 }
 
-// stackModel is the PR list with the CFI stack's graph, as if the
+// stackModel is the PR list with the forked stack's graph, as if the
 // stacks fetch had landed, and the rows given.
 func stackModel(t *testing.T, prs ...PR) model {
 	t.Helper()
@@ -370,7 +370,7 @@ func stackModel(t *testing.T, prs ...PR) model {
 	m.width, m.height = 160, 30
 	m.resizeViewport()
 	next, _ := m.Update(stacksMsg{gen: m.fetchGen, graphs: map[string]*prGraph{
-		"acme/example": newPRGraph("acme/example", "main", cfiPRs()),
+		"acme/example": newPRGraph("acme/example", "main", forkedStackPRs()),
 	}})
 	return next.(model)
 }
@@ -381,15 +381,15 @@ func TestStackMark(t *testing.T) {
 		p.Author.Login = "alice"
 		return p
 	}
-	long := "feat(calculate): key the middle factor gap on a level that finds any supplier's factors"
-	m := stackModel(t, row(4971, "pr 4971"), row(4974, long), row(3582, "pr 3582"))
+	long := "feat(search): rank the middle results on a level that finds any provider's records"
+	m := stackModel(t, row(1203, "pr 1203"), row(1206, long), row(1212, "pr 1212"))
 	check := func(when string, m model) {
 		t.Helper()
 		raw := m.render()
 		screen := stripANSI(raw)
 		// The stack is named by its bottom, and coloured: the column is
 		// what tells a layer from a lone PR at a glance.
-		for _, label := range []string{"≡4969 3", "≡4969 6/6"} {
+		for _, label := range []string{"≡1201 3", "≡1201 6/6"} {
 			if !strings.Contains(raw, styleStack.Render(label)) {
 				t.Errorf("%s: no %q in the stack colour:\n%s", when, label, screen)
 			}
@@ -397,7 +397,7 @@ func TestStackMark(t *testing.T) {
 		// One column: every title starts where the others do, a lone
 		// PR's included.
 		col := map[int]bool{}
-		for _, title := range []string{"pr 4971", "feat(calculate)", "pr 3582"} {
+		for _, title := range []string{"pr 1203", "feat(search)", "pr 1212"} {
 			for _, line := range strings.Split(screen, "\n") {
 				if i := strings.Index(line, title); i >= 0 {
 					col[len([]rune(line[:i]))] = true
@@ -430,7 +430,7 @@ func TestStackMark(t *testing.T) {
 // TestNoStackColumnWithoutStacks: a list with no layer in it spends no
 // width on the column.
 func TestNoStackColumnWithoutStacks(t *testing.T) {
-	m := stackModel(t, PR{Number: 3582, Title: "lone"})
+	m := stackModel(t, PR{Number: 1212, Title: "lone"})
 	if m.stackCol != 0 || m.stackCell(&m.prs[0]) != "" {
 		t.Errorf("column %d, cell %q", m.stackCol, m.stackCell(&m.prs[0]))
 	}
@@ -448,15 +448,15 @@ func TestAMergedRowIsNoLayer(t *testing.T) {
 	m.resizeViewport()
 	m.stacks = map[string]*prGraph{"acme/example": newPRGraph("acme/example", "main", []stackPR{
 		stackPROn(12, "main", "a"), stackPROn(13, "a", "b"), stackPROn(14, "a", "c"),
-		stackPROn(4969, "main", "x"), stackPROn(4970, "x", "y"),
+		stackPROn(1201, "main", "x"), stackPROn(1202, "x", "y"),
 	})}
 	m.prs = []PR{{Number: 12, Title: "small"}}
-	landed := PR{Number: 4969, Title: "landed", MergedAt: time.Now().UTC().Format(time.RFC3339)}
+	landed := PR{Number: 1201, Title: "landed", MergedAt: time.Now().UTC().Format(time.RFC3339)}
 	m.merged = []PR{landed}
 	m.refreshList()
 	screen := stripANSI(m.render())
-	if strings.Contains(screen, "≡4969") {
-		t.Errorf("the merged #4969 carries a stack label:\n%s", screen)
+	if strings.Contains(screen, "≡1201") {
+		t.Errorf("the merged #1201 carries a stack label:\n%s", screen)
 	}
 	if !strings.Contains(screen, "≡12 1") {
 		t.Errorf("the open #12 lost its label:\n%s", screen)
@@ -471,17 +471,17 @@ func TestStackGraphsSurviveTheCache(t *testing.T) {
 		t.Fatal("no cache written")
 	}
 	back := graphsFromCache(c.Stacks)
-	if g := back["acme/example"]; g == nil || len(g.prs) != len(cfiPRs()) || g.trunk != "main" {
+	if g := back["acme/example"]; g == nil || len(g.prs) != len(forkedStackPRs()) || g.trunk != "main" {
 		t.Fatalf("graphs read back: %v", back)
 	}
-	if l, err := back["acme/example"].line(4974); err != nil || len(l.PRs) != 6 {
-		t.Errorf("line(4974) from the cache: %v %v", l.numbers(), err)
+	if l, err := back["acme/example"].line(1206); err != nil || len(l.PRs) != 6 {
+		t.Errorf("line(1206) from the cache: %v %v", l.numbers(), err)
 	}
 }
 
 // TestStackColumnShowsTheStackReview: a stack review open on a line
-// puts its own ⎇ © after the label of every layer it holds — #4969 too,
-// beside that row's own review — and not on #5124, a layer of the same
+// puts its own ⎇ © after the label of every layer it holds — #1201 too,
+// beside that row's own review — and not on #1211, a layer of the same
 // stack on another line. A closed one keeps its record and shows
 // nothing, and then the column spends no width on badges.
 func TestStackColumnShowsTheStackReview(t *testing.T) {
@@ -490,37 +490,37 @@ func TestStackColumnShowsTheStackReview(t *testing.T) {
 		p.Author.Login = "alice"
 		return p
 	}
-	m := stackModel(t, row(4974), row(4970), row(4969), row(5124))
-	m.stackRecords = []stackRecord{{name: "stack-desktop", Repo: "acme/example", Tip: 4974,
-		PRs: []int{4969, 4970, 4971, 4972, 4973, 4974}}}
+	m := stackModel(t, row(1206), row(1202), row(1201), row(1211))
+	m.stackRecords = []stackRecord{{name: "stack-ui", Repo: "acme/example", Tip: 1206,
+		PRs: []int{1201, 1202, 1203, 1204, 1205, 1206}}}
 	m.localState = map[string]LocalState{
-		"stack-desktop": {Worktree: "/wt/stack-desktop", Window: "stack-desktop", ClaudeState: agentWorking},
-		"pr-4969-rules": {Worktree: "/wt/pr-4969-rules"},
+		"stack-ui":      {Worktree: "/wt/stack-ui", Window: "stack-ui", ClaudeState: agentWorking},
+		"pr-1201-rules": {Worktree: "/wt/pr-1201-rules"},
 	}
 	m.refreshList()
-	// "≡4969 1" padded to "≡4969 6/6", the widest label, then the badges.
-	stackBadges := styleStack.Render("≡4969 1") + "  " + " " + workspaceBadges(m.localState["stack-desktop"], "")
+	// "≡1201 1" padded to "≡1201 6/6", the widest label, then the badges.
+	stackBadges := styleStack.Render("≡1201 1") + "  " + " " + workspaceBadges(m.localState["stack-ui"], "")
 	lines := map[int]string{}
 	for _, line := range strings.Split(m.render(), "\n") {
-		for _, n := range []int{4974, 4970, 4969, 5124} {
+		for _, n := range []int{1206, 1202, 1201, 1211} {
 			if strings.Contains(stripANSI(line), "pr "+strconv.Itoa(n)) {
 				lines[n] = line
 			}
 		}
 	}
-	if !strings.Contains(lines[4969], stackBadges) {
-		t.Errorf("#4969 lacks the stack review's badges after its label:\n%q", stripANSI(lines[4969]))
+	if !strings.Contains(lines[1201], stackBadges) {
+		t.Errorf("#1201 lacks the stack review's badges after its label:\n%q", stripANSI(lines[1201]))
 	}
-	if !strings.Contains(lines[4969], styleWorktree.Render("⎇")+" ") || strings.Count(stripANSI(lines[4969]), "⎇") != 2 {
-		t.Errorf("#4969 should carry its own ⎇ and the stack review's: %q", stripANSI(lines[4969]))
+	if !strings.Contains(lines[1201], styleWorktree.Render("⎇")+" ") || strings.Count(stripANSI(lines[1201]), "⎇") != 2 {
+		t.Errorf("#1201 should carry its own ⎇ and the stack review's: %q", stripANSI(lines[1201]))
 	}
-	for _, n := range []int{4974, 4970} {
+	for _, n := range []int{1206, 1202} {
 		if strings.Count(stripANSI(lines[n]), "⎇") != 1 || !strings.Contains(lines[n], styleClaudeWorking.Render("©")) {
 			t.Errorf("#%d lacks the stack review's badges: %q", n, stripANSI(lines[n]))
 		}
 	}
-	if strings.Contains(stripANSI(lines[5124]), "⎇") || strings.Contains(stripANSI(lines[5124]), "©") {
-		t.Errorf("#5124 is on another line and shows the review: %q", stripANSI(lines[5124]))
+	if strings.Contains(stripANSI(lines[1211]), "⎇") || strings.Contains(stripANSI(lines[1211]), "©") {
+		t.Errorf("#1211 is on another line and shows the review: %q", stripANSI(lines[1211]))
 	}
 
 	// Closed: the record stays, the worktree and the window are gone.

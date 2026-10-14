@@ -322,8 +322,8 @@ func shownProjects(m model) []string {
 }
 
 var (
-	stefanahmanProjects = []string{"Sequential Capture redesign", "Bardo Backstage (BACKEND)"}
-	norrbrunnProjects   = []string{"Endpoint Validation w. LLM readable errors", "Sven v2 — Deterministic harness"}
+	stefanahmanProjects = []string{"Background Indexer redesign", "Admin Console (BACKEND)"}
+	norrbrunnProjects   = []string{"Endpoint Validation w. LLM readable errors", "Lint v2 — Deterministic harness"}
 )
 
 // TestTabStepsThroughWorkspaces: with several workspaces the project
@@ -419,11 +419,11 @@ func TestTabRemembersTheWorkspace(t *testing.T) {
 	if resumed.onlyWorkspace != "norrbrunn" {
 		t.Fatalf("resumed on %q, want norrbrunn", resumed.onlyWorkspace)
 	}
-	if p := resumed.selectedProject(); p == nil || p.Name != "Sven v2 — Deterministic harness" {
+	if p := resumed.selectedProject(); p == nil || p.Name != "Lint v2 — Deterministic harness" {
 		t.Errorf("resumed cursor on %+v, want norrbrunn's second project", p)
 	}
 
-	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "bardo"}}
+	cfg.Linear = LinearWorkspaces{{Name: "stefanahman"}, {Name: "work"}}
 	if gone := newProjectModel(cfg, "acme/app", nil, loadProjectCache()); gone.onlyWorkspace != "stefanahman" {
 		t.Errorf("a workspace no longer configured opened on %q, want the first, stefanahman", gone.onlyWorkspace)
 	}

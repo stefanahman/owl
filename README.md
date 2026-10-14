@@ -45,7 +45,7 @@ is written twice and nothing goes stale in a second place.
 - **The agent's state in the list.** `©` shows whether Claude is
   working, blocked on you, or done and unread. `n` jumps to the next
   row that needs you.
-- **Stacks.** A stacked row names its stack and its layer, `≡4969 3/6`. `→` shows
+- **Stacks.** A stacked row names its stack and its layer, `≡1201 3/6`. `→` shows
   the stack, and `↵` on a line opens one review of all of it, with a
   draft per layer.
 - **Prompts on a key.** `f` sends the feedback prompt: on a review,

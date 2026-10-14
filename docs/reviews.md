@@ -17,8 +17,8 @@ cache until the live one lands (one per repo, or one for the list across
 | amber `✓` / `·` | the author pushed after that review; it no longer covers the head |
 | `⚠` | someone requested changes |
 | `[draft]` | a draft PR |
-| `≡4969 3/6` | a layer of the stack whose bottom is #4969: the third of a line six long; `≡4969 3` is the third below a fork. A column of its own before the title, in a colour no other glyph wears |
-| `≡4969 3/6 ⎇ ©` | a stack review is open on a line holding the layer: its worktree and its Claude. The row's own `⎇` `©` stay its own review's, which is what `↵` opens |
+| `≡1201 3/6` | a layer of the stack whose bottom is #1201: the third of a line six long; `≡1201 3` is the third below a fork. A column of its own before the title, in a colour no other glyph wears |
+| `≡1201 3/6 ⎇ ©` | a stack review is open on a line holding the layer: its worktree and its Claude. The row's own `⎇` `©` stay its own review's, which is what `↵` opens |
 | a dim row | your **team** was asked, you were not |
 
 ## A push after your review
@@ -43,14 +43,14 @@ made it, and it sees where one forks: two pull requests on one base
 are parallel work, and common.
 
 A stack review covers one **line**, the path from the trunk to one
-tip, because that is exactly the code the tip would merge. #5013 runs
-on #4969 through #4993, and on nothing from the line to #4974 beside
+tip, because that is exactly the code the tip would merge. #1209 runs
+on #1201 through #1208, and on nothing from the line to #1206 beside
 it.
 
 ```
-#4969 ─ #4970 ─ #4971 ─ #4972 ─ #4973 ─┬─ #4974
-                                       ├─ #4993 ─ #5013
-                                       └─ #5065
+#1201 ─ #1202 ─ #1203 ─ #1204 ─ #1205 ─┬─ #1206
+                                       ├─ #1208 ─ #1209
+                                       └─ #1210
 ```
 
 **`→` on a stacked row** shows its stack in place of the list, and `←`
@@ -135,22 +135,22 @@ time you switched, which is the eye movement two panes exist to save.
 
 ```
 To review (2)
-▸ #4302  ⎇ ©  ·   1h  refactor(backstage-desktop): rename the bundled…
+▸ #4302  ⎇ ©  ·   1h  refactor(desktop): rename the bundled…
 Merged (last 3d)
   #4247       ✓  16h  fix: stop the Overview and Issues tabs reading…
 Mine (17)
 Blocked on you
-  #4273  ○ ✗ ⚠  19h  feat(capture): mark enrichment stale on edit… [draft]
-  #4003  ✓ ✓ ⚠   2w  feat(sven): safety-filter resilience…
+  #4273  ○ ✗ ⚠  19h  feat(search): mark the index stale on edit… [draft]
+  #4003  ✓ ✓ ⚠   2w  feat(lint): safety-filter resilience…
 Ready to merge
-  #4007  ✓ ◐     7m  feat(capture): per-tenant captureEngine override…
+  #4007  ✓ ◐     7m  feat(search): per-tenant cachingEngine override…
 Waiting on reviewers
-  #4299  · ✓     1h  feat(ingest): stamp periodStart/periodEnd…
+  #4299  · ✓     1h  feat(ingest): stamp createdAt/updatedAt…
 Not out for review
   #4290  ○ ✓     3h  refactor(tenancy): drop the legacy tenant shim
-  #4306  ○ ✓    17h  fix(compile-db): keep captureStatus out… [draft]
+  #4306  ○ ✓    17h  fix(schema-db): keep cachingStatus out… [draft]
 Merged (last 3d)
-  #4294  ✓ ✓     2h  fix(capture): reject enrichment writes made obsolete…
+  #4294  ✓ ✓     2h  fix(search): reject index writes made obsolete…
 ```
 
 The mine pane groups by **what is in the way**, not by review status:
@@ -215,15 +215,15 @@ everything else:
 
 | the PR | the workspace |
 |---|---|
-| yours, branch carries an issue key | the feature's — `bar-4157-<slug>`, in `features` |
+| yours, branch carries an issue key | the feature's — `eng-4157-<slug>`, in `features` |
 | yours, no issue key | `pr-<N>-<slug>` in `reviews`, holding the real branch |
 | someone else's, or yours from a fork | `pr-<N>-<slug>`, a fetched copy |
 
 When the feature is already open — you started it from `owl issue` —
 Enter in the mine pane goes **there**: same worktree, same window, same
 conversation, whatever the directory ended up called. The match is on
-the branch and is exact, so a PR on `bar-4157-part-2` never lands in
-the worktree holding `bar-4157-part-1`. Opening the other way round
+the branch and is exact, so a PR on `eng-4157-part-2` never lands in
+the worktree holding `eng-4157-part-1`. Opening the other way round
 finds it too, because the branch inside still carries the key.
 
 The link between a PR and its issue is the key in the branch name —

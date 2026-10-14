@@ -137,7 +137,7 @@ const (
 	nameCeiling     = 60
 	priorityWidth   = 3  // !!!
 	dueWidth        = 8  // "10d late"
-	initiativeWidth = 16 // "Capture + Refine"
+	initiativeWidth = 16 // "Search + Ranking"
 	leadWidth       = 9  // a given name, as the issue row's assignee
 	// projectFixed is everything on the row that is always there:
 	// cursor, the bar, the percentage, the counts, the milestones, the
@@ -406,7 +406,7 @@ func (m model) renderProjectRow(row visibleRow, selected bool) string {
 		if c.width > 0 {
 			// Two spaces, as between every other pair on this row. One is
 			// invisible when the text fills its column exactly — which
-			// "Capture + Refine" does, at sixteen — and two fields then
+			// "Search + Ranking" does, at sixteen — and two fields then
 			// read as one.
 			out += "  " + cell(c.text, c.width, c.style)
 		}

@@ -231,7 +231,7 @@ func (s trackerSet) Create(title string) (Issue, error) {
 	}
 	switch len(targets) {
 	case 0:
-		return Issue{}, errors.New("linear: no team configured (linear.team, the key in BAR-123)")
+		return Issue{}, errors.New("linear: no team configured (linear.team, the key in ENG-123)")
 	case 1:
 		issue, err := targets[0].tracker.Create(title)
 		issue.Workspace = targets[0].name

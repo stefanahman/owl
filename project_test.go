@@ -19,19 +19,19 @@ func fixtureProjects() []Project {
 		p.TargetDate = time.Now().Add(12 * 24 * time.Hour).Format("2006-01-02")
 		p.Initiatives.Nodes = append(p.Initiatives.Nodes, struct {
 			Name string `json:"name"`
-		}{"Capture + Refine"})
+		}{"Search + Ranking"})
 		for i := 0; i < milestones; i++ {
 			p.Milestones.Nodes = append(p.Milestones.Nodes, Milestone{ID: "ms", Name: "M", Progress: 0.5})
 		}
 		return p
 	}
 	return []Project{
-		mk("Sequential Capture redesign", "a76d38ca8527", "In Progress", "started", 0.62, 127, 11, 2*time.Hour),
+		mk("Background Indexer redesign", "b00000000008", "In Progress", "started", 0.62, 127, 11, 2*time.Hour),
 		// Named Paused, typed started: it belongs to the In progress
 		// section, and the row has to say so.
-		mk("Bardo Backstage (BACKEND)", "c67d415965ae", "Paused", "started", 0.08, 917, 0, 8*time.Hour),
-		mk("Endpoint Validation w. LLM readable errors", "eb528db32d42", "Planned", "planned", 0.5, 4, 0, 3*24*time.Hour),
-		mk("Sven v2 — Deterministic harness", "1bd92aa64c33", "Backlog", "backlog", 0.28, 18, 6, 5*24*time.Hour),
+		mk("Admin Console (BACKEND)", "b00000000009", "Paused", "started", 0.08, 917, 0, 8*time.Hour),
+		mk("Endpoint Validation w. LLM readable errors", "b0000000000b", "Planned", "planned", 0.5, 4, 0, 3*24*time.Hour),
+		mk("Lint v2 — Deterministic harness", "b00000000003", "Backlog", "backlog", 0.28, 18, 6, 5*24*time.Hour),
 	}
 }
 
@@ -44,9 +44,9 @@ func projectIssues() []Issue {
 		return is
 	}
 	return []Issue{
-		mine("BAR-4079", "a76d38ca8527"),
-		mine("BAR-4091", "a76d38ca8527"),
-		mine("BAR-4292", "eb528db32d42"),
+		mine("ENG-4079", "b00000000008"),
+		mine("ENG-4091", "b00000000008"),
+		mine("ENG-4292", "b0000000000b"),
 	}
 }
 
@@ -72,7 +72,7 @@ func TestProjectListRendersSectionsAndColumns(t *testing.T) {
 		"1/4",
 		"!!",               // priority 2, the issue list's own glyphs
 		"in 12d",           // the target date, read against today
-		"Capture + Refine", // the initiative above the project
+		"Search + Ranking", // the initiative above the project
 		"Stefan",           // the lead, which the query already fetched
 	} {
 		if !strings.Contains(out, want) {
@@ -81,7 +81,7 @@ func TestProjectListRendersSectionsAndColumns(t *testing.T) {
 	}
 	// A status named Paused but typed started sits under In progress,
 	// and the row says Paused because the section does not.
-	if !regexp.MustCompile(`Bardo Backstage \(BACKEND\).*Paused`).MatchString(out) {
+	if !regexp.MustCompile(`Admin Console \(BACKEND\).*Paused`).MatchString(out) {
 		t.Errorf("the paused project does not name its state:\n%s", out)
 	}
 	// A row whose state matches its section does not repeat it.
@@ -103,8 +103,8 @@ func fixtureDoneProjects() []Project {
 		return p
 	}
 	return []Project{
-		mk("Rule-driven activity grouping", "f6824f4cbe9e", 2*24*time.Hour),
-		mk("Business Rules Domain Skeleton", "cad61172cd23", 14*24*time.Hour),
+		mk("Rule-driven customer grouping", "b0000000000c", 2*24*time.Hour),
+		mk("Pricing Rules Domain Skeleton", "b0000000000a", 14*24*time.Hour),
 	}
 }
 
@@ -124,11 +124,11 @@ func TestProjectListShowsWhatJustCompleted(t *testing.T) {
 	if !strings.Contains(out, "Completed") || !strings.Contains(out, "· 7d") {
 		t.Errorf("no Completed section:\n%s", out)
 	}
-	if !strings.Contains(out, "Rule-driven activity grouping") {
+	if !strings.Contains(out, "Rule-driven customer grouping") {
 		t.Errorf("a project completed two days ago is missing:\n%s", out)
 	}
 	// Past the window, however the tracker or a stale cache answered.
-	if strings.Contains(out, "Business Rules Domain Skeleton") {
+	if strings.Contains(out, "Pricing Rules Domain Skeleton") {
 		t.Errorf("a project completed a fortnight ago is in the list:\n%s", out)
 	}
 	// The section is named what Linear calls the state, so the row does
@@ -151,7 +151,7 @@ func TestProjectListDimsParkedStatuses(t *testing.T) {
 		}
 		return b.String()
 	}
-	// The fixture's Bardo Backstage is named Paused and typed started,
+	// The fixture's Admin Console is named Paused and typed started,
 	// which is how Linear stores it: nothing but the name separates it
 	// from In Progress.
 	if !defaultConfig().Project.dimmed("Paused") || !defaultConfig().Project.dimmed("paused") {
@@ -177,7 +177,7 @@ func TestProjectListDimsParkedStatuses(t *testing.T) {
 		if r != "" && !strings.HasPrefix(r, " ") && !strings.HasPrefix(r, "▸") {
 			section = r
 		}
-		if strings.Contains(r, "Bardo Backstage") && section != "In progress" {
+		if strings.Contains(r, "Admin Console") && section != "In progress" {
 			t.Errorf("the paused project left its section, into %q", section)
 		}
 	}
@@ -190,9 +190,9 @@ func TestProjectListFiltersByName(t *testing.T) {
 	m.width, m.height = 140, 30
 	m.resizeViewport()
 
-	m.search.SetValue("sequential")
+	m.search.SetValue("background")
 	rows := m.visibleProjectRows()
-	if len(rows) != 2 || rows[1].project == nil || rows[1].project.Name != "Sequential Capture redesign" {
+	if len(rows) != 2 || rows[1].project == nil || rows[1].project.Name != "Background Indexer redesign" {
 		t.Errorf("filter by name: %+v", rows)
 	}
 	m.search.SetValue("nothing here")
@@ -228,7 +228,7 @@ func TestProjectTable(t *testing.T) {
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
 	cfg := defaultConfig()
-	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
+	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "ENG"}}
 
 	var out strings.Builder
 	if err := runProject(cfg, nil, &out); err != nil {
@@ -237,12 +237,12 @@ func TestProjectTable(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^PROGRESS\s+ISSUES\s+MS\s+STATE\s+PROJECT$`).MatchString(out.String()) {
 		t.Errorf("table header:\n%s", out.String())
 	}
-	if !regexp.MustCompile(`(?m)^62%\s+127\s+2\s+In Progress\s+Sequential Capture redesign$`).MatchString(out.String()) {
+	if !regexp.MustCompile(`(?m)^62%\s+127\s+2\s+In Progress\s+Background Indexer redesign$`).MatchString(out.String()) {
 		t.Errorf("table rows:\n%s", out.String())
 	}
 	// The table is the open list: a completed project belongs to the
 	// TUI's Done section, not to a table piped into something else.
-	if strings.Contains(out.String(), "Rule-driven activity grouping") {
+	if strings.Contains(out.String(), "Rule-driven customer grouping") {
 		t.Errorf("the table lists a completed project:\n%s", out.String())
 	}
 	if err := runProject(cfg, []string{"bogus"}, &out); err == nil {
@@ -322,12 +322,12 @@ func TestProjectRowShedsColumnsRatherThanWrapping(t *testing.T) {
 // its workspace under the name in the state file, which is the name the
 // project had when it was first opened.
 func TestProjectRowFindsItsRenamedWorkspace(t *testing.T) {
-	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
+	p := Project{ID: "uuid-b00000000008", Name: "Background Indexer redesign", SlugID: "b00000000008"}
 	m := model{
 		localState: map[string]LocalState{
-			"proj-capture-redesign-draft": {Worktree: "/repo/.worktrees.local/proj-capture-redesign-draft", Window: "proj-capture-redesign-draft"},
+			"proj-indexer-redesign-draft": {Worktree: "/repo/.worktrees.local/proj-indexer-redesign-draft", Window: "proj-indexer-redesign-draft"},
 		},
-		projectStates: map[string]projectState{p.ID: {Session: "s", Name: "Capture redesign draft"}},
+		projectStates: map[string]projectState{p.ID: {Session: "s", Name: "Indexer redesign draft"}},
 	}
 	if ls := m.localOf(visibleRow{project: &p}); ls.Worktree == "" || ls.Window == "" {
 		t.Errorf("the renamed project's row lost its workspace: %+v", ls)
@@ -343,15 +343,15 @@ func TestProjectRowFindsItsRenamedWorkspace(t *testing.T) {
 // opened since the list started finds its workspace without a restart.
 func TestLocalMsgReadsTheProjectStates(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	if err := saveProjectState("uuid-a76d38ca8527", projectState{Session: "s", Name: "Capture redesign draft", Workspace: "proj-capture-redesign-draft"}); err != nil {
+	if err := saveProjectState("uuid-b00000000008", projectState{Session: "s", Name: "Indexer redesign draft", Workspace: "proj-indexer-redesign-draft"}); err != nil {
 		t.Fatal(err)
 	}
-	next, _ := model{}.Update(localMsg{"proj-capture-redesign-draft": {Worktree: "/wt"}})
+	next, _ := model{}.Update(localMsg{"proj-indexer-redesign-draft": {Worktree: "/wt"}})
 	m := next.(model)
-	if m.projectStates["uuid-a76d38ca8527"].Workspace != "proj-capture-redesign-draft" {
+	if m.projectStates["uuid-b00000000008"].Workspace != "proj-indexer-redesign-draft" {
 		t.Errorf("project states after localMsg: %+v", m.projectStates)
 	}
-	p := Project{ID: "uuid-a76d38ca8527", Name: "Sequential Capture redesign", SlugID: "a76d38ca8527"}
+	p := Project{ID: "uuid-b00000000008", Name: "Background Indexer redesign", SlugID: "b00000000008"}
 	if ls := m.localOf(visibleRow{project: &p}); ls.Worktree != "/wt" {
 		t.Errorf("the row did not find its workspace: %+v", ls)
 	}

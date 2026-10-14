@@ -34,7 +34,7 @@ agent:
 
 issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
-  prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (BAR-123)
+  prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (ENG-123)
   claim: true                    # opening an issue makes it yours in Linear: triage, backlog or todo moves to the team's first started state, and an issue nobody holds is assigned to you; someone else's stays theirs. Needs a key with Write
 
 mine:                            # a PR of your own, opened from the second pane of ` + "`owl pr`" + `
@@ -110,7 +110,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
   token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
   account: ""                    # the 1Password account the item is in (its sign-in address), when more than one is signed in
-  team: ""                       # the team's key (BAR in BAR-123): where ` + "`owl hoot`" + ` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
+  team: ""                       # the team's key (ENG in ENG-123): where ` + "`owl hoot`" + ` files issues, and — unless teams says otherwise — which keys in a branch name count as issues
   # teams: [DEV, LIFE]           # every team you file work under, when one team is not the whole story: which keys in a branch name are yours to follow. Defaults to the single team above; with neither set, a PR of yours never resolves to its feature's workspace
 
 bindings:                        # your own keys on a row: a prompt handed to the agent, or a URL opened; ` + "`?`" + ` lists them by name

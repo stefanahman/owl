@@ -258,7 +258,7 @@ func TestABigPromptIsNotTyped(t *testing.T) {
 	fake := muxtest.InstallFakeCmux(t)
 	f.cfg.Mux = "cmux"
 
-	prompt := "## Stacked PR\n\nIt puts `emissionFactor.grade` on the calculation's schema.\n\n    git fetch origin bar-4927\n\n"
+	prompt := "## Stacked PR\n\nIt puts `order.total` on the invoice's schema.\n\n    git fetch origin eng-4927\n\n"
 	prompt += strings.Repeat("A paragraph of instructions that makes this realistic. ", 400)
 	f.open("42", "--prompt", prompt)
 
@@ -535,16 +535,16 @@ func TestFeaturesOwnOnlyTheirTeamsWorkspaces(t *testing.T) {
 	fake := muxtest.NewFakeHerdr(t)
 	f.cfg.Mux = "herdr"
 	f.cfg.Herdr.Socket = fake.Socket()
-	f.cfg.Linear = LinearWorkspaces{{Team: "BAR"}}
+	f.cfg.Linear = LinearWorkspaces{{Team: "ENG"}}
 	t.Setenv("HERDR_ENV", "")
 	d := mux.NewHerdr(fake.Socket())
-	for _, name := range []string{"bf-1", "bar-4159-thing"} {
+	for _, name := range []string{"bf-1", "eng-4159-thing"} {
 		if _, err := d.Create(name, f.repo); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := newWindows(f.cfg, features).Windows(); !reflect.DeepEqual(got, []string{"bar-4159-thing"}) {
-		t.Errorf("features own %v, want only bar-4159-thing", got)
+	if got := newWindows(f.cfg, features).Windows(); !reflect.DeepEqual(got, []string{"eng-4159-thing"}) {
+		t.Errorf("features own %v, want only eng-4159-thing", got)
 	}
 	// With no team named, any key goes, as before.
 	f.cfg.Linear = nil
@@ -554,8 +554,8 @@ func TestFeaturesOwnOnlyTheirTeamsWorkspaces(t *testing.T) {
 }
 
 func TestIsIssueKey(t *testing.T) {
-	cfg := Config{Linear: LinearWorkspaces{{Team: "BAR"}, {Teams: []string{"DEV", "LIFE"}}}}
-	for key, want := range map[string]bool{"BAR-4159": true, "bar-4159": true, "dev-82": true, "LIFE-3": true, "bf-1": false, "release-2": false, "": false} {
+	cfg := Config{Linear: LinearWorkspaces{{Team: "ENG"}, {Teams: []string{"DEV", "LIFE"}}}}
+	for key, want := range map[string]bool{"ENG-4159": true, "eng-4159": true, "dev-82": true, "LIFE-3": true, "bf-1": false, "release-2": false, "": false} {
 		if got := cfg.isIssueKey(key); got != want {
 			t.Errorf("isIssueKey(%q) = %v, want %v", key, got, want)
 		}

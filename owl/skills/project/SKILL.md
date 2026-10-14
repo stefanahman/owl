@@ -75,8 +75,8 @@ Then stop and let the user steer. Do not dispatch anything unasked.
 When the user picks work, put it in its own workspace — **in two calls, in this order**:
 
 ```sh
-owl issue start BAR-1234                      # 1. the workspace, on owl's own first prompt
-owl issue start BAR-1234 --prompt "…"         # 2. the briefing, into the agent now running
+owl issue start ENG-1234                      # 1. the workspace, on owl's own first prompt
+owl issue start ENG-1234 --prompt "…"         # 2. the briefing, into the agent now running
 ```
 
 The order is not a style choice. `--prompt` **replaces** the first prompt owl would otherwise send, which is `/owl:feature {key}` from `issue.prompt`. Dispatch with a prompt on the first call and that issue's agent never enters the feature workflow: no ticket read, no approach agreed with the user, and — the part that matters — none of its manners, since `/owl:feature` is what guarantees nothing is pushed and no pull request is opened without the user's say-so. A bare `start` gets the workflow; the second call lands the briefing in the agent already running it.
@@ -91,16 +91,16 @@ One at a time unless the user asks for more. Each dispatched agent is another co
 
 Sometimes two issues are one change cut in half — the second needs a field, a migration or a rename the first adds, and reviewing them together means reviewing a pile. This conversation is the only one that can see that: each issue's agent knows its own worktree and nothing else. So the chaining is decided here, or not at all.
 
-Say the order out loud before dispatching anything. "BAR-4927 puts the field on the schema; BAR-4931 reads it in the report" is the whole design, and it is also what the user corrects if you have it backwards.
+Say the order out loud before dispatching anything. "ENG-4927 puts the field on the schema; ENG-4931 reads it in the report" is the whole design, and it is also what the user corrects if you have it backwards.
 
 Then dispatch in that order, bottom first:
 
-1. **The bottom is an ordinary issue.** `owl issue start BAR-4927`, briefing as usual. It reaches its own pull request through the feature workflow and, crucially, **pushes its branch** — a layer cannot be started on a branch that is not on the remote yet, and `--base` says so rather than guessing.
+1. **The bottom is an ordinary issue.** `owl issue start ENG-4927`, briefing as usual. It reaches its own pull request through the feature workflow and, crucially, **pushes its branch** — a layer cannot be started on a branch that is not on the remote yet, and `--base` says so rather than guessing.
 2. **Each layer above names its base**, and is told what it sits on:
 
    ```sh
-   owl issue start BAR-4931 --base bar-4927-put-the-grade-on-the-calculation
-   owl issue start BAR-4931 --prompt "…builds on BAR-4927 (PR #4422), already open…"
+   owl issue start ENG-4931 --base eng-4927-put-the-total-on-the-invoice
+   owl issue start ENG-4931 --prompt "…builds on ENG-4927 (PR #4422), already open…"
    ```
 
    The `--base` is the tool half: the worktree starts from that branch instead of the trunk, and owl records it under `branch.<branch>.owlBase` so the layer's agent — and any session that comes after it — can ask git what it follows. The briefing is the human half: which PR is below, what it established, and what this layer must not re-do.

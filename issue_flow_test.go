@@ -22,13 +22,13 @@ func issueFixture(t *testing.T) (*fixture, *fakeLinear) {
 	orig := linearEndpoint
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
-	f.cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
+	f.cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "ENG"}}
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	// BAR-4159's branch exists on the origin, one commit past main.
-	f.git(f.origin, "checkout", "-q", "-b", "bar-4159-company-fuzzy-match")
+	// ENG-4159's branch exists on the origin, one commit past main.
+	f.git(f.origin, "checkout", "-q", "-b", "eng-4159-address-fuzzy-match")
 	f.write(filepath.Join(f.origin, "fuzzy.txt"), "started upstream\n")
 	f.git(f.origin, "add", ".")
-	f.git(f.origin, "commit", "-q", "-m", "BAR-4159 wip")
+	f.git(f.origin, "commit", "-q", "-m", "ENG-4159 wip")
 	f.git(f.origin, "checkout", "-q", "main")
 	f.git(f.repo, "fetch", "-q", "origin")
 	return f, fake
@@ -72,9 +72,9 @@ func TestIssueOpenOnABase(t *testing.T) {
 	f.git(f.origin, "checkout", "-q", "main")
 	f.git(f.repo, "fetch", "-q", "origin")
 
-	out := f.openIssue("bar-4160", "--base", "stack-below")
+	out := f.openIssue("eng-4160", "--base", "stack-below")
 
-	name := "bar-4160-per-tenant-override"
+	name := "eng-4160-per-tenant-override"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
 	if !strings.Contains(out, "creating "+name+" from origin/stack-below") {
 		t.Errorf("output: %q", out)
@@ -88,8 +88,8 @@ func TestIssueOpenOnABase(t *testing.T) {
 		t.Errorf("baseOf = %q, want the base it was opened on", got)
 	}
 	// An ordinary feature records nothing, and its absence is the answer.
-	f.openIssue("BAR-4159")
-	if got := baseOf(f.repo, "bar-4159-company-fuzzy-match"); got != "" {
+	f.openIssue("ENG-4159")
+	if got := baseOf(f.repo, "eng-4159-address-fuzzy-match"); got != "" {
 		t.Errorf("an ordinary feature recorded a base: %q", got)
 	}
 }
@@ -107,13 +107,13 @@ func TestIssueOpenOnABaseAfterTheFact(t *testing.T) {
 	f.git(f.origin, "commit", "-q", "-m", "the layer below")
 	f.git(f.origin, "checkout", "-q", "main")
 
-	f.openIssue("bar-4160") // an ordinary open first
-	name := "bar-4160-per-tenant-override"
+	f.openIssue("eng-4160") // an ordinary open first
+	name := "eng-4160-per-tenant-override"
 	if got := baseOf(f.repo, name); got != "" {
 		t.Fatalf("baseOf = %q before any base was given", got)
 	}
 
-	out := f.openIssue("bar-4160", "--base", "stack-below")
+	out := f.openIssue("eng-4160", "--base", "stack-below")
 
 	if got := baseOf(f.repo, name); got != "stack-below" {
 		t.Errorf("baseOf = %q, want the base given after the fact", got)
@@ -129,7 +129,7 @@ func TestIssueOpenRejectsAMissingBase(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
 	var out strings.Builder
-	err := runIssue(f.cfg, []string{"open", "bar-4160", "--base", "no-such-branch"}, &out)
+	err := runIssue(f.cfg, []string{"open", "eng-4160", "--base", "no-such-branch"}, &out)
 	if err == nil || !strings.Contains(err.Error(), "no such branch on origin") {
 		t.Errorf("got %v, want a word about the branch not being there", err)
 	}
@@ -143,8 +143,8 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 
 	// A branch the origin does not have yet: created from its default
 	// branch.
-	out := f.openIssue("bar-4160")
-	name := "bar-4160-per-tenant-override"
+	out := f.openIssue("eng-4160")
+	name := "eng-4160-per-tenant-override"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
 	if !strings.Contains(out, "creating "+name+" from origin/main into "+wt) || !strings.Contains(out, "started features:"+name) {
 		t.Errorf("output: %q", out)
@@ -161,7 +161,7 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	if _, err := tmux("has-session", "-t", mux.TmuxTarget("reviews", "")); err == nil {
 		t.Error("a feature created the reviews session")
 	}
-	if got := promptIn(t, f.waitPaneIn("features", name, "$(cat ")); !strings.Contains(got, "/owl:feature BAR-4160") {
+	if got := promptIn(t, f.waitPaneIn("features", name, "$(cat ")); !strings.Contains(got, "/owl:feature ENG-4160") {
 		t.Errorf("the agent was handed %q", got)
 	}
 	if cwd, _ := tmux("display-message", "-p", "-t", mux.TmuxTarget("features", name), "#{pane_current_path}"); cwd != wt {
@@ -170,11 +170,11 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	if link, err := os.Readlink(filepath.Join(wt, ".claude", "settings.local.json")); err != nil || link != filepath.Join(f.repo, ".claude", "settings.local.json") {
 		t.Errorf("link_local not applied: %q, %v", link, err)
 	}
-	f.waitFile(hookOut, "BAR-4160|"+name+"|features|"+name+"|"+wt+"|"+f.repo+"\n")
+	f.waitFile(hookOut, "ENG-4160|"+name+"|features|"+name+"|"+wt+"|"+f.repo+"\n")
 
 	// A branch the origin has: tracked, at the origin's commit.
-	out = f.openIssue("BAR-4159")
-	name2 := "bar-4159-company-fuzzy-match"
+	out = f.openIssue("ENG-4159")
+	name2 := "eng-4159-address-fuzzy-match"
 	wt2 := filepath.Join(f.repo, ".worktrees.local", name2)
 	if !strings.Contains(out, "fetching origin/"+name2+" into "+wt2) {
 		t.Errorf("output: %q", out)
@@ -187,7 +187,7 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	}
 
 	// Again: the worktree and window exist, so only the selection happens.
-	if out := f.openIssue("BAR-4160"); !strings.Contains(out, "selected features:"+name) {
+	if out := f.openIssue("ENG-4160"); !strings.Contains(out, "selected features:"+name) {
 		t.Errorf("second open: %q", out)
 	}
 	if got := f.featureWindows(); len(got) != 3 {
@@ -195,7 +195,7 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 	}
 
 	// The overlay, by issue.
-	if ls := findLocalBy(model{cfg: f.cfg}.fetchLocalIn(features).(localMsg), func(n string) bool { return matchesIssue(n, "BAR-4160") }); ls.Worktree != wt || ls.Window != name {
+	if ls := findLocalBy(model{cfg: f.cfg}.fetchLocalIn(features).(localMsg), func(n string) bool { return matchesIssue(n, "ENG-4160") }); ls.Worktree != wt || ls.Window != name {
 		t.Errorf("overlay = %+v", ls)
 	}
 
@@ -204,7 +204,7 @@ func TestIssueOpenCreatesTheFeature(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf strings.Builder
-	if err := runIssue(f.cfg, []string{"start", "BAR-4159"}, &buf); err != nil || !strings.Contains(buf.String(), "ready features:"+name2) {
+	if err := runIssue(f.cfg, []string{"start", "ENG-4159"}, &buf); err != nil || !strings.Contains(buf.String(), "ready features:"+name2) {
 		t.Errorf("start: %q, %v", buf.String(), err)
 	}
 	if active := f.activeWindowIn("features"); active != "scratch" {
@@ -227,20 +227,20 @@ func TestIssueOpenClaimsTheIssue(t *testing.T) {
 		return n
 	}
 
-	if out := f.openIssue("BAR-4160"); !strings.Contains(out, "BAR-4160: Todo → In Progress, assigned to you\n") {
+	if out := f.openIssue("ENG-4160"); !strings.Contains(out, "ENG-4160: Todo → In Progress, assigned to you\n") {
 		t.Errorf("output: %q", out)
 	}
-	if want := []string{"uuid-BAR-4160 state-in-progress me-uuid"}; !slices.Equal(fake.updates, want) {
+	if want := []string{"uuid-ENG-4160 state-in-progress me-uuid"}; !slices.Equal(fake.updates, want) {
 		t.Errorf("updates = %q, want %q", fake.updates, want)
 	}
 	// Again: in progress and the user's now, so nothing is written or said.
-	if out := f.openIssue("BAR-4160"); strings.Contains(out, "BAR-4160: ") || len(fake.updates) != 1 {
+	if out := f.openIssue("ENG-4160"); strings.Contains(out, "ENG-4160: ") || len(fake.updates) != 1 {
 		t.Errorf("second open: %q, %d updates", out, len(fake.updates))
 	}
 
 	f.cfg.Issue.Claim = false
 	before := reads()
-	if out := f.openIssue("BAR-4161"); strings.Contains(out, "BAR-4161: ") {
+	if out := f.openIssue("ENG-4161"); strings.Contains(out, "ENG-4161: ") {
 		t.Errorf("open with claim off: %q", out)
 	}
 	if reads() != before || len(fake.updates) != 1 {
@@ -274,19 +274,19 @@ func (f *fixture) pushBranch(branch, file, when string) {
 func TestIssueOpenTakesTheBranchThatCarriesTheKey(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
-	// BAR-4160's work was pushed from a branch of its own. Linear names
-	// bar-4160-per-tenant-override; nobody used it.
-	f.pushBranch("bar-4160-credit-flip", "flip.txt", "2026-01-01T00:00:00Z")
+	// ENG-4160's work was pushed from a branch of its own. Linear names
+	// eng-4160-per-tenant-override; nobody used it.
+	f.pushBranch("eng-4160-cursor-flip", "flip.txt", "2026-01-01T00:00:00Z")
 
-	wt := filepath.Join(f.repo, ".worktrees.local", "bar-4160-credit-flip")
-	if out := f.openIssue("bar-4160"); !strings.Contains(out, "fetching origin/bar-4160-credit-flip into "+wt) {
+	wt := filepath.Join(f.repo, ".worktrees.local", "eng-4160-cursor-flip")
+	if out := f.openIssue("eng-4160"); !strings.Contains(out, "fetching origin/eng-4160-cursor-flip into "+wt) {
 		t.Errorf("output: %q", out)
 	}
 	if !f.exists(filepath.Join(wt, "flip.txt")) {
 		t.Errorf("%s lacks the work on the branch", wt)
 	}
 	// The point of the whole thing: no second branch beside the real one.
-	if refExists(f.repo, "refs/heads/bar-4160-per-tenant-override") {
+	if refExists(f.repo, "refs/heads/eng-4160-per-tenant-override") {
 		t.Error("open created Linear's branch beside the one carrying the key")
 	}
 }
@@ -294,21 +294,21 @@ func TestIssueOpenTakesTheBranchThatCarriesTheKey(t *testing.T) {
 func TestIssueOpenTakesTheNewestOfSeveral(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
-	f.pushBranch("bar-4160-first-try", "first.txt", "2026-01-01T00:00:00Z")
-	f.pushBranch("bar-4160-second-try", "second.txt", "2026-06-01T00:00:00Z")
+	f.pushBranch("eng-4160-first-try", "first.txt", "2026-01-01T00:00:00Z")
+	f.pushBranch("eng-4160-second-try", "second.txt", "2026-06-01T00:00:00Z")
 
-	out := f.openIssue("bar-4160")
+	out := f.openIssue("eng-4160")
 	for _, want := range []string{
-		"BAR-4160: 2 branches carry the key, taking the newest",
-		"▸ bar-4160-second-try",
-		"  bar-4160-first-try",
+		"ENG-4160: 2 branches carry the key, taking the newest",
+		"▸ eng-4160-second-try",
+		"  eng-4160-first-try",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	wt := filepath.Join(f.repo, ".worktrees.local", "bar-4160-second-try")
-	if got := f.git(wt, "branch", "--show-current"); got != "bar-4160-second-try" {
+	wt := filepath.Join(f.repo, ".worktrees.local", "eng-4160-second-try")
+	if got := f.git(wt, "branch", "--show-current"); got != "eng-4160-second-try" {
 		t.Errorf("worktree branch %q", got)
 	}
 }
@@ -319,27 +319,27 @@ func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
 	// Another agent's worktree, outside worktrees_dir, on a branch
 	// carrying the key. git will not check that branch out twice, so
 	// owl has to use it where it stands.
-	foreign := filepath.Join(f.root, "elsewhere", "bar-4160-flip")
-	f.git(f.repo, "worktree", "add", "-q", "-b", "bar-4160-credit-flip", foreign, "origin/main")
+	foreign := filepath.Join(f.root, "elsewhere", "eng-4160-flip")
+	f.git(f.repo, "worktree", "add", "-q", "-b", "eng-4160-cursor-flip", foreign, "origin/main")
 
-	out := f.openIssue("bar-4160")
-	for _, want := range []string{"bar-4160-credit-flip is checked out outside .worktrees.local", foreign, "opening it there"} {
+	out := f.openIssue("eng-4160")
+	for _, want := range []string{"eng-4160-cursor-flip is checked out outside .worktrees.local", foreign, "opening it there"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	if f.exists(filepath.Join(f.repo, ".worktrees.local", "bar-4160-flip")) {
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", "eng-4160-flip")) {
 		t.Error("open made a second worktree for a branch already checked out")
 	}
 	// close leaves what it did not create, and says so.
 	var buf strings.Builder
-	if err := runIssue(f.cfg, []string{"close", "BAR-4160"}, &buf); err != nil {
+	if err := runIssue(f.cfg, []string{"close", "ENG-4160"}, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "bar-4160-credit-flip is checked out in "+foreign+", leaving it") {
+	if !strings.Contains(buf.String(), "eng-4160-cursor-flip is checked out in "+foreign+", leaving it") {
 		t.Errorf("close output: %q", buf.String())
 	}
-	if !f.exists(foreign) || !refExists(f.repo, "refs/heads/bar-4160-credit-flip") {
+	if !f.exists(foreign) || !refExists(f.repo, "refs/heads/eng-4160-cursor-flip") {
 		t.Error("close removed a worktree or branch it does not own")
 	}
 
@@ -348,7 +348,7 @@ func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
 	if err := os.RemoveAll(foreign); err != nil {
 		t.Fatal(err)
 	}
-	out = f.openIssue("bar-4160")
+	out = f.openIssue("eng-4160")
 	if strings.Contains(out, foreign) {
 		t.Errorf("open reused a worktree whose directory is gone:\n%s", out)
 	}
@@ -360,13 +360,13 @@ func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
 // sees the worktree from where it runs, and close finds it there too.
 func TestIssueGoesToItsTeamsRepo(t *testing.T) {
 	f, _ := issueFixture(t)
-	own := filepath.Join(f.root, "bar-repo")
+	own := filepath.Join(f.root, "eng-repo")
 	f.git(f.root, "clone", "-q", f.origin, own)
-	f.cfg.Repos = map[string]string{"BAR": own}
+	f.cfg.Repos = map[string]string{"ENG": own}
 	t.Chdir(f.repo)
 
-	f.openIssue("BAR-4160")
-	name := "bar-4160-per-tenant-override"
+	f.openIssue("ENG-4160")
+	name := "eng-4160-per-tenant-override"
 	wt := filepath.Join(own, ".worktrees.local", name)
 	if !f.exists(wt) {
 		t.Fatalf("no worktree in the team's repository at %s", wt)
@@ -378,7 +378,7 @@ func TestIssueGoesToItsTeamsRepo(t *testing.T) {
 		t.Errorf("the list, run in another repository, has the worktree at %q", got)
 	}
 	var out strings.Builder
-	if err := runIssue(f.cfg, []string{"close", "BAR-4160"}, &out); err != nil {
+	if err := runIssue(f.cfg, []string{"close", "ENG-4160"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if f.exists(wt) {
@@ -388,35 +388,35 @@ func TestIssueGoesToItsTeamsRepo(t *testing.T) {
 
 func TestIssueOpenNamesTheRepoThatIsNotOne(t *testing.T) {
 	f, _ := issueFixture(t)
-	f.cfg.Repos = map[string]string{"BAR": filepath.Join(f.root, "nowhere")}
+	f.cfg.Repos = map[string]string{"ENG": filepath.Join(f.root, "nowhere")}
 	t.Chdir(f.repo)
-	err := runIssue(f.cfg, []string{"open", "BAR-4160"}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "repos.BAR") {
-		t.Fatalf("open with a repo that is not one: %v, want an error naming repos.BAR", err)
+	err := runIssue(f.cfg, []string{"open", "ENG-4160"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "repos.ENG") {
+		t.Fatalf("open with a repo that is not one: %v, want an error naming repos.ENG", err)
 	}
 }
 
 func TestIssueClose(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
-	f.openIssue("BAR-4160")
-	name := "bar-4160-per-tenant-override"
+	f.openIssue("ENG-4160")
+	name := "eng-4160-per-tenant-override"
 	wt := filepath.Join(f.repo, ".worktrees.local", name)
 	f.waitPaneIn("features", name, "true")
 
 	// A commit nowhere else stops close; so does an edit; --force takes both.
 	f.write(filepath.Join(wt, "work.txt"), "a feature\n")
 	f.git(wt, "add", ".")
-	f.git(wt, "commit", "-q", "-m", "BAR-4160 work")
-	if err := runIssue(f.cfg, []string{"close", "BAR-4160"}, io.Discard); err == nil || !strings.Contains(err.Error(), "pushed nowhere") {
+	f.git(wt, "commit", "-q", "-m", "ENG-4160 work")
+	if err := runIssue(f.cfg, []string{"close", "ENG-4160"}, io.Discard); err == nil || !strings.Contains(err.Error(), "pushed nowhere") {
 		t.Fatalf("close with an unpushed commit: %v, want a refusal", err)
 	}
 	f.write(filepath.Join(wt, "work.txt"), "edited\n")
 	var out strings.Builder
-	if err := runIssue(f.cfg, []string{"close", "--force", "BAR-4160"}, &out); err != nil {
+	if err := runIssue(f.cfg, []string{"close", "--force", "ENG-4160"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"removed worktree " + wt, "deleted branch " + name, "closed window features:" + name, "BAR-4160 closed"} {
+	for _, want := range []string{"removed worktree " + wt, "deleted branch " + name, "closed window features:" + name, "ENG-4160 closed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
@@ -427,7 +427,7 @@ func TestIssueClose(t *testing.T) {
 	if got, want := f.featureWindows(), []string{"scratch"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("windows %v, want %v", got, want)
 	}
-	err := runIssue(f.cfg, []string{"close", "BAR-4160"}, &out)
+	err := runIssue(f.cfg, []string{"close", "ENG-4160"}, &out)
 	var nothing nothingToCloseError
 	if !errors.As(err, &nothing) {
 		t.Errorf("second close: %v, want nothingToCloseError", err)
@@ -435,12 +435,12 @@ func TestIssueClose(t *testing.T) {
 
 	// A tracked branch with nothing unpushed closes without --force,
 	// and close infers the issue from inside its worktree.
-	f.openIssue("BAR-4159")
-	name2 := "bar-4159-company-fuzzy-match"
+	f.openIssue("ENG-4159")
+	name2 := "eng-4159-address-fuzzy-match"
 	f.waitPaneIn("features", name2, "true")
 	t.Chdir(filepath.Join(f.repo, ".worktrees.local", name2))
 	out.Reset()
-	if err := runIssue(f.cfg, []string{"close"}, &out); err != nil || !strings.Contains(out.String(), "BAR-4159 closed") {
+	if err := runIssue(f.cfg, []string{"close"}, &out); err != nil || !strings.Contains(out.String(), "ENG-4159 closed") {
 		t.Errorf("close from inside: %q, %v", out.String(), err)
 	}
 	// The origin's branch is untouched.
@@ -451,8 +451,8 @@ func TestIssueClose(t *testing.T) {
 
 func TestIssueKeyOf(t *testing.T) {
 	cases := map[string]string{
-		"bar-4159-company-fuzzy-match": "BAR-4159",
-		"BAR-4159":                     "BAR-4159",
+		"eng-4159-address-fuzzy-match": "ENG-4159",
+		"ENG-4159":                     "ENG-4159",
 		"eng-1":                        "ENG-1",
 		"pr-42-fix":                    "", // a review
 		"pr-42":                        "",
@@ -465,18 +465,18 @@ func TestIssueKeyOf(t *testing.T) {
 			t.Errorf("issueKeyOf(%q) = %q, want %q", name, got, want)
 		}
 	}
-	if !matchesIssue("bar-4159-x", "bar-4159") || matchesIssue("bar-41590-x", "BAR-4159") {
+	if !matchesIssue("eng-4159-x", "eng-4159") || matchesIssue("eng-41590-x", "ENG-4159") {
 		t.Error("matchesIssue")
 	}
-	if k, err := parseIssueKey("bar-7"); err != nil || k != "BAR-7" {
+	if k, err := parseIssueKey("eng-7"); err != nil || k != "ENG-7" {
 		t.Errorf("parseIssueKey = %q, %v", k, err)
 	}
-	for _, bad := range []string{"", "42", "bar", "bar-", "-7", "bar-7-x"} {
+	for _, bad := range []string{"", "42", "bar", "bar-", "-7", "eng-7-x"} {
 		if _, err := parseIssueKey(bad); err == nil {
 			t.Errorf("parseIssueKey(%q): expected an error", bad)
 		}
 	}
-	if !isWorkspaceName("pr-42") || !isWorkspaceName("bar-4159-x") || isWorkspaceName("main") {
+	if !isWorkspaceName("pr-42") || !isWorkspaceName("eng-4159-x") || isWorkspaceName("main") {
 		t.Error("isWorkspaceName")
 	}
 }

@@ -311,7 +311,7 @@ func TestCheckTheReviewFiresOnYourOwnPR(t *testing.T) {
 	m.me = "me"
 	m.repoDir = t.TempDir()
 	mine := ownPR(4290, "REVIEW_REQUIRED", "SUCCESS", "MERGEABLE", 1, false)
-	mine.HeadRefName = "bar-4157-drop-legacy-tenant-shim"
+	mine.HeadRefName = "eng-4157-drop-legacy-tenant-shim"
 	m.mine = []PR{mine}
 	m.prs = []PR{{Number: 1, Title: "theirs", HeadRefName: "a"}}
 	m.width, m.height, m.ready = 140, 30, true
@@ -336,10 +336,10 @@ func TestCheckTheReviewFiresOnYourOwnPR(t *testing.T) {
 	}
 	// The workspace exists under the branch's name, not the PR's.
 	m.localState = map[string]LocalState{
-		"bar-4157-drop-legacy-tenant-shim": {
-			Worktree: "/repo/.worktrees.local/bar-4157-drop-legacy-tenant-shim",
-			Branch:   "bar-4157-drop-legacy-tenant-shim",
-			Window:   "bar-4157-drop-legacy-tenant-shim",
+		"eng-4157-drop-legacy-tenant-shim": {
+			Worktree: "/repo/.worktrees.local/eng-4157-drop-legacy-tenant-shim",
+			Branch:   "eng-4157-drop-legacy-tenant-shim",
+			Window:   "eng-4157-drop-legacy-tenant-shim",
 		},
 	}
 	if !m.started(row) {

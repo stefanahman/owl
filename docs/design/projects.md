@@ -83,13 +83,13 @@ keeps the **project worktree as its cwd**, and reaches the issue's
 worktree through `--add-dir`:
 
 ```
-owl project open sven-v2
-  claude --session-id <uuid owl generated> -n sven-v2
+owl project open lint-v2
+  claude --session-id <uuid owl generated> -n lint-v2
 
-descend into BAR-2931          # cwd stays the project worktree
+descend into ENG-2931          # cwd stays the project worktree
   claude --resume <uuid> --fork-session \
-         --add-dir .worktrees.local/bar-2931-… \
-         "work BAR-2931; its worktree is .worktrees.local/bar-2931-…"
+         --add-dir .worktrees.local/eng-2931-… \
+         "work ENG-2931; its worktree is .worktrees.local/eng-2931-…"
 ```
 
 The child opens holding the whole project conversation and then
@@ -103,10 +103,10 @@ worth more than the project's newer picture, which the state file
 carries anyway. So the file holds a session id per issue as well:
 
 ```json
-{ "sven-v2": {
+{ "lint-v2": {
     "session": "a1b2…",
     "mode": "separate",
-    "issues": { "BAR-2931": "c3d4…", "BAR-2932": "e5f6…" } } }
+    "issues": { "ENG-2931": "c3d4…", "ENG-2932": "e5f6…" } } }
 ```
 
 ### The join is the half that matters
@@ -123,7 +123,7 @@ workspace and can type into any window, so when a child finishes the
 parent gets a line:
 
 ```
-BAR-2931 finished (PR #4201). Read the project state for what it found.
+ENG-2931 finished (PR #4201). Read the project state for what it found.
 ```
 
 Written rather than spoken, because compaction eats a conversation and
@@ -139,11 +139,11 @@ milestone — which is where the specs and the progress numbers actually
 live in this workspace.
 
 The granularity is not consistent, and the design has to survive that.
-Emission Categories is four projects (Plumbing, Backstage integration,
-Capture integration, Data foundation) — one body of work split by
+Billing Categories is four projects (Plumbing, Admin integration,
+Search integration, Data foundation) — one body of work split by
 domain, with the dependencies written in prose inside the milestones.
 An agent scoped to one of the four cannot see the constraint that binds
-them. Sven v2 is the opposite: one project whose four milestones are
+them. Lint v2 is the opposite: one project whose four milestones are
 each a full spec with gates and open questions.
 
 So the project is the right unit to *own a workspace*, and the
@@ -151,15 +151,15 @@ initiative is the layer that would eventually carry the dependencies
 between them. Not now; noted so the naming does not foreclose it.
 
 Milestone coverage is uneven, and the view cannot assume it. Checked
-against the live workspace: Sequential Capture redesign has all but one
+against the live workspace: Background Indexer redesign has all but one
 of its issues on a milestone, across six of them (M3, M3.5, M5, M5.5,
-M8, M9); Sven v2 has one of eight. So a milestone section is a section
+M8, M9); Lint v2 has one of eight. So a milestone section is a section
 like any other — it appears when it has members — and everything else
 falls into one at the end for issues with no milestone. Names run long
 ("M3.5 — Downstream compatibility & activation prerequisites
 (pre-cutover gate)"); the leading identifier is the part that carries.
 
-Volume is the other thing the numbers say. Sequential Capture redesign
+Volume is the other thing the numbers say. Background Indexer redesign
 holds more than thirty issues; twelve are the user's. That gap is
 exactly what makes `owl issue --project` worth having, and exactly why
 the project view needs the section collapse the issue list does not.
@@ -167,7 +167,7 @@ the project view needs the section collapse the issue list does not.
 ## owl launches and shows; the agent decides
 
 Most of the orchestration already exists. A project agent can run
-`owl issue start BAR-4079 --prompt "…"`, `owl issue close`, `owl issue`.
+`owl issue start ENG-4079 --prompt "…"`, `owl issue close`, `owl issue`.
 It does not need an engine. It needs context and a way to see what its
 children are doing:
 
