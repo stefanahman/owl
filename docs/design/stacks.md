@@ -15,15 +15,15 @@ was really introduced on layer two.
 
 ## What the stacks look like
 
-Measured on bardo-system, 2026-10-13: 129 open PRs, 12 stacks among
+Measured on a production monorepo on 2026-10-13: 129 open PRs, 12 stacks among
 them, and 3 of those fork, where two or more open PRs share one base.
 Two of the forks are in the stack this feature was asked for:
 
 ```
-#4969 ─┬─ #4970 ─ #4971 ─ #4972 ─ #4973 ─┬─ #4974
-       └─ #5124                          ├─ #4984
-                                         ├─ #4993 ─ #5013
-                                         └─ #5065
+#1201 ─┬─ #1202 ─ #1203 ─ #1204 ─ #1205 ─┬─ #1206
+       └─ #1211                          ├─ #1207
+                                         ├─ #1208 ─ #1209
+                                         └─ #1210
 ```
 
 So a fork is not an error case to refuse. It is the ordinary shape of
@@ -33,14 +33,14 @@ parallel work on a shared base.
 
 **A line is the path from the trunk to one tip**, a PR with nothing
 open on top of it. It is exactly the code that tip would merge, which
-is what a reviewer reasons about: #5013 runs on top of #4969 through
-#4993 and on nothing from #4974.
+is what a reviewer reasons about: #1209 runs on top of #1201 through
+#1208 and on nothing from #1206.
 
 | `--stack` on | the line |
 |---|---|
-| #4974 | #4969 → … → #4973 → #4974 |
-| #4970 | refused: it has 4 tips above it, and owl names them |
-| #5124 | #4969 → #5124 |
+| #1206 | #1201 → … → #1205 → #1206 |
+| #1202 | refused: it has 4 tips above it, and owl names them |
+| #1211 | #1201 → #1211 |
 
 The walk down from a PR is unique: one head branch has one open PR
 from this repository. A cross-repository PR is never a lower layer,
@@ -54,7 +54,7 @@ the branch is deleted.
 
 The open PRs of the repository, with `number title url baseRefName
 headRefName headRefOid isCrossRepository isDraft author`, in one paged
-GraphQL search, and the graph is built locally. At bardo-system's size
+GraphQL search, and the graph is built locally. At that monorepo's size
 that is two pages and well under two seconds. Walking the chain with
 one `gh pr view` per layer would take a call per layer.
 
@@ -146,10 +146,10 @@ skill, and is never run for every row of the list.
 
 ## In the list
 
-A stacked row carries `≡4969 3/6` in a column of its own before the
+A stacked row carries `≡1201 3/6` in a column of its own before the
 title: the stack, named by its bottom so the rows of one stack read
 alike, and the third layer of a six-layer line. Below a fork the total
-is not one number, so the row carries `≡4969 3`. `right`
+is not one number, so the row carries `≡1201 3`. `right`
 on a stacked row opens the stack view: one row per line through the
 PR, whose Enter opens that line's stack review, then the layers as a
 tree, each with its CI, your review state and the `⎇` of an open

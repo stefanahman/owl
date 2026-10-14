@@ -5,16 +5,16 @@ owl · issues · acme/app                                     updated just now
 4 open · 2 in progress · 1 todo · 1 backlog
 ────────────────────────────────────────────────────────────────────────────
 In progress
-▸ BAR-4160  ⎇ ©  !!   2h  Per-tenant captureEngine override  Sequential Capture
-  BAR-4159       !!   8h  Company fuzzy match                                    In Review  #3543✓
+▸ ENG-4160  ⎇ ©  !!   2h  Per-tenant cachingEngine override  Background Indexer
+  ENG-4159       !!   8h  Address fuzzy match                                    In Review  #3543✓
 Todo
-  BAR-4578       !!!  1d  Rate-limit the ingest worker       Sequential Capture             #3550 draft
+  ENG-4578       !!!  1d  Rate-limit the ingest worker       Background Indexer             #3550 draft
 Backlog
-  BAR-4404            9d  Shadow output validation           Endpoint Validation
+  ENG-4404            9d  Shadow output validation           Endpoint Validation
 Done · 1d
-  BAR-4286             3h  Open update-activity fields       Endpoint Validation
+  ENG-4286             3h  Open update-customer fields       Endpoint Validation
 Canceled · 3d
-  BAR-4287            12h  Drop the shadow validation        Endpoint Validation
+  ENG-4287            12h  Drop the shadow validation        Endpoint Validation
 ```
 
 Every issue Linear assigns to you — all of them, paged 100 at a time
@@ -59,7 +59,7 @@ to `-` low), the age of the last change (of the closing, in Done), the
 title, the project, the state, and every open PR whose head branch
 carries the issue's key, newest first: `#N✓` approved by someone, `#N⚠`
 changes requested, `#N draft`. The key and not the whole branch name,
-since a PR is as often pushed from `fix/bar-4159-particle-guard` as
+since a PR is as often pushed from `fix/eng-4159-particle-guard` as
 from the slug Linear names.
 
 The state name appears only where it says something the section does
@@ -98,10 +98,10 @@ work that already exists before making any of its own:
    `open` says where it landed, and `close` leaves it alone.
 2. **A branch carrying the key**, local or on the remote. Work on an
    issue rarely lives on the slug Linear names: it is pushed from
-   `bar-4098-credit-flip-uniform-sets` or `fix/bar-4157-projection`.
+   `eng-4098-cursor-flip-uniform-sets` or `fix/eng-4157-projection`.
    Several is the rare case — a stack, a second attempt — and the
    newest commit wins, with the others named so the choice is visible.
-3. **The branch Linear names** (`bar-4159-company-fuzzy-match`), only
+3. **The branch Linear names** (`eng-4159-address-fuzzy-match`), only
    when nothing carries the key, started from the remote's default
    branch with no upstream set, so a `git push` cannot land it on main
    by accident — or from `--base <branch>`, when the issue is a layer

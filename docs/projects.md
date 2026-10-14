@@ -5,13 +5,13 @@ owl · projects · acme/app                                              updated
 14 projects · 6 in progress · 1 planned · 7 backlog · 15 issues yours
 ──────────────────────────────────────────────────────────────────────────────────────
 In progress
-▸ !!  Sequential Capture redesign   ▓▓▓▓▓▓░░░░  62%  12/127  11 ms  in 12d   Capture + Refine  Stefan
-      Emission Categories — Plumbing ▓▓▓▓▓▓▓░░░ 71%   0/6     4 ms           Backstage         Emilio
-  !   Bardo Backstage (BACKEND)     ▓░░░░░░░░░   8%   0/917         3d late  Backstage         Stefan  Paused
+▸ !!  Background Indexer redesign   ▓▓▓▓▓▓░░░░  62%  12/127  11 ms  in 12d   Search + Ranking  Stefan
+      Billing Categories — Plumbing  ▓▓▓▓▓▓▓░░░ 71%   0/6     4 ms           Platform          Kim
+  !   Admin Console (BACKEND)       ▓░░░░░░░░░   8%   0/917         3d late  Platform          Stefan  Paused
 Planned
-      Endpoint Validation w. LLM errors ▓▓▓▓▓░░░ 50%  2/4                    Other             Emilio
+      Endpoint Validation w. LLM errors ▓▓▓▓▓░░░ 50%  2/4                    Other             Kim
 Backlog
-      Sven v2 — Deterministic harness ▓▓▓░░░░░░ 28%   0/18    6 ms           Other             Stefan
+      Lint v2 — Deterministic harness ▓▓▓░░░░░░ 28%   0/18    6 ms           Other             Stefan
 ```
 
 The projects you work in, in three sections by status, newest change
@@ -89,16 +89,16 @@ where the issue is yours, so the gaps are your queue. It takes Linear's
 slug or a fragment of the name, the same as `owl project open`.
 
 ```
-$ owl issue --project sequential
-Sequential Capture redesign · 62% · 52 open, 12 yours
+$ owl issue --project background
+Background Indexer redesign · 62% · 52 open, 12 yours
 
 M3.5 — Downstream compatibility & activation prerequisites (pre-cutover gate)
-  BAR-4782  !    1d  In Review            Define resolves issuer-scoped business rules…
-  BAR-4785  !!   1d  Backlog              Flag activities whose PII masking failed…
+  ENG-4782  !    1d  In Review            Search resolves tenant-scoped ranking rules…
+  ENG-4785  !!   1d  Backlog              Flag records whose PII masking failed…
 M5 — Output evaluation
-  BAR-2718  -    9w  Duplicate   Emilio   Confirm currency/unit/region/issuer parity
+  ENG-2718  -    9w  Duplicate   Kim      Confirm currency/unit/region parity
 No milestone
-  BAR-4160  !!   1d  In Review            Per-tenant captureEngine override…
+  ENG-4160  !!   1d  In Review            Per-tenant cachingEngine override…
 ```
 
 Enter opens the project's **conversation** — the one above the issues.
@@ -124,7 +124,7 @@ project having no branch of its own:
 
 `owl project open|start|close <id>` does the same from a terminal,
 where `<id>` is Linear's slug, the slug in the workspace's name, or a
-fragment of the name — `owl project open sequential`. A fragment
+fragment of the name — `owl project open background`. A fragment
 matching two projects is an error naming both rather than a guess.
 `close` removes the worktree and the window and keeps the session id,
 so the next open resumes the conversation.
@@ -171,12 +171,12 @@ access), which the config holds as a **reference**, never as a value:
 linear:
   token: op://Work/Linear API key/credential
   account: work.1password.com   # when more than one account is signed in
-  team: BAR
+  team: ENG
 ```
 
 `team` is where `owl hoot` files an issue, and — unless `teams` says
 otherwise — what makes a key in a branch name mean something. Leave
-both unset and `bar-4157-<slug>` is just a branch: a PR of yours opens
+both unset and `eng-4157-<slug>` is just a branch: a PR of yours opens
 a workspace of its own rather than the feature's.
 
 `teams` is that second job on its own, for a workspace where one team
