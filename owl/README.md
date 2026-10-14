@@ -38,9 +38,10 @@ engineer would and never posts without you:
    their callers; every finding needs a concrete failure scenario and
    survives an attempt to refute it. Vague suspicions are dropped.
 3. **A design brief, when the shape changes** — endpoints or contracts,
-   data models, services or package edges: a one-screen map drawn from
-   the code (before → after, compatibility, reversibility, companions,
-   questions), every row with its file, unknowns marked, no verdict.
+   data models, services or package edges: a map drawn from the code
+   (before → after, compatibility, reversibility, companions, numbered
+   questions), in plain words a newcomer can follow, every
+   claim with its file beside it, unknowns marked, no verdict.
    The skill stops here so you can judge the approach: the shape is
    yours, not the agent's.
 4. **Local verification** — build, lint and tests in a worktree for the
@@ -122,7 +123,7 @@ Prefer `suggestion` blocks over prose for one-line fixes.
 
 - `modules` — shipped add-ons to enable (below).
 - `ticket_pattern` — how issue ids look in titles, bodies and branches; read by the tracker modules.
-- `brief` — `file` (default), `page` or `artifact`: `page` also writes the design brief as an HTML page next to the file, with the flow diagram, to open in a browser; `artifact` publishes that page too, when the Artifact tool is available — under Claude Code's auto mode the classifier blocks that publish for a private repository unless your `autoMode.environment` names Claude artifacts as a trusted destination.
+- `brief` — `file` (default), `page` or `artifact`: `page` also writes the design brief as an HTML page next to the file, to open in a browser: the questions first, the plain text visible, the file references folded under each claim, and the flow diagram; `artifact` publishes that page too, when the Artifact tool is available — under Claude Code's auto mode the classifier blocks that publish for a private repository unless your `autoMode.environment` names Claude artifacts as a trusted destination.
 - `## Verification` — how to build, lint and test this repo (local verification, the skill's Step 3). With a stack module enabled, this adds to it.
 - `## Design brief` — where the shape lives in this repository: routes, contracts, schemas, migrations. Tells the brief where to look.
 - `## Extra lenses` — what to look for in this codebase, applied alongside the built-in lenses (careful reading, the skill's Step 2). This is also where the modules read their project specifics.

@@ -120,7 +120,7 @@ Before reviewing code, gather the context that should inform the review:
 
    ```sh
    gh pr view $pr --json \
-     title,body,author,baseRefName,headRefName,\
+     title,body,author,baseRefName,headRefName,headRefOid,\
      isDraft,autoMergeRequest,mergeStateStatus,reviewDecision,latestReviews,\
      labels,changedFiles,additions,deletions,isCrossRepository,closingIssuesReferences
    ```
@@ -162,45 +162,50 @@ For a structural PR, write the brief before looking for findings: the shape of a
 
 The brief is a map drawn from the code — coordinates or nothing:
 
-1. Every row names the file and symbol it comes from. A row that can't is not written.
-2. What the repository doesn't show — consumers outside it, traffic, intent — is written as *not determined*, never inferred.
-3. The PR description and the ticket are input for the first two sections only — what the change is for, and where description and code part; nothing else is taken from them.
-4. Observations, not verdicts: "`ReportService.facets` reads the collection directly; the other four callers go through the messaging layer" is allowed, "this is the wrong approach" is not.
-5. One screen. Tables over prose. No sentence that restates the diff.
+1. Every claim about the code names the file and symbol it comes from, or the file and line where the line is the point. A claim that can't is not written. A claim taken from the ticket or the description says so instead, as rule 3 allows. The coordinates sit beside the sentence, not inside it: in a table row's label cell, after the label, or on a `where:` line after the paragraph. A sentence names an identifier only when the reader needs it to find something.
+2. What the repository doesn't show — consumers outside it, traffic, intent — is written as *not determined*, never inferred. A number the description or the ticket gives is theirs, not an inference, and appears as rule 3 says.
+3. The PR description and the ticket are input for the first two sections only — what the change is for, and where description and code part. A number only they hold, such as a production count, may appear elsewhere when the sentence says whose number it is.
+4. Observations, not verdicts: "the facets query reads the collection directly; every other caller goes through the messaging layer", with `ReportService.facets` on its `where:` line, is allowed; "this is the wrong approach" is not.
+5. Written for a reader who has seen neither the ticket nor the code. Each domain term is explained in one plain sentence the first time it appears. Short sentences, one idea each: cause, then effect; a sentence over about 30 words is two. A number only when it is the point.
+6. Tables over prose. No sentence that restates the diff.
+7. The brief names the head it was drawn at: Step 1's `headRefOid`, for a line the tip's. A later session redraws it at the current head and never reuses one drawn at another, unless Re-review's patch-id shows the code unchanged between the two.
 
 Seven sections, in this order:
 
 ```markdown
 # Design brief — #<pr> <title>
+drawn at <head sha>, <date>
 
 ## What it is for, and where it sits
-for a reader who has not seen the ticket: the capability in the product's own terms — the problem it solves, for whom — from the ticket, the description and the repository's docs (file); the flow it sits in: what triggers it, what comes before and after, what it reads and writes (file:symbol of the entry point and the stores); what it replaces, extends or is the first of. Three sentences and, if the flow has steps, one numbered line. Intent the repository cannot show: *not determined*
+for a reader who has not seen the ticket, in three sentences: the capability in the product's own terms — the problem it solves, for whom — from the ticket, the description and the repository's docs, and what it replaces, extends or is the first of. Then the terms it rests on, one line each. The term the change turns on, when it is easier shown than said, gets one real instance from the repository, such as a rule file or a config row, with its file, and never a secret, a credential or an internal address. For a PR reviewed alone that is a layer of a stack: what it takes from the layers below and what the layers above take from it, read from their code; a line's brief leaves that to Stack mode's overview. Intent the repository cannot show: *not determined*
+the flow it sits in, one numbered step per line, in plain words: what triggers it, what comes before and after, what it reads and writes
+where: the entry point and the stores, file:symbol
 
 ## Description versus code
-matches / diverges — per divergence: what the description says, what the code does, file:line
+matches / diverges — per divergence: what the description says, what the code does, and what follows from the difference; where: file:line
 
 ## Shape, before → after
-| area | before | after | where |
+| area, and its file | before | after |
 only the rows that change: components and flow, endpoints or contracts, data models, package dependencies
 
 ## Compatibility
 | change | additive / breaking | consumers in this repository |
-breaking: removed or renamed, optional made required, narrowed enum, changed error shape; consumers outside the repository: not determined
+only what something outside the changed package can see: contracts, schemas, stored documents, types another package imports, and what people type or set — commands, flags, config keys, environment variables. breaking: removed or renamed, optional made required, narrowed enum, changed error shape; additive in the new version but rejected by a replica still on the old one: say so; consumers outside the repository: not determined
 
 ## Migration and reversibility
-migration or backfill: present (file) / none · old and new coexist during rollout: yes / no · door: two-way (rollback keeps working) / one-way (dropped column, rewritten data)
+migration or backfill: present (file) / none · old and new coexist during rollout: yes / no · undo: a revert is enough / a revert leaves <what stays: a dropped column's data, rewritten or deleted documents>, and what restoring it takes
 
 ## Companions
 | tests for the new shape | observability | docs | deprecation of what it replaces |
-present (file) / missing — no advice
+present (file) / missing / n/a (why) — no advice
 
 ## Questions of approach
-the three or four questions the decision hinges on, phrased to be put to the author as they stand
+Q1 to Q4: the three or four questions the decision hinges on, phrased to be put to the author as they stand, each ending in a question mark. Under each: what depends on the answer; what was checked, and what its premise leaves not determined; an earlier review read in Step 1 that raised it, and whether it was answered; a where: line. A row elsewhere that backs a question ends with its number, as (Q1)
 ```
 
-Then stop and ask: discuss the approach first, or go on to the findings? Concerns about the shape — the approach, the boundaries, the model — become findings only from what the user decides here; the lenses below cover correctness, contracts, tests, security, performance and maintainability, not the shape.
+The questions stay last in the file, beside the ask that follows. Then stop and ask: discuss the approach first, or go on to the findings? Concerns about the shape — the approach, the boundaries, the model — become findings only from what the user decides here; the lenses below cover correctness, contracts, tests, security, performance and maintainability, not the shape.
 
-With `brief: page` in the project file, also write the brief as an HTML page, `pr-$pr-brief.html` next to the file, and print its `file://` path for the user to open in a browser; with `brief: artifact` and the Artifact tool available, publish that page as well and print the link. The file stays the source. Load the `artifact-design` skill for the page when it is available, and draw the flow, where it changed, as inline SVG (the `artifact-diagramming` skill): it renders in a browser and on the artifact host alike, and its colours follow the page's theme through `currentColor`. Not mermaid — only the host renders it, and a `%%{init}` directive overrides the host's per-theme palette and leaves labels unreadable in the other theme.
+With `brief: page` in the project file, also write the brief as an HTML page, `pr-$pr-brief.html` next to the file, and print its `file://` path for the user to open in a browser; with `brief: artifact` and the Artifact tool available, publish that page as well and print the link. A page written as a local file opens with `<!doctype html>`, `<meta charset="utf-8">` and the viewport line; a publish adds all three itself, so the published page leaves them out. The file stays the source. The page holds the same content in two layers: the plain text is always visible, and each claim's coordinates fold into a collapsed `Where in the code` block beneath it. It opens with the questions of approach, since a page is read from the top, and a term a question uses is explained there, where it first appears (rule 5). The flow's numbered steps are the diagram's numbered nodes. Load the `artifact-design` skill for the page when it is available, and draw the whole flow as inline SVG, marking what the PR changes (the `artifact-diagramming` skill): it renders in a browser and on the artifact host alike, and its colours follow the page's theme through `currentColor`. Not mermaid — only the host renders it, and a `%%{init}` directive overrides the host's per-theme palette and leaves labels unreadable in the other theme.
 
 ### Review with these lenses in mind
 
