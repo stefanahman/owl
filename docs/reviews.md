@@ -62,6 +62,13 @@ as the list does, and `f` sends it the binding a row of its kind takes:
 the feedback you gave on someone else's layer, the review you were
 given on your own.
 
+A merged layer is no layer of an open stack, and GitHub keeps no line
+once its layers merge. Where the workspace that reviewed the line is
+still there — the stack column's `⎇ ©` on the merged row — `→` shows the
+line as that workspace's record has it: `c` on the line closes the
+workspace and `↵` goes back to its conversation. Once it is closed
+there is nothing left to go to, and `→` says so.
+
 | | a stack review |
 |---|---|
 | command | `owl pr open <N> --stack`, where N is the tip; below a fork it refuses and names the tips |
