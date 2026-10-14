@@ -174,6 +174,9 @@ func runOpenStack(cfg Config, n int, prompt string, out io.Writer, arrive bool) 
 		return err
 	}
 	l, err := g.line(n)
+	if errors.Is(err, errNotOpen) {
+		return openRecordedStack(cfg, repo, slug, n, prompt, arrive, out, err)
+	}
 	if err != nil {
 		return err
 	}
@@ -220,6 +223,58 @@ func stackWorkspace(name, dir string, l stackLine, first string) workspace {
 			"OWL_STACK": joinNumbers(l.numbers(), ","),
 		},
 	}
+}
+
+// openRecordedStack goes back to the stack workspace that reviewed a
+// line GitHub no longer holds open, by the record that lists PR n: what
+// → and ↵ on a merged layer's row reach. Only to a worktree still
+// there — a merged line has nothing left to review, so none is made
+// for it, its record is not moved, and a fresh conversation there is
+// handed no review to start. notOpen is the answer without one.
+func openRecordedStack(cfg Config, repo, slug string, n int, prompt string, arrive bool, out io.Writer, notOpen error) error {
+	records, err := readStackRecords(repo)
+	if err != nil {
+		return err
+	}
+	list, err := listWorktrees(repo)
+	if err != nil {
+		return err
+	}
+	var recs []stackRecord
+	var dirs []string
+	for _, r := range records {
+		if !strings.EqualFold(r.Repo, slug) || !slices.Contains(r.PRs, n) {
+			continue
+		}
+		for _, wt := range list {
+			if !wt.Prunable && wt.handle() == r.name {
+				recs, dirs = append(recs, r), append(dirs, wt.Path)
+			}
+		}
+	}
+	switch len(recs) {
+	case 0:
+		return notOpen
+	case 1:
+	default:
+		names := make([]string, len(recs))
+		for i, r := range recs {
+			names[i] = fmt.Sprintf("%s (to #%d)", r.name, r.Tip)
+		}
+		return fmt.Errorf("#%d was a layer of %d stack workspaces, %s: open one by its tip", n, len(recs), strings.Join(names, ", "))
+	}
+	rec := recs[0]
+	unlock, err := lockWorkspace(repo, rec.name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	l := stackLine{Repo: slug, At: n}
+	for _, p := range rec.PRs {
+		l.PRs = append(l.PRs, stackPR{Number: p})
+	}
+	fmt.Fprintf(out, "%s: %s, no longer open\n", rec.name, lineArrows(l))
+	return stackWorkspace(rec.name, dirs[0], l, "").open(cfg, newWindows(cfg, reviews), repo, prompt, arrive, out)
 }
 
 // ensureStackWorktree makes sure the stack's worktree exists: detached
@@ -366,7 +421,7 @@ func stackPrompt(cfg Config, l stackLine) string {
 	).Replace(cfg.Agent.StackPrompt)
 }
 
-// lineArrows is the line as one line of text: #1201 → … → #1206.
+// lineArrows is the line as one line of text: #4969 → … → #4974.
 func lineArrows(l stackLine) string {
 	names := make([]string, len(l.PRs))
 	for i, p := range l.PRs {

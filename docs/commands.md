@@ -4,7 +4,7 @@
 owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [command]]   the options apply to every command, and to what the TUI runs
 owl                                   this introduction and the commands
 owl pr                                the PR list
-owl pr open <N> [--prompt TEXT] [--stack]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent; with --stack, the workspace of the stack's line through N
+owl pr open <N> [--prompt TEXT] [--stack]  open (or focus) PR N's workspace; with --prompt, hand the prompt to the agent; with --stack, the workspace of the stack's line through N, or for a line no longer open the workspace that reviewed it, while it is there
 owl pr start <N> [--prompt TEXT] [--stack] the same without going there: no window selection, no after_open
 owl pr close [--force] [--stack] [<N>]     remove the worktree, branch and window, or with --stack the stack workspace whose line holds N, or the one named `stack-…`; N is inferred from inside a workspace
 owl pr stack <N> [--json]             the stack PR N is a layer of: the line from the trunk through N, the tips where it forks, and the notes directory
