@@ -79,11 +79,14 @@ details and the prebuilt binaries.
 
 ## Quick start
 
+Under herdr or cmux, [Getting started](docs/getting-started.md) walks
+from install to a first review. Under tmux:
+
 ```sh
 gh auth login           # once
 owl config init         # optional: the config with every key explained
 cd ~/src/app            # a clone whose remote is on GitHub
-owl pr                  # in a terminal inside tmux, herdr or cmux
+owl pr                  # in a terminal inside tmux
 ```
 
 Enter on someone else's PR fetches it into `.worktrees.local/pr-<N>-<slug>`,
@@ -105,6 +108,8 @@ there.
 
 ## Docs
 
+- [Getting started with herdr or cmux](docs/getting-started.md): install,
+  config, a workspace per list, a first review
 - [Reviews](docs/reviews.md): `owl pr`, its two panes, your own PRs,
   stacks, and `owl pr --check` for news while the list is closed
 - [Features](docs/features.md): `owl issue`, and how an issue finds its

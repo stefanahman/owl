@@ -344,11 +344,9 @@ tell you twice. This is the half nobody else watches.
 Two companions, each optional:
 
 - [claude-status](https://github.com/stefanahman/claude-status) writes
-  the `©` state under tmux (and puts the same chips in your status
-  bar) and under cmux (a pill in the sidebar). Without it the badge
-  under tmux only says "a window exists", and under cmux it comes from
-  cmux's own hooks, which also count Claude's 60-second idle reminder
-  as waiting for you. herdr reports the state itself.
+  the `©` state under tmux, and puts the same chips in your status bar.
+  Without it the badge under tmux only says "a window exists". herdr
+  and cmux report the state themselves.
 - [spaces](https://github.com/stefanahman/spaces) keeps the reviews
   session in one terminal window on its own desktop space and opens
   the popup from a hotkey anywhere (macOS, with yabai and Ghostty);

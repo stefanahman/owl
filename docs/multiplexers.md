@@ -12,9 +12,9 @@ owl is the review side of them.
 |---|---|---|---|
 | a workspace | a window of `tmux.session` (reviews) or `issue.session` (features), cwd the worktree | a workspace labelled after the worktree, cwd the worktree | a workspace named after the worktree, cwd the worktree |
 | grouping | none: the session is the grouping | none | off unless `groups.enabled`; then a workspace group per scope, named `reviews`, `features` or `projects` — the same words as the tmux sessions — coloured and iconed from `groups` in the config |
-| the agent's state | [claude-status](https://github.com/stefanahman/claude-status), from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh | claude-status's sidebar pill when the plugin runs there; without it cmux's own Claude Code hooks, whose `needsInput` also covers Claude's 60-second idle reminder |
-| `done` | finished, not yet looked at; focusing the window acknowledges it | the same, from herdr | the pill's `done` (or cmux's `idle`) while cmux's notification about the turn is unread; Enter in owl marks it read |
-| a prompt while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed | refused from the pill, or from cmux's hook state without it; an agent neither saw gets the text typed |
+| the agent's state | [claude-status](https://github.com/stefanahman/claude-status), from Claude Code's hooks | herdr's own detection, from the screen: a few seconds behind, so a badge can trail by one refresh | cmux's own, from its Claude Code hooks. claude-status wrote a sidebar pill here until September 2026, and one still present is read first. A cmux from before the upstream fix counts Claude's 60-second idle reminder as `needsInput`, so an idle agent reads as blocked |
+| `done` | finished, not yet looked at; focusing the window acknowledges it | the same, from herdr | cmux's `idle` while its notification about the turn is unread; Enter in owl marks it read |
+| a prompt while Claude waits | refused from the state option | refused by herdr's `agent.prompt` itself; an agent herdr hasn't detected gets the text typed | refused from cmux's hook state; an agent it did not see gets the text typed |
 | Enter arrives | `select-window`, then your hook | `workspace focus`; every attached client follows | `workspace select`, and `focus-window` when owl runs outside cmux |
 | the TUI after an open (`on_open: auto`) | quits — the popup closes, the open finishes behind it | stays in its workspace | stays in its workspace |
 | how the state arrives | asked, every two seconds: one `tmux list-windows` | asked, every two seconds | **published**: owl subscribes to cmux's event stream and is told, and the timer drops to thirty seconds as a net |
@@ -33,7 +33,7 @@ same for hooks that cannot pass flags.
 
 Under tmux and herdr owl asks for the agent states on a timer, which
 costs one command each time. Under cmux asking cost one process **per
-workspace**: claude-status writes its pill per workspace and cmux has
+workspace**: claude-status wrote its pill per workspace and cmux has
 no bulk read of them, so a refresh was `cmux list-status --workspace
 <id>` thirty-six times on a machine with thirty-six workspaces. Every
 two seconds, for as long as a list was open, times however many lists
@@ -48,7 +48,7 @@ the same twenty seconds of an idle list: **203 process launches before,
 
 Three things follow from it.
 
-The badge is also **faster**, not only cheaper: a pill change arrives
+The badge is also **faster**, not only cheaper: a state change arrives
 as cmux publishes it, debounced by 300 ms, rather than on the next
 two-second poll.
 
@@ -95,8 +95,9 @@ Run `owl` in a cmux terminal: cmux's socket admits only processes
 started inside it, unless cmux itself was started with
 `CMUX_SOCKET_MODE=allowAll`. The state needs cmux's Claude Code
 integration (`automation.claudeCodeIntegration` in
-`~/.config/cmux/cmux.json`, on by default) or, better, claude-status,
-whose pill does not mistake an idle Claude for a blocked one. cmux ≥
+`~/.config/cmux/cmux.json`, on by default). A cmux before 0.65.0
+counts Claude's idle reminder as needing input, so an idle agent reads
+as blocked: update it. cmux ≥
 0.64, macOS.
 
 ## cmux workspace groups

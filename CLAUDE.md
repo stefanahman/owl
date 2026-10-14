@@ -88,7 +88,8 @@ face: `unknown command <noun>` for a command the cask predates, and
 ## 4. Document
 
 README.md is the front page, short; docs/ holds the reference, one
-file per list (reviews.md, features.md, projects.md) plus keys.md,
+file per list (reviews.md, features.md, projects.md) plus
+getting-started.md (herdr and cmux, install to first review), keys.md,
 commands.md, configuration.md, how-it-works.md and multiplexers.md —
 facts as tables, one voice. docs/design/ holds the design notes
 (projects.md, written
