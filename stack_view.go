@@ -7,7 +7,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,6 +31,10 @@ type stackView struct {
 	// view opens: the reviews, the checks, the last update. Until they
 	// land a layer row is drawn from the graph alone.
 	layers map[int]PR
+	// recorded is the graph of a line GitHub no longer holds open, as
+	// the records of the stack workspaces on it have it: the view of a
+	// merged layer. nil for an open stack, which the list's graphs hold.
+	recorded *prGraph
 }
 
 // stackLines are the lines through at, one per tip above it: what a
@@ -55,7 +61,65 @@ func (m model) stackGraph() *prGraph {
 	if m.stack == nil {
 		return nil
 	}
+	if m.stack.recorded != nil {
+		return m.stack.recorded
+	}
 	return m.stacks[m.stack.repo]
+}
+
+// recordedGraph is the line merged pr was a layer of, as the records of
+// the stack workspaces still holding it have it — the workspaces whose
+// badges its row draws (stackReview), so → goes where they say. GitHub
+// keeps no line once its layers merge: when one merges on its own, the
+// layer above is retargeted to the trunk. The record's order is the line;
+// a layer's title and branch are what the list knows of it, until the
+// view's fetch of the layers lands. nil when no workspace holds pr.
+func (m model) recordedGraph(pr *PR) *prGraph {
+	repo := pr.Repo
+	if repo == "" {
+		repo = m.repo
+	}
+	trunk := ""
+	if g := m.graphOf(pr); g != nil {
+		trunk = g.trunk
+	}
+	known := map[int]PR{}
+	for _, list := range [][]PR{m.prs, m.merged, m.mine, m.mineMerged} {
+		for _, p := range list {
+			known[p.Number] = p
+		}
+	}
+	layers := map[int]stackPR{}
+	for _, r := range m.stackRecords {
+		if !strings.EqualFold(r.Repo, repo) || !slices.Contains(r.PRs, pr.Number) {
+			continue
+		}
+		if ls, ok := m.localState[r.name]; !ok || ls.Worktree == "" && ls.Window == "" {
+			continue // a closed stack keeps its record, and holds nothing
+		}
+		// Each layer on the head of the one below it: the base GitHub
+		// holds now may be the trunk it was retargeted to.
+		base := trunk
+		for _, n := range r.PRs {
+			sp, ok := layers[n]
+			if !ok {
+				p := known[n]
+				sp = stackPR{Number: n, Title: p.Title, URL: p.URL, HeadRefName: p.HeadRefName,
+					HeadRefOid: p.HeadRefOid, IsDraft: p.IsDraft}
+				sp.Author.Login = p.Author.Login
+				if sp.HeadRefName == "" || sp.HeadRefName == trunk {
+					sp.HeadRefName = fmt.Sprintf("pull/%d/head", n) // unknown here, and only a link
+				}
+			}
+			sp.BaseRefName = base
+			layers[n] = sp
+			base = sp.HeadRefName
+		}
+	}
+	if len(layers) == 0 {
+		return nil
+	}
+	return newPRGraph(repo, trunk, slices.Collect(maps.Values(layers)))
 }
 
 // layerPR is a layer as a row shows it: the fetched details where they
@@ -125,7 +189,9 @@ func (m model) renderLineRow(row visibleRow, selected bool) string {
 	if w == 0 {
 		w = 64
 	}
-	return prefix + trim(l.tip().Title, w)
+	// The row's tip, not the line's: its title is the fetched one once
+	// the layers land, where a recorded line knows only the list's.
+	return prefix + trim(row.pr.Title, w)
 }
 
 // renderLayerRow draws one layer: its workspace, your review of it and
@@ -223,6 +289,10 @@ func (m model) stackCountsSummary() string {
 	if err != nil {
 		return styleDim.Render(fmt.Sprintf("#%d is no longer an open pull request", m.stack.at))
 	}
+	if m.stack.recorded != nil {
+		return styleDim.Render(fmt.Sprintf("%d layers · %d lines · merged: the lines as their stack workspaces recorded them",
+			len(stackLayers(g, m.stack.at)), len(stackLines(g, m.stack.at))))
+	}
 	return styleDim.Render(fmt.Sprintf("%d layers · %d lines · on %s",
 		len(stackLayers(g, m.stack.at)), len(stackLines(g, m.stack.at)), l.Base))
 }
@@ -246,16 +316,28 @@ func (m model) enterStack() (model, tea.Cmd) {
 	if pr == nil {
 		return m, nil
 	}
-	g := m.graphOf(pr)
-	if g == nil {
-		m.notice = fmt.Errorf("#%d: the stacks have not been fetched yet", pr.Number)
-		return m, nil
+	view := &stackView{at: pr.Number, back: m.cursor, filter: m.search.Value()}
+	if pr.MergedAt != "" {
+		// No open stack holds a merged layer; a workspace that reviewed
+		// its line may, and its row's badges say so.
+		if view.recorded = m.recordedGraph(pr); view.recorded == nil {
+			m.notice = fmt.Errorf("#%d has merged, and no stack workspace holds it", pr.Number)
+			return m, nil
+		}
+		view.repo = view.recorded.repo
+	} else {
+		g := m.graphOf(pr)
+		if g == nil {
+			m.notice = fmt.Errorf("#%d: the stacks have not been fetched yet", pr.Number)
+			return m, nil
+		}
+		if l, err := g.line(pr.Number); err != nil || !l.stacked() {
+			m.notice = fmt.Errorf("#%d is not a layer of a stack", pr.Number)
+			return m, nil
+		}
+		view.repo = g.repo
 	}
-	if l, err := g.line(pr.Number); err != nil || !l.stacked() {
-		m.notice = fmt.Errorf("#%d is not a layer of a stack", pr.Number)
-		return m, nil
-	}
-	m.stack = &stackView{repo: g.repo, at: pr.Number, back: m.cursor, filter: m.search.Value()}
+	m.stack = view
 	m.search.SetValue("")
 	m.search.Blur()
 	m.keys = newKeyMap(m.cfg.Keys, m.bindings()) // both panes' bindings: a layer is of either kind

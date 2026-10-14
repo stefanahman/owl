@@ -341,3 +341,110 @@ func TestStackViewSurvivesARefresh(t *testing.T) {
 		t.Errorf("an emptied view:\n%s", screen)
 	}
 }
+
+// mergedStackModel is the list after a line of four merged at once:
+// GitHub holds none of it open, two of its layers are under Merged, and
+// the stack workspace that reviewed it is still there. Its record is
+// the line at the last open.
+func mergedStackModel(t *testing.T) (model, func() []string) {
+	t.Helper()
+	merged := func(n int, title string) PR {
+		return PR{Number: n, Title: title, HeadRefName: fmt.Sprintf("layer-%d", n), MergedAt: "2026-10-14T09:30:57Z"}
+	}
+	m := stackModel(t)
+	m.merged = []PR{merged(5168, "feat(catalog): run company lookups"), merged(5155, "feat(catalog): the native name")}
+	m.stackRecords = []stackRecord{{name: "stack-catalog", Repo: "acme/example", Tip: 5168, PRs: []int{5155, 5156, 5158, 5168}}}
+	m.localState = map[string]LocalState{"stack-catalog": {Worktree: "/wt/stack-catalog"}}
+	var mu sync.Mutex
+	var calls []string
+	m.runSelf = func(kind string, args ...string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, kind+" "+strings.Join(args, " "))
+		return nil
+	}
+	m.refreshList()
+	return m, func() []string {
+		time.Sleep(100 * time.Millisecond)
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), calls...)
+	}
+}
+
+// TestStackViewOfAMergedLine: a merged layer whose row shows a stack
+// review's badges is no layer of an open stack any more, and → still
+// goes where the badges say — the line as its workspace recorded it,
+// whose c closes that workspace.
+func TestStackViewOfAMergedLine(t *testing.T) {
+	for _, n := range []int{5168, 5155} {
+		m, calls := mergedStackModel(t)
+		cursorOn(t, &m, n)
+		next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+		m = next.(model)
+		if m.stack == nil {
+			t.Fatalf("→ on merged #%d opened no stack view: notice %v", n, m.notice)
+		}
+		screen := stripANSI(m.render())
+		for _, want := range []string{"≡ #5155 → #5168", "4 layers", "feat(catalog): run company lookups", "#5156", "#5158"} {
+			if !strings.Contains(screen, want) {
+				t.Errorf("→ on #%d: screen lacks %q:\n%s", n, want, screen)
+			}
+		}
+		row, ok := m.selectedRow()
+		if !ok || row.line == nil || m.localOf(row).Worktree != "/wt/stack-catalog" {
+			t.Fatalf("→ on #%d: cursor on %+v, local %+v", n, row, m.localOf(row))
+		}
+		_, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+		runBatch(cmd)
+		m.inflight = map[string]string{} // the open has reported
+		_, cmd = m.handleKey(tea.KeyPressMsg{Code: 'c', Text: "c"})
+		runBatch(cmd)
+		got := calls()
+		slices.Sort(got)
+		if !slices.Equal(got, []string{"pr close --stack 5168", "pr open 5168 --stack"}) {
+			t.Errorf("↵ and c on the merged line from #%d ran %v", n, got)
+		}
+	}
+}
+
+// TestStackViewRefusesAMergedLayerNoWorkspaceHolds: once the workspace
+// is closed the record stays, and holds nothing → could go to.
+func TestStackViewRefusesAMergedLayerNoWorkspaceHolds(t *testing.T) {
+	m, _ := mergedStackModel(t)
+	m.localState = nil
+	cursorOn(t, &m, 5168)
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	nm := next.(model)
+	if nm.stack != nil || nm.notice == nil || !strings.Contains(nm.notice.Error(), "#5168 has merged, and no stack workspace holds it") {
+		t.Errorf("→ on a merged layer with no workspace: stack=%v notice=%v", nm.stack, nm.notice)
+	}
+}
+
+// TestStackLabelOnAMergedLine: a merged layer that a stack workspace
+// still holds keeps its place in the line, as the record has it — the
+// rows read as a stack, the same way an open stack's do, wherever →
+// goes to one. No open row needs to be a layer for the column to show.
+// With the workspace gone the label goes with it, as → does.
+func TestStackLabelOnAMergedLine(t *testing.T) {
+	m, _ := mergedStackModel(t)
+	rowOf := func(m model, n int) string {
+		for _, l := range strings.Split(stripANSI(m.render()), "\n") {
+			if strings.Contains(l, fmt.Sprintf("#%d ", n)) {
+				return l
+			}
+		}
+		return ""
+	}
+	if row := rowOf(m, 5168); !strings.Contains(row, "≡5155 4/4") {
+		t.Errorf("merged tip's row: %q", row)
+	}
+	if row := rowOf(m, 5155); !strings.Contains(row, "≡5155 1/4") {
+		t.Errorf("merged bottom's row: %q", row)
+	}
+	m.localState = nil
+	m.refreshList()
+	if row := rowOf(m, 5168); strings.Contains(row, "≡") {
+		t.Errorf("merged row of a closed stack workspace: %q", row)
+	}
+}

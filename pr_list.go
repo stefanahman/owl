@@ -292,9 +292,14 @@ func (m model) graphOf(pr *PR) *prGraph {
 // that is no layer.
 func (m model) stackLabel(pr *PR) string {
 	g := m.graphOf(pr)
-	// Merged is no layer, whatever a graph fetched before the merge
-	// still holds: the merged rows land in a fetch of their own.
-	if g == nil || pr.MergedAt != "" {
+	// Merged is no layer of an open stack, whatever a graph fetched
+	// before the merge still holds: the merged rows land in a fetch of
+	// their own. A line whose stack workspace is still there is the
+	// record's, the one → goes to.
+	if pr.MergedAt != "" {
+		g = m.recordedGraph(pr)
+	}
+	if g == nil {
 		return ""
 	}
 	l, err := g.line(pr.Number)
@@ -308,14 +313,13 @@ func (m model) stackLabel(pr *PR) string {
 	return fmt.Sprintf("≡%d %d/%d", l.PRs[0].Number, layer, len(l.PRs))
 }
 
-// stackColumn is the stack column's shape over the open rows of both
-// panes, so it lines up from one pane to the other: the widest label —
-// 0, and no column at all, while no row is a layer — and whether any
-// row has a stack review open on it, which is what the column's badges
-// need room for. Merged rows are never layers: the graph holds the open
-// pull requests.
+// stackColumn is the stack column's shape over the rows of both panes,
+// so it lines up from one pane to the other: the widest label — 0, and
+// no column at all, while no row is a layer — and whether any row has a
+// stack review open on it, which is what the column's badges need room
+// for. A merged row is a layer only of a line a workspace still holds.
 func (m model) stackColumn() (width int, badges bool) {
-	for _, list := range [][]PR{m.prs, m.mine} {
+	for _, list := range [][]PR{m.prs, m.merged, m.mine, m.mineMerged} {
 		for i := range list {
 			width = max(width, lipgloss.Width(m.stackLabel(&list[i])))
 			if _, ok := m.stackReview(&list[i]); ok {

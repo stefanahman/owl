@@ -265,3 +265,34 @@ func TestCloseStackRefusesASharedLayer(t *testing.T) {
 		t.Errorf("stackToClose(1206) under Acme/App = %q, %v", name, err)
 	}
 }
+
+// TestOpenStackResumesAMergedLine: once the line has merged GitHub
+// holds none of it open, and opening it by any layer goes back to the
+// workspace that reviewed it, as its record has the line. Nothing is
+// fetched and the record does not move. Closed, there is nothing left
+// to go back to, and nothing is made.
+func TestOpenStackResumesAMergedLine(t *testing.T) {
+	f := stackFixture(t, lineOfTwo()...)
+	name := "stack-fix-crash-on-startup"
+	f.open("42", "--stack")
+	f.setGraph()
+
+	out := f.open("7", "--stack")
+	if !strings.Contains(out, name+": #7 → #42, no longer open\n") || strings.Contains(out, "fetching") {
+		t.Errorf("open of the merged line: %q", out)
+	}
+	if r := f.record(name); r.Tip != 42 || !slices.Equal(r.PRs, []int{7, 42}) {
+		t.Errorf("record %+v, want it as the last open left it", r)
+	}
+
+	if err := runClose(f.cfg, []string{"--stack", "42"}, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	err := runOpen(f.cfg, []string{"42", "--stack"}, &strings.Builder{}, true)
+	if err == nil || !strings.Contains(err.Error(), "not an open pull request") {
+		t.Errorf("open of a merged line no workspace holds: %v", err)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("a worktree was made for a merged line")
+	}
+}
