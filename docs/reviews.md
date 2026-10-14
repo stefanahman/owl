@@ -64,10 +64,11 @@ given on your own.
 
 A merged layer is no layer of an open stack, and GitHub keeps no line
 once its layers merge. Where the workspace that reviewed the line is
-still there — the stack column's `⎇ ©` on the merged row — `→` shows the
-line as that workspace's record has it: `c` on the line closes the
-workspace and `↵` goes back to its conversation. Once it is closed
-there is nothing left to go to, and `→` says so.
+still there, a merged row keeps its place in the line as that
+workspace's record has it — its `≡` label, and the stack column's
+`⎇ ©` — and `→` shows the line: `c` on it closes the workspace and `↵`
+goes back to its conversation. Once it is closed the label goes, there
+is nothing left to go to, and `→` says so.
 
 | | a stack review |
 |---|---|

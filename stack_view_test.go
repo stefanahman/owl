@@ -420,3 +420,31 @@ func TestStackViewRefusesAMergedLayerNoWorkspaceHolds(t *testing.T) {
 		t.Errorf("→ on a merged layer with no workspace: stack=%v notice=%v", nm.stack, nm.notice)
 	}
 }
+
+// TestStackLabelOnAMergedLine: a merged layer that a stack workspace
+// still holds keeps its place in the line, as the record has it — the
+// rows read as a stack, the same way an open stack's do, wherever →
+// goes to one. No open row needs to be a layer for the column to show.
+// With the workspace gone the label goes with it, as → does.
+func TestStackLabelOnAMergedLine(t *testing.T) {
+	m, _ := mergedStackModel(t)
+	rowOf := func(m model, n int) string {
+		for _, l := range strings.Split(stripANSI(m.render()), "\n") {
+			if strings.Contains(l, fmt.Sprintf("#%d ", n)) {
+				return l
+			}
+		}
+		return ""
+	}
+	if row := rowOf(m, 5168); !strings.Contains(row, "≡5155 4/4") {
+		t.Errorf("merged tip's row: %q", row)
+	}
+	if row := rowOf(m, 5155); !strings.Contains(row, "≡5155 1/4") {
+		t.Errorf("merged bottom's row: %q", row)
+	}
+	m.localState = nil
+	m.refreshList()
+	if row := rowOf(m, 5168); strings.Contains(row, "≡") {
+		t.Errorf("merged row of a closed stack workspace: %q", row)
+	}
+}
