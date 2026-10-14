@@ -205,17 +205,21 @@ func runOpenStack(cfg Config, n int, prompt string, out io.Writer, arrive bool) 
 		return err
 	}
 	fmt.Fprintf(out, "%s: %s\n", rec.name, lineArrows(l))
-	ws := workspace{
-		label: rec.name,
-		name:  rec.name,
-		dir:   wt,
-		first: stackPrompt(cfg, l),
+	return stackWorkspace(rec.name, wt, l, stackPrompt(cfg, l)).open(cfg, newWindows(cfg, reviews), repo, prompt, arrive, out)
+}
+
+// stackWorkspace is the workspace of a stack review of line l.
+func stackWorkspace(name, dir string, l stackLine, first string) workspace {
+	return workspace{
+		label: name,
+		name:  name,
+		dir:   dir,
+		first: first,
 		env: map[string]string{
 			"OWL_PR":    strconv.Itoa(l.tip().Number),
 			"OWL_STACK": joinNumbers(l.numbers(), ","),
 		},
 	}
-	return ws.open(cfg, newWindows(cfg, reviews), repo, prompt, arrive, out)
 }
 
 // ensureStackWorktree makes sure the stack's worktree exists: detached
