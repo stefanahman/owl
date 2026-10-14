@@ -345,21 +345,8 @@ func currentUser() string {
 	return strings.TrimSpace(string(out))
 }
 
-// prSearchQuery is the shared search filter used by fetchPRs and
-// fetchMerged so they always agree on the row set.
-//
-// The OR keeps PRs visible past your review submission: `review-requested:@me`
-// alone drops a PR the moment you submit (GitHub clears the request),
-// hiding exactly the PRs you want to keep watching for follow-up
-// commits. `reviewed-by` covers that gap.
-//
-// `-author:@me` excludes your own PRs — owl is for tracking PRs you
-// need to review, and you can't review your own. Without this,
-// self-comments on your own PRs put them in `reviewed-by:@me`.
-const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
-
-// fetchPRs returns the open PRs in the current repo where you are or
-// were a reviewer (per prSearchQuery).
+// fetchPRs returns the open PRs in the list's scope that are yours to
+// look at (PRConfig.Asked).
 //
 // Uses the GitHub GraphQL API (via `gh api graphql`) rather than
 // `gh pr list --json` because the latter returns each review's
@@ -375,7 +362,7 @@ func (m model) fetchPRs() tea.Msg {
 	if m.scope() == "" {
 		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote, and pr.owners is unset", m.cfg.Remote)}
 	}
-	prs, me, err := openPRs(m.scope(), "is:open")
+	prs, me, err := openPRs(m.scope(), "is:open", m.cfg.PR)
 	if err != nil {
 		return errMsg{gen, err}
 	}
@@ -385,7 +372,7 @@ func (m model) fetchPRs() tea.Msg {
 // openPRs is the fetch itself, without the TUI around it: `owl pr
 // --check` runs the same query from a scheduler, where there is no
 // model and no fetch round.
-func openPRs(scope, filter string) ([]PR, string, error) {
+func openPRs(scope, filter string, pr PRConfig) ([]PR, string, error) {
 	query := `
 query($q: String!) {
   viewer { login }
@@ -407,7 +394,7 @@ query($q: String!) {
 }`
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", fmt.Sprintf("q=%s is:pr %s %s", scope, filter, prSearchQuery),
+		"-f", fmt.Sprintf("q=%s is:pr %s %s", scope, filter, pr.Asked()),
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -589,7 +576,7 @@ func searchPRs(scope, filter string) ([]PR, error) {
 func (m model) fetchMerged() tea.Msg {
 	gen := m.fetchGen
 	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
-	prs, _, err := openPRs(m.scope(), "is:merged merged:>="+cutoff)
+	prs, _, err := openPRs(m.scope(), "is:merged merged:>="+cutoff, m.cfg.PR)
 	if err != nil {
 		return errMsg{gen, fmt.Errorf("merged: %w", err)}
 	}

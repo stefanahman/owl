@@ -77,7 +77,7 @@ func runCheck(cfg Config, out io.Writer) error {
 	if scope == "" {
 		return fmt.Errorf("no GitHub repo: the working directory has no %q remote, and pr.owners is unset", cfg.Remote)
 	}
-	prs, me, err := openPRs(scope, "is:open")
+	prs, me, err := openPRs(scope, "is:open", cfg.PR)
 	if err != nil {
 		return err
 	}

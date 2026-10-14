@@ -29,7 +29,7 @@ func TestOpenPRsAnswersWhoYouAre(t *testing.T) {
 	fakeGHOnPath(t, `#!/bin/sh
 printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"search":{"nodes":[{"number":7,"title":"a change","author":{"login":"alice"},"reviews":{"nodes":[]}}]}}}'
 `)
-	prs, me, err := openPRs("repo:acme/app", "is:open")
+	prs, me, err := openPRs("repo:acme/app", "is:open", PRConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +45,10 @@ printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"search":{"nodes":[{"numb
 // reads it to decide whose court a PR is in.
 func TestOpenPRsFailsRatherThanGuessing(t *testing.T) {
 	fakeGHOnPath(t, "#!/bin/sh\necho 'gh: nope' >&2\nexit 1\n")
-	if _, me, err := openPRs("repo:acme/app", "is:open"); err == nil || me != "" {
+	if _, me, err := openPRs("repo:acme/app", "is:open", PRConfig{}); err == nil || me != "" {
 		t.Errorf("openPRs = %q, %v; want an error and no login", me, err)
 	}
-	if _, _, err := openPRs("repo:acme/app", "is:open"); err != nil && !strings.Contains(err.Error(), "gh api graphql") {
+	if _, _, err := openPRs("repo:acme/app", "is:open", PRConfig{}); err != nil && !strings.Contains(err.Error(), "gh api graphql") {
 		t.Errorf("error does not say what failed: %v", err)
 	}
 }

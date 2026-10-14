@@ -182,6 +182,27 @@ type PRConfig struct {
 	Owners []string `yaml:"owners"`
 }
 
+// Asked is the part of the PR searches that says which pull requests
+// are yours to look at, so the review list, the merged section and
+// `owl pr --check` always agree on the row set.
+//
+// The OR keeps PRs visible past your review submission: a review
+// request alone drops a PR the moment you submit (GitHub clears the
+// request), hiding exactly the PRs you want to keep watching for
+// follow-up commits. `reviewed-by` covers that gap. `-author:@me`
+// excludes your own PRs — owl is for tracking PRs you need to review,
+// and you can't review your own. Without it, self-comments on your own
+// PRs put them in `reviewed-by:@me`.
+func (c PRConfig) Asked() string {
+	return orGroup([]string{"review-requested:@me", "reviewed-by:@me"}) + " -author:@me"
+}
+
+// orGroup is terms as one parenthesised OR, the only spelling GitHub's
+// search reads as a union (Scope has the story).
+func orGroup(terms []string) string {
+	return "(" + strings.Join(terms, " OR ") + ")"
+}
+
 // Scope is the repository qualifier the PR searches carry: every owner
 // when the list spans them, and the one repo when it does not — no
 // owners configured, or `--here` asked for this one.
@@ -220,7 +241,7 @@ func (c PRConfig) Scope(repo string, here bool) string {
 		}
 		return "repo:" + repo
 	}
-	return "(" + strings.Join(qs, " OR ") + ")"
+	return orGroup(qs)
 }
 
 // Spans reports whether the list covers more than the repo you are in.
@@ -776,24 +797,27 @@ func movedKeys(data []byte) error {
 		return nil // the strict decode reports the real problem
 	}
 	for _, m := range moved {
-		node := any(doc)
-		found := true
-		for _, part := range strings.Split(m.path, ".") {
-			mp, ok := node.(map[string]any)
-			if !ok {
-				found = false
-				break
-			}
-			if node, ok = mp[part]; !ok {
-				found = false
-				break
-			}
-		}
-		if found {
+		if keyAt(doc, m.path) {
 			return errors.New(m.to)
 		}
 	}
 	return nil
+}
+
+// keyAt reports whether the dotted path is a key the document writes,
+// whatever its value.
+func keyAt(doc map[string]any, path string) bool {
+	node := any(doc)
+	for _, part := range strings.Split(path, ".") {
+		mp, ok := node.(map[string]any)
+		if !ok {
+			return false
+		}
+		if node, ok = mp[part]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // parseConfig overlays YAML onto the defaults and validates the result.
