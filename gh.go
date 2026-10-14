@@ -345,21 +345,8 @@ func currentUser() string {
 	return strings.TrimSpace(string(out))
 }
 
-// prSearchQuery is the shared search filter used by fetchPRs and
-// fetchMerged so they always agree on the row set.
-//
-// The OR keeps PRs visible past your review submission: `review-requested:@me`
-// alone drops a PR the moment you submit (GitHub clears the request),
-// hiding exactly the PRs you want to keep watching for follow-up
-// commits. `reviewed-by` covers that gap.
-//
-// `-author:@me` excludes your own PRs — owl is for tracking PRs you
-// need to review, and you can't review your own. Without this,
-// self-comments on your own PRs put them in `reviewed-by:@me`.
-const prSearchQuery = "(review-requested:@me OR reviewed-by:@me) -author:@me"
-
-// fetchPRs returns the open PRs in the current repo where you are or
-// were a reviewer (per prSearchQuery).
+// fetchPRs returns the open PRs in the list's scope that are yours to
+// look at (PRConfig.Asked).
 //
 // Uses the GitHub GraphQL API (via `gh api graphql`) rather than
 // `gh pr list --json` because the latter returns each review's
@@ -375,7 +362,7 @@ func (m model) fetchPRs() tea.Msg {
 	if m.scope() == "" {
 		return errMsg{gen, fmt.Errorf("no GitHub repo: the working directory has no %q remote, and pr.owners is unset", m.cfg.Remote)}
 	}
-	prs, me, err := openPRs(m.scope(), "is:open")
+	prs, me, err := openPRs(m.scope(), "is:open", m.cfg.PR)
 	if err != nil {
 		return errMsg{gen, err}
 	}
@@ -385,10 +372,10 @@ func (m model) fetchPRs() tea.Msg {
 // openPRs is the fetch itself, without the TUI around it: `owl pr
 // --check` runs the same query from a scheduler, where there is no
 // model and no fetch round.
-func openPRs(scope, filter string) ([]PR, string, error) {
+func openPRs(scope, filter string, pr PRConfig) ([]PR, string, error) {
 	query := `
 query($q: String!) {
-  viewer { login }
+  viewer { login }` + teamLookups(pr.Teams) + `
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
@@ -407,7 +394,7 @@ query($q: String!) {
 }`
 	cmd := exec.Command("gh", "api", "graphql",
 		"-f", "query="+query,
-		"-f", fmt.Sprintf("q=%s is:pr %s %s", scope, filter, prSearchQuery),
+		"-f", fmt.Sprintf("q=%s is:pr %s %s", scope, filter, pr.Asked()),
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -459,6 +446,9 @@ query($q: String!) {
 	if err := json.Unmarshal(out, &resp); err != nil {
 		return nil, "", fmt.Errorf("parse graphql: %w", err)
 	}
+	if err := unknownTeams(out, pr.Teams); err != nil {
+		return nil, "", err
+	}
 
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
 	for _, n := range resp.Data.Search.Nodes {
@@ -487,6 +477,49 @@ query($q: String!) {
 		prs = append(prs, pr)
 	}
 	return prs, resp.Data.Viewer.Login, nil
+}
+
+// teamLookups asks after each of teams beside the search, in the same
+// round trip, as t0, t1 and on. GitHub answers a team-review-requested:
+// it cannot resolve with nothing — not for that term but for the whole
+// OR, so one misspelt or renamed team empties the list, the requests
+// made of you by name included, and says nothing. The lookup is how owl
+// finds out. teamRe has kept anything but a name out of the strings.
+func teamLookups(teams []string) string {
+	var b strings.Builder
+	for i, t := range teams {
+		org, slug, _ := strings.Cut(t, "/")
+		fmt.Fprintf(&b, "\n  t%d: organization(login: %q) { team(slug: %q) { slug } }", i, org, slug)
+	}
+	return b.String()
+}
+
+// unknownTeams names the teams whose lookup came back empty. An org
+// GitHub cannot resolve fails the whole query before this, with gh's
+// own words for it.
+func unknownTeams(out []byte, teams []string) error {
+	if len(teams) == 0 {
+		return nil
+	}
+	var resp struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return fmt.Errorf("parse graphql: %w", err)
+	}
+	var missing []string
+	for i, t := range teams {
+		var org struct {
+			Team *struct{} `json:"team"`
+		}
+		if raw, ok := resp.Data[fmt.Sprintf("t%d", i)]; !ok || json.Unmarshal(raw, &org) != nil || org.Team == nil {
+			missing = append(missing, t)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("pr.teams: GitHub has no team %s that you can see, and a team it cannot find empties the whole search", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // mineQuery asks what is blocking your own pull requests, which is a
@@ -589,7 +622,7 @@ func searchPRs(scope, filter string) ([]PR, error) {
 func (m model) fetchMerged() tea.Msg {
 	gen := m.fetchGen
 	cutoff := time.Now().Add(-m.cfg.MergedWindow.D).UTC().Format("2006-01-02T15:04:05Z")
-	prs, _, err := openPRs(m.scope(), "is:merged merged:>="+cutoff)
+	prs, _, err := openPRs(m.scope(), "is:merged merged:>="+cutoff, m.cfg.PR)
 	if err != nil {
 		return errMsg{gen, fmt.Errorf("merged: %w", err)}
 	}

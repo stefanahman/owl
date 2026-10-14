@@ -180,6 +180,44 @@ type MineConfig struct {
 // deciding what you can see.
 type PRConfig struct {
 	Owners []string `yaml:"owners"`
+	// Teams are the teams whose review requests you follow, as org/team.
+	// nil when the key is not written: every team you are in counts.
+	Teams []string `yaml:"teams"`
+}
+
+// Asked is the part of the PR searches that says which pull requests
+// are yours to look at, so the review list, the merged section and
+// `owl pr --check` always agree on the row set.
+//
+// The OR keeps PRs visible past your review submission: a review
+// request alone drops a PR the moment you submit (GitHub clears the
+// request), hiding exactly the PRs you want to keep watching for
+// follow-up commits. `reviewed-by` covers that gap. `-author:@me`
+// excludes your own PRs — owl is for tracking PRs you need to review,
+// and you can't review your own. Without it, self-comments on your own
+// PRs put them in `reviewed-by:@me`.
+//
+// GitHub's review-requested:@me counts a request to any team you are
+// in as a request to you, and a team's maintainer is one of its
+// members: whoever manages every team is asked about every pull request
+// the repository's code owners route anywhere. Teams narrows that to
+// the teams named — the ones whose domains are yours — beside what is
+// asked of you by name; written with none, no team's request counts.
+func (c PRConfig) Asked() string {
+	terms := []string{"review-requested:@me", "reviewed-by:@me"}
+	if c.Teams != nil {
+		terms[0] = "user-review-requested:@me"
+		for _, t := range c.Teams {
+			terms = append(terms, "team-review-requested:"+t)
+		}
+	}
+	return orGroup(terms) + " -author:@me"
+}
+
+// orGroup is terms as one parenthesised OR, the only spelling GitHub's
+// search reads as a union (Scope has the story).
+func orGroup(terms []string) string {
+	return "(" + strings.Join(terms, " OR ") + ")"
 }
 
 // Scope is the repository qualifier the PR searches carry: every owner
@@ -220,7 +258,7 @@ func (c PRConfig) Scope(repo string, here bool) string {
 		}
 		return "repo:" + repo
 	}
-	return "(" + strings.Join(qs, " OR ") + ")"
+	return orGroup(qs)
 }
 
 // Spans reports whether the list covers more than the repo you are in.
@@ -776,24 +814,31 @@ func movedKeys(data []byte) error {
 		return nil // the strict decode reports the real problem
 	}
 	for _, m := range moved {
-		node := any(doc)
-		found := true
-		for _, part := range strings.Split(m.path, ".") {
-			mp, ok := node.(map[string]any)
-			if !ok {
-				found = false
-				break
-			}
-			if node, ok = mp[part]; !ok {
-				found = false
-				break
-			}
-		}
-		if found {
+		if keyAt(doc, m.path) {
 			return errors.New(m.to)
 		}
 	}
 	return nil
+}
+
+// teamRe is a team as pr.teams names one: an org's login, a slash, the
+// team's slug.
+var teamRe = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$`)
+
+// keyAt reports whether the dotted path is a key the document writes,
+// whatever its value.
+func keyAt(doc map[string]any, path string) bool {
+	node := any(doc)
+	for _, part := range strings.Split(path, ".") {
+		mp, ok := node.(map[string]any)
+		if !ok {
+			return false
+		}
+		if node, ok = mp[part]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // parseConfig overlays YAML onto the defaults and validates the result.
@@ -811,6 +856,15 @@ func parseConfig(data []byte) (Config, error) {
 	// io.EOF: no document at all (empty file, comments only).
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, err
+	}
+	// Written, pr.teams is a list whatever it holds: `teams:` with every
+	// entry commented out decodes to nothing, as `[]` does, and both mean
+	// fewer rows, not the widest set there is.
+	if cfg.PR.Teams == nil {
+		var doc map[string]any
+		if yaml.Unmarshal(data, &doc) == nil && keyAt(doc, "pr.teams") {
+			cfg.PR.Teams = []string{}
+		}
 	}
 	cfg.Bindings.PR = mergeBindings(defaults.PR, cfg.Bindings.PR)
 	cfg.Bindings.Mine = mergeBindings(defaults.Mine, cfg.Bindings.Mine)
@@ -852,6 +906,16 @@ func (cfg *Config) validate() error {
 	}
 	if err := cfg.Linear.validate(); err != nil {
 		return err
+	}
+	// As GitHub's team-review-requested: takes a team — a slug alone
+	// belongs to no org, and a list may span several — and of nothing
+	// but what an org's login and a team's slug are made of: a bracket,
+	// a comma or a space goes into the query as one, and GitHub answers
+	// a term it cannot read with no rows at all.
+	for _, t := range cfg.PR.Teams {
+		if !teamRe.MatchString(t) {
+			return fmt.Errorf("pr.teams: %q is not org/team", t)
+		}
 	}
 	if err := cfg.validateRepos(); err != nil {
 		return err

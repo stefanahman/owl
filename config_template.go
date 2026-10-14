@@ -106,6 +106,7 @@ keys:                            # one key name or a list; names as bubbletea sp
 # standing in, so the list is scoped by your working directory.
 # pr:
 #   owners: ["@me", acme]        # your own namespace and the orgs you opt into, which GitHub ORs; owl pr --here narrows to this repo whatever this says. An allowlist on purpose: a search with no repository qualifier spans every repo your account can see
+#   teams: [acme/web, acme/api]  # the teams whose review requests you follow, as org/team, beside what is asked of you by name; written with none, no team's. Unset, a request to any team you are in is one to you — and a team's maintainer is one of its members
 
 linear:                          # the issue tracker behind ` + "`owl issue`" + `
   token: ""                      # a personal API key (Linear: Settings → Security & access) as a reference: op://<vault>/<item>/<field> is read from 1Password once and kept in ~/.local/state/owl/linear.token, mode 600; file://<path> reads a file of yours (mode 600); $VAR reads the environment; anything else is the key itself
