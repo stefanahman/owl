@@ -269,8 +269,8 @@ func splitPaneHeights(avail, want, otherWant int) (int, int) {
 
 // stackLegend explains the stack column, in both panes' legends.
 var stackLegend = lipgloss.JoinVertical(lipgloss.Left,
-	fmt.Sprintf("  %s  the stack whose bottom is #4969, layer 3 of 6; %s is below a fork",
-		styleStack.Render("≡4969 3/6"), styleStack.Render("≡4969 3")),
+	fmt.Sprintf("  %s  the stack whose bottom is #1201, layer 3 of 6; %s is below a fork",
+		styleStack.Render("≡1201 3/6"), styleStack.Render("≡1201 3")),
 	fmt.Sprintf("  %s  after it: a stack review holds the layer — → then ↵ on its line goes there",
 		styleWorktree.Render("⎇")+" "+styleClaudeWorking.Render("©")),
 )
@@ -287,7 +287,7 @@ func (m model) graphOf(pr *PR) *prGraph {
 
 // stackLabel is where a stacked row sits: the stack, named by its
 // bottom PR so the rows of one stack read alike down the list, and the
-// layer — ≡4969 3/6, the third of a line six long, or ≡4969 3 where the
+// layer — ≡1201 3/6, the third of a line six long, or ≡1201 3 where the
 // stack forks above it and the length is not one number. "" for a row
 // that is no layer.
 func (m model) stackLabel(pr *PR) string {

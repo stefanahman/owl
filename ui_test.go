@@ -587,7 +587,7 @@ func TestTrimCountsRunes(t *testing.T) {
 	}{
 		{"short", 10, "short"},
 		{"exactly-ten", 11, "exactly-ten"},
-		{"fix(report) — return factor", 14, "fix(report) —…"},
+		{"fix(report) — return totals", 14, "fix(report) —…"},
 		{"héllo wörld", 6, "héllo…"},
 		{"🦉🦉🦉🦉", 2, "🦉…"},
 		{"abc", 1, "a"},
@@ -614,7 +614,7 @@ func TestFindLocalForPR(t *testing.T) {
 		t.Errorf("expected prefix match on pr-3542-*, got window=%q", ls.Window)
 	}
 	if ls := findLocalForPR(state, 3498); ls.Worktree != "" {
-		t.Errorf("expected no match for pr-3498 (only bar-3498-* branch present), got wt=%q", ls.Worktree)
+		t.Errorf("expected no match for pr-3498 (only eng-3498-* branch present), got wt=%q", ls.Worktree)
 	}
 }
 
@@ -1089,13 +1089,13 @@ func TestTeamAskedNotYou(t *testing.T) {
 	}{
 		// Asked of a team you are in, and of nobody else: the FYI.
 		{"team only", asked(4455, "compile-domain"), true},
-		{"two teams", asked(4409, "compile-domain", "backstage-domain"), true},
+		{"two teams", asked(4409, "search-team", "admin-team"), true},
 		// Asked of the team *and* of you. The team request does not
 		// dilute your own — this is a request like any other.
-		{"team and you", asked(4456, "studio-domain", "@me", "@guerillacoder"), false},
+		{"team and you", asked(4456, "platform-team", "@me", "@sam"), false},
 		// Asked of you, or of you and another person.
 		{"you only", asked(4454, "@me"), false},
-		{"you and someone", asked(4355, "@mr-sandstorm", "@me"), false},
+		{"you and someone", asked(4355, "@kim", "@me"), false},
 		// Nobody outstanding: you already reviewed it, which is why it
 		// is still on the list. Not an FYI either.
 		{"nobody outstanding", asked(4412), false},
@@ -1123,7 +1123,7 @@ func TestAttentionSkipsTeamOnlyRequests(t *testing.T) {
 	m.prs = []PR{
 		asked(1, "@me"),                  // yours
 		asked(2, "compile-domain"),       // FYI
-		asked(3, "studio-domain", "@me"), // yours, team also asked
+		asked(3, "platform-team", "@me"), // yours, team also asked
 	}
 	m.width, m.height, m.ready = 140, 30, true
 	m.resizeViewport()

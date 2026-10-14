@@ -115,10 +115,10 @@ func TestSecretOtherForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if v, err := (secret{name: "acct", ref: "op://Employee/Linear/credential", account: "bardotechnology.1password.eu"}).value(); err != nil || v != "key" {
+	if v, err := (secret{name: "acct", ref: "op://Employee/Linear/credential", account: "example.1password.eu"}).value(); err != nil || v != "key" {
 		t.Fatalf("with an account: %q, %v", v, err)
 	}
-	if args, _ := os.ReadFile(filepath.Join(dir, "args")); strings.TrimSpace(string(args)) != "read op://Employee/Linear/credential --account bardotechnology.1password.eu" {
+	if args, _ := os.ReadFile(filepath.Join(dir, "args")); strings.TrimSpace(string(args)) != "read op://Employee/Linear/credential --account example.1password.eu" {
 		t.Errorf("op args = %q", args)
 	}
 	// A failing op names 1Password.

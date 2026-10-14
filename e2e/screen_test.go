@@ -274,14 +274,14 @@ func fakeGH(t *testing.T, root string) {
 	}
 	mineJSON := map[string]any{"data": map[string]any{
 		"search": map[string]any{"nodes": []any{
-			mine(4273, "mark enrichment stale on edit", "proj-118-enrichment-stale", "m1", 18*time.Hour, true, "REVIEW_REQUIRED", "FAILURE", "CONFLICTING", 0),
-			mine(4007, "per-tenant captureEngine override", "proj-121-capture-engine", "m2", 30*time.Minute, false, "APPROVED", "SUCCESS", "MERGEABLE", 0),
+			mine(4273, "mark the index stale on edit", "proj-118-index-stale", "m1", 18*time.Hour, true, "REVIEW_REQUIRED", "FAILURE", "CONFLICTING", 0),
+			mine(4007, "per-tenant cachingEngine override", "proj-121-caching-engine", "m2", 30*time.Minute, false, "APPROVED", "SUCCESS", "MERGEABLE", 0),
 			// No issue behind it: the column is empty and the row keeps
 			// the width the others give up.
-			mine(4299, "stamp periodStart on raw ingest", "mine/4299", "m3", 49*time.Minute, false, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2),
+			mine(4299, "stamp createdAt on raw ingest", "mine/4299", "m3", 49*time.Minute, false, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 2),
 			// One branch closing two, newest first — the first is the one
 			// whose workspace it opens into.
-			mine(4306, "keep captureStatus out of the generated type", "proj-104-proj-131-compile-db", "m4", 17*time.Hour, true, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 0),
+			mine(4306, "keep cachingStatus out of the generated type", "proj-104-proj-131-schema-db", "m4", 17*time.Hour, true, "REVIEW_REQUIRED", "SUCCESS", "UNKNOWN", 0),
 			// Ready, green, and nobody asked to look: the one omission
 			// this pane catches, and the reason it has a heading of its
 			// own rather than sitting among the drafts.

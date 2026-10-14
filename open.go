@@ -42,7 +42,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 	}
 	// Planning reads and creates nothing, so the lock can be taken on
 	// the workspace the PR actually resolves to: `owl pr open 4290` and
-	// `owl issue open BAR-4157` then take the same lock and cannot both
+	// `owl issue open ENG-4157` then take the same lock and cannot both
 	// build it. A workspace owl already made answers it locally, and
 	// re-opening one asks GitHub nothing, as it never used to.
 	plan, found := existingPRWorkspace(cfg, repo, n)
@@ -76,7 +76,7 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 // a review's or a feature's: the window named after the worktree, the
 // agent's first prompt, and what the hook is told about it.
 type workspace struct {
-	label string            // how messages name it: pr-42, BAR-4159
+	label string            // how messages name it: pr-42, ENG-4159
 	name  string            // the window's and the worktree's name
 	dir   string            // the worktree
 	first string            // the agent's prompt for a fresh conversation
@@ -362,8 +362,8 @@ func planPRWorkspace(cfg Config, repo, slug string, n int) prWorkspace {
 	}
 	// The branch's own last segment when it already leads with an issue
 	// key — everything else finds this workspace by the branch, and a
-	// branch leading with BAR-4157 while the PR is filed under the newer
-	// BAR-4160 would otherwise be given a name that says one of them
+	// branch leading with ENG-4157 while the PR is filed under the newer
+	// ENG-4160 would otherwise be given a name that says one of them
 	// twice.
 	name := path.Base(facts.HeadRefName)
 	if issueKeyOf(name) == "" {
@@ -391,8 +391,8 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 	// coming earlier in git's list. Your PR's workspace is its branch's,
 	// whatever the directory ended up called: the feature the issue list
 	// opened, or one you made by hand. Matching on the key instead would
-	// land a PR on `bar-4157-part-2` in the worktree holding
-	// `bar-4157-part-1`.
+	// land a PR on `eng-4157-part-2` in the worktree holding
+	// `eng-4157-part-1`.
 	if p.own && p.branch != "" {
 		for _, wt := range list {
 			if wt.Prunable || wt.Branch != p.branch {

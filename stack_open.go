@@ -362,7 +362,7 @@ func stackPrompt(cfg Config, l stackLine) string {
 	).Replace(cfg.Agent.StackPrompt)
 }
 
-// lineArrows is the line as one line of text: #4969 → … → #4974.
+// lineArrows is the line as one line of text: #1201 → … → #1206.
 func lineArrows(l stackLine) string {
 	names := make([]string, len(l.PRs))
 	for i, p := range l.PRs {

@@ -49,11 +49,11 @@ func testIssueModel(t *testing.T) (model, func() []string) {
 func mkIssue(key, title, branch, state, stype string, prio int, age time.Duration) Issue {
 	is := Issue{Key: key, Title: title, Branch: branch, Priority: prio, UpdatedAt: time.Now().Add(-age)}
 	is.State.Name, is.State.Type = state, stype
-	is.Team.Key = "BAR"
+	is.Team.Key = "ENG"
 	return is
 }
 
-// withProject is the fixture's issue inside a project; BAR-4159 stays
+// withProject is the fixture's issue inside a project; ENG-4159 stays
 // outside one, as issues filed straight into the team do.
 func withProject(is Issue, name string) Issue {
 	is.Project.Name = name
@@ -62,19 +62,19 @@ func withProject(is Issue, name string) Issue {
 
 func fixtureIssues() []Issue {
 	return []Issue{
-		mkIssue("BAR-4159", "Company fuzzy match accepts particle-only overlap", "bar-4159-company-fuzzy-match", "In Review", "started", 2, 8*time.Hour),
-		withProject(mkIssue("BAR-4160", "Per-tenant captureEngine override", "bar-4160-per-tenant-override", "In Progress", "started", 2, 2*time.Hour), "Sequential Capture"),
-		withProject(mkIssue("BAR-4578", "Step A — deterministic validator", "bar-4578-step-a", "Todo", "unstarted", 1, 6*24*time.Hour), "Sequential Capture"),
-		withProject(mkIssue("BAR-4404", "Shadow output validation", "bar-4404-shadow", "Backlog", "backlog", 0, 9*24*time.Hour), "Endpoint Validation"),
+		mkIssue("ENG-4159", "Address fuzzy match accepts particle-only overlap", "eng-4159-address-fuzzy-match", "In Review", "started", 2, 8*time.Hour),
+		withProject(mkIssue("ENG-4160", "Per-tenant cachingEngine override", "eng-4160-per-tenant-override", "In Progress", "started", 2, 2*time.Hour), "Background Indexer"),
+		withProject(mkIssue("ENG-4578", "Step A — deterministic validator", "eng-4578-step-a", "Todo", "unstarted", 1, 6*24*time.Hour), "Background Indexer"),
+		withProject(mkIssue("ENG-4404", "Shadow output validation", "eng-4404-shadow", "Backlog", "backlog", 0, 9*24*time.Hour), "Endpoint Validation"),
 	}
 }
 
 // fixtureDone is an issue completed inside done_window and one closed
 // five days ago — the second must not reach the list.
 func fixtureDone() []Issue {
-	fresh := withProject(mkIssue("BAR-4286", "Open update-activity fields", "bar-4286-open-update", "Done", "completed", 0, 3*time.Hour), "Endpoint Validation")
+	fresh := withProject(mkIssue("ENG-4286", "Open update-customer fields", "eng-4286-open-update", "Done", "completed", 0, 3*time.Hour), "Endpoint Validation")
 	fresh.CompletedAt = time.Now().Add(-3 * time.Hour)
-	stale := mkIssue("BAR-4109", "Direct assignment strands calculation", "bar-4109-direct-assignment", "Done", "completed", 0, 5*24*time.Hour)
+	stale := mkIssue("ENG-4109", "Direct assignment strands the job", "eng-4109-direct-assignment", "Done", "completed", 0, 5*24*time.Hour)
 	stale.CompletedAt = time.Now().Add(-5 * 24 * time.Hour)
 	return []Issue{fresh, stale}
 }
@@ -83,18 +83,18 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	m, _ := testIssueModel(t)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(140, 30))
 
-	approved := PR{Number: 3543, HeadRefName: "bar-4159-company-fuzzy-match"}
+	approved := PR{Number: 3543, HeadRefName: "eng-4159-address-fuzzy-match"}
 	r := Review{State: "APPROVED", SubmittedAt: time.Now().UTC().Format(time.RFC3339)}
 	r.Author.Login = "alice"
 	approved.Reviews = []Review{r}
-	draft := PR{Number: 3550, HeadRefName: "bar-4578-step-a", IsDraft: true}
-	// A second PR on BAR-4159, from a branch nobody named after Linear's
+	draft := PR{Number: 3550, HeadRefName: "eng-4578-step-a", IsDraft: true}
+	// A second PR on ENG-4159, from a branch nobody named after Linear's
 	// slug: both chips show, newest first.
-	second := PR{Number: 3561, HeadRefName: "fix/bar-4159-particle-guard"}
+	second := PR{Number: 3561, HeadRefName: "fix/eng-4159-particle-guard"}
 	tm.Send(issuesMsg{issues: fixtureIssues()})
 	tm.Send(issuePRsMsg{prs: []PR{approved, draft, second}})
 	tm.Send(doneMsg{issues: fixtureDone()})
-	tm.Send(localMsg{"bar-4160-per-tenant-override": {Worktree: "/wt/bar-4160-per-tenant-override", Window: "bar-4160-per-tenant-override", ClaudeState: agentBlocked}})
+	tm.Send(localMsg{"eng-4160-per-tenant-override": {Worktree: "/wt/eng-4160-per-tenant-override", Window: "eng-4160-per-tenant-override", ClaudeState: agentBlocked}})
 	time.Sleep(100 * time.Millisecond)
 	mustQuit(tm)
 	out := string(readAll(t, tm.FinalOutput(t, teatest.WithFinalTimeout(2*time.Second))))
@@ -103,12 +103,12 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 		"owl · issues · acme/example",
 		"In progress", "Todo", "Backlog",
 		"Done", "· 3d", // the window the Done section reaches back
-		"BAR-4160", "⎇", "©", // the workspace and the blocked agent
-		"BAR-4159", "!!", "8h", "In Review", "#3561  #3543✓",
-		"BAR-4578", "!!!", "#3550 draft",
-		"BAR-4404", "Shadow output validation",
-		"Sequential Capture", "Endpoint Validati", // the project column, trimmed
-		"BAR-4286", // completed three hours ago
+		"ENG-4160", "⎇", "©", // the workspace and the blocked agent
+		"ENG-4159", "!!", "8h", "In Review", "#3561  #3543✓",
+		"ENG-4578", "!!!", "#3550 draft",
+		"ENG-4404", "Shadow output validation",
+		"Background Indexer", "Endpoint Validati", // the project column, trimmed
+		"ENG-4286", // completed three hours ago
 		"4 open · 2 in progress · 1 todo · 1 backlog",
 	} {
 		if !strings.Contains(out, want) {
@@ -117,7 +117,7 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	}
 	// Closed five days ago: past done_window, so it stays out however
 	// the tracker (or a stale cache) answered.
-	if strings.Contains(out, "BAR-4109") {
+	if strings.Contains(out, "ENG-4109") {
 		t.Errorf("an issue done five days ago is in the list:\n%s", out)
 	}
 	// The state name only where it adds something: "In Review" inside In
@@ -125,8 +125,8 @@ func TestIssueListRendersSectionsAndBadges(t *testing.T) {
 	if strings.Count(out, "Backlog") != 1 || strings.Count(out, "Todo") != 1 {
 		t.Errorf("a row repeats its section's state name:\n%s", out)
 	}
-	// Newest change first within a section: BAR-4160 (2h) above BAR-4159 (8h).
-	if strings.Index(out, "BAR-4160") > strings.Index(out, "BAR-4159") {
+	// Newest change first within a section: ENG-4160 (2h) above ENG-4159 (8h).
+	if strings.Index(out, "ENG-4160") > strings.Index(out, "ENG-4159") {
 		t.Errorf("sections are not newest-first:\n%s", out)
 	}
 	if strings.Contains(out, "check feedback") {
@@ -143,28 +143,28 @@ func TestIssueListFiltersByKeyOrTitle(t *testing.T) {
 
 	m.search.SetValue("shadow")
 	rows := m.visibleRows()
-	if len(rows) != 2 || rows[1].issue == nil || rows[1].issue.Key != "BAR-4404" {
+	if len(rows) != 2 || rows[1].issue == nil || rows[1].issue.Key != "ENG-4404" {
 		t.Errorf("filter by title: %+v", rows)
 	}
-	m.search.SetValue("bar-41")
+	m.search.SetValue("eng-41")
 	var keys []string
 	for _, r := range m.visibleRows() {
 		if r.issue != nil {
 			keys = append(keys, r.issue.Key)
 		}
 	}
-	if strings.Join(keys, " ") != "BAR-4160 BAR-4159" {
+	if strings.Join(keys, " ") != "ENG-4160 ENG-4159" {
 		t.Errorf("filter by key: %v", keys)
 	}
 	// A project fragment narrows to that project, across sections.
-	m.search.SetValue("sequential")
+	m.search.SetValue("background")
 	keys = nil
 	for _, r := range m.visibleRows() {
 		if r.issue != nil {
 			keys = append(keys, r.issue.Key)
 		}
 	}
-	if strings.Join(keys, " ") != "BAR-4160 BAR-4578" {
+	if strings.Join(keys, " ") != "ENG-4160 ENG-4578" {
 		t.Errorf("filter by project: %v", keys)
 	}
 }
@@ -176,18 +176,18 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 	m.cfg.OnOpen = "stay"
 	m.width, m.height = 140, 30
 	m.resizeViewport()
-	m.clampCursor() // the first issue row: BAR-4160, newest in progress
+	m.clampCursor() // the first issue row: ENG-4160, newest in progress
 
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	nm := next.(model)
-	if cmd == nil || nm.inflight["BAR-4160"] != "opening BAR-4160…" {
+	if cmd == nil || nm.inflight["ENG-4160"] != "opening ENG-4160…" {
 		t.Fatalf("Enter did not launch: inflight %v", nm.inflight)
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
 	// The child runs in the issue scope: `owl issue open`, not `owl pr open`.
-	if got := calls(); len(got) != 1 || got[0] != "issue open BAR-4160" {
-		t.Errorf("child args %v, want [issue open BAR-4160]", got)
+	if got := calls(); len(got) != 1 || got[0] != "issue open ENG-4160" {
+		t.Errorf("child args %v, want [issue open ENG-4160]", got)
 	}
 	// f is `when: conversation`: with nothing started for this issue it
 	// does nothing rather than starting a workspace to talk to.
@@ -197,25 +197,25 @@ func TestIssueListEnterOpensTheFeature(t *testing.T) {
 		t.Error("f started a workspace for an issue that had none")
 	}
 	// With one, it sends the review prompt to the agent already there.
-	nm.localState = map[string]LocalState{"bar-4160-per-tenant-override": {Worktree: "/wt", Window: "bar-4160-per-tenant-override"}}
+	nm.localState = map[string]LocalState{"eng-4160-per-tenant-override": {Worktree: "/wt", Window: "eng-4160-per-tenant-override"}}
 	next, cmd = nm.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
-	if cmd == nil || next.(model).inflight["BAR-4160"] == "" {
+	if cmd == nil || next.(model).inflight["ENG-4160"] == "" {
 		t.Errorf("f did not reach the running agent: %v", next.(model).inflight)
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
 	got := calls()
 	last := got[len(got)-1]
-	if !strings.HasPrefix(last, "issue start BAR-4160 --prompt ") || !strings.Contains(last, "failure mode") {
+	if !strings.HasPrefix(last, "issue start ENG-4160 --prompt ") || !strings.Contains(last, "failure mode") {
 		t.Errorf("f ran %q", last)
 	}
 	// c only fires with a workspace to remove. (inflight is a map, so
 	// the f above is still in the one nm holds; a second key on a row
 	// is refused while one is in flight.)
 	nm.inflight = map[string]string{}
-	nm.localState = map[string]LocalState{"bar-4160-per-tenant-override": {Worktree: "/wt"}}
+	nm.localState = map[string]LocalState{"eng-4160-per-tenant-override": {Worktree: "/wt"}}
 	next, cmd = nm.Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	if cmd == nil || next.(model).inflight["BAR-4160"] != "closing BAR-4160…" {
+	if cmd == nil || next.(model).inflight["ENG-4160"] != "closing ENG-4160…" {
 		t.Errorf("c did not launch close: %v", next.(model).inflight)
 	}
 }
@@ -227,11 +227,11 @@ func TestIssueCacheRoundTrip(t *testing.T) {
 	}
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
 	m.issues, m.doneIssues, m.ready, m.cursor = fixtureIssues(), fixtureDone(), true, 2
-	m.issuePRs = byIssueKey([]PR{{Number: 7, HeadRefName: "bar-4159-company-fuzzy-match"}})
+	m.issuePRs = byIssueKey([]PR{{Number: 7, HeadRefName: "eng-4159-address-fuzzy-match"}})
 	m.lastFetched = time.Now()
 	m.persistCache()
 	resumed := newIssueModel(defaultConfig(), "acme/example", nil, loadIssueCache())
-	if len(resumed.issues) != 4 || len(resumed.issuePRs["BAR-4159"]) != 1 || resumed.issuePRs["BAR-4159"][0].Number != 7 || !resumed.ready || resumed.cursor != 2 {
+	if len(resumed.issues) != 4 || len(resumed.issuePRs["ENG-4159"]) != 1 || resumed.issuePRs["ENG-4159"][0].Number != 7 || !resumed.ready || resumed.cursor != 2 {
 		t.Errorf("resumed = %d issues, prs %v, ready %v, cursor %d", len(resumed.issues), resumed.issuePRs, resumed.ready, resumed.cursor)
 	}
 	// The done ones survive the round trip with their completedAt, and
@@ -246,7 +246,7 @@ func TestIssueCacheRoundTrip(t *testing.T) {
 			keys = append(keys, r.issue.Key)
 		}
 	}
-	if strings.Contains(strings.Join(keys, " "), "BAR-4109") {
+	if strings.Contains(strings.Join(keys, " "), "ENG-4109") {
 		t.Errorf("a cached issue done 48h ago reached the rows: %v", keys)
 	}
 }
@@ -306,12 +306,12 @@ func TestIssueBindingHandsThePrompt(t *testing.T) {
 	m.clampCursor()
 	next, cmd := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	nm := next.(model)
-	if cmd == nil || nm.inflight["BAR-4160"] != "Continue on BAR-4160…" {
+	if cmd == nil || nm.inflight["ENG-4160"] != "Continue on ENG-4160…" {
 		t.Fatalf("p did not launch: inflight %v", nm.inflight)
 	}
 	runBatch(cmd)
 	time.Sleep(100 * time.Millisecond)
-	if got := calls(); len(got) != 1 || got[0] != "issue start BAR-4160 --prompt Continue BAR-4160" {
+	if got := calls(); len(got) != 1 || got[0] != "issue start ENG-4160 --prompt Continue ENG-4160" {
 		t.Errorf("child args %v", got)
 	}
 	// f is no issue key unless bound there: nothing launches.
@@ -335,10 +335,10 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
 	m.issues, m.ready = fixtureIssues(), true
 	m.cancelledIssues = []Issue{
-		dropped("BAR-4287", "drop the shadow validation", 12*time.Hour),
+		dropped("ENG-4287", "drop the shadow validation", 12*time.Hour),
 		// Past the window: the query bounds it, and a cache written days
 		// ago would otherwise smuggle this one back in.
-		dropped("BAR-1724", "the one from last week", 8*24*time.Hour),
+		dropped("ENG-1724", "the one from last week", 8*24*time.Hour),
 	}
 	m.width, m.height = 160, 40
 	m.resizeViewport()
@@ -352,10 +352,10 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 	if !strings.Contains(out, "Canceled") || !strings.Contains(out, "3d") {
 		t.Errorf("no Cancelled section:\n%s", out)
 	}
-	if !strings.Contains(out, "BAR-4287") {
+	if !strings.Contains(out, "ENG-4287") {
 		t.Errorf("an issue cancelled 12h ago is missing:\n%s", out)
 	}
-	if strings.Contains(out, "BAR-1724") {
+	if strings.Contains(out, "ENG-1724") {
 		t.Errorf("an issue cancelled eight days ago is in the list:\n%s", out)
 	}
 	// The section is named what Linear calls the state, so the row does
@@ -399,15 +399,15 @@ func TestBacklogLeadsWithPriority(t *testing.T) {
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
 	m.issues = []Issue{
 		// Backlog: touched most recently, ranked by nobody.
-		at(mkIssue("BAR-4927", "put the grade on the calculation", "b1", "Backlog", "backlog", 0, 0), time.Hour),
-		at(mkIssue("BAR-5077", "verify Dellner reads correctly", "b2", "Backlog", "backlog", 0, 0), 2*time.Hour),
+		at(mkIssue("ENG-4927", "put the total on the invoice", "b1", "Backlog", "backlog", 0, 0), time.Hour),
+		at(mkIssue("ENG-5077", "verify the export reads correctly", "b2", "Backlog", "backlog", 0, 0), 2*time.Hour),
 		// Backlog: High and Medium, and stale.
-		at(mkIssue("BAR-4577", "post-define validation", "b3", "Backlog", "backlog", 2, 0), 30*24*time.Hour),
-		at(mkIssue("BAR-4579", "narrow-scope resolver", "b4", "Backlog", "backlog", 3, 0), 20*24*time.Hour),
-		at(mkIssue("BAR-4303", "declared-direction amounts", "b5", "Backlog", "backlog", 2, 0), 40*24*time.Hour),
+		at(mkIssue("ENG-4577", "post-parse validation", "b3", "Backlog", "backlog", 2, 0), 30*24*time.Hour),
+		at(mkIssue("ENG-4579", "narrow-scope resolver", "b4", "Backlog", "backlog", 3, 0), 20*24*time.Hour),
+		at(mkIssue("ENG-4303", "declared-total amounts", "b5", "Backlog", "backlog", 2, 0), 40*24*time.Hour),
 		// In progress: priority must not reorder these.
-		at(mkIssue("BAR-9001", "the one I touched last", "s1", "In Progress", "started", 0, 0), time.Minute),
-		at(mkIssue("BAR-9002", "started, and urgent", "s2", "In Progress", "started", 1, 0), 5*24*time.Hour),
+		at(mkIssue("ENG-9001", "the one I touched last", "s1", "In Progress", "started", 0, 0), time.Minute),
+		at(mkIssue("ENG-9002", "started, and urgent", "s2", "In Progress", "started", 1, 0), 5*24*time.Hour),
 	}
 	m.ready = true
 	m.width, m.height = 160, 40
@@ -424,12 +424,12 @@ func TestBacklogLeadsWithPriority(t *testing.T) {
 	}
 
 	// High before High before Medium, then the unranked by recency.
-	want := []string{"BAR-4577", "BAR-4303", "BAR-4579", "BAR-4927", "BAR-5077"}
+	want := []string{"ENG-4577", "ENG-4303", "ENG-4579", "ENG-4927", "ENG-5077"}
 	if got := order["Backlog"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("backlog order = %v\n              want %v", got, want)
 	}
 	// Recency, untouched by the urgent one below it.
-	if got, want := order["In progress"], []string{"BAR-9001", "BAR-9002"}; !reflect.DeepEqual(got, want) {
+	if got, want := order["In progress"], []string{"ENG-9001", "ENG-9002"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("in-progress order = %v, want %v — started sections keep recency", got, want)
 	}
 }
@@ -448,9 +448,9 @@ func TestStartedFindsAConversationInTheTeamsRepo(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
-	m.cfg.Repos = map[string]string{"BAR": own}
+	m.cfg.Repos = map[string]string{"ENG": own}
 	m.repoDir = t.TempDir() // the list runs in another repository
-	is := mkIssue("BAR-4160", "Per-tenant override", "bar-4160-per-tenant-override", "Todo", "unstarted", 2, time.Hour)
+	is := mkIssue("ENG-4160", "Per-tenant override", "eng-4160-per-tenant-override", "Todo", "unstarted", 2, time.Hour)
 	row := visibleRow{issue: &is}
 	if m.started(row) {
 		t.Fatal("an issue with no conversation anywhere reads as started")

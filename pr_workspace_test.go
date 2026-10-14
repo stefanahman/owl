@@ -16,21 +16,21 @@ func TestIssueKeysFor(t *testing.T) {
 		teams        []string
 		want         []string
 	}{
-		{"linear's own branch", "bar-4157-drop-legacy-tenant-shim", []string{"BAR"}, []string{"BAR-4157"}},
-		{"the key anywhere in it", "fix/bar-4157-projection", []string{"BAR"}, []string{"BAR-4157"}},
-		{"case does not matter", "BAR-4157-thing", []string{"bar"}, []string{"BAR-4157"}},
+		{"linear's own branch", "eng-4157-drop-legacy-tenant-shim", []string{"ENG"}, []string{"ENG-4157"}},
+		{"the key anywhere in it", "fix/eng-4157-projection", []string{"ENG"}, []string{"ENG-4157"}},
+		{"case does not matter", "ENG-4157-thing", []string{"eng"}, []string{"ENG-4157"}},
 		// A branch may close several at once, and the newest is the one
 		// being worked on — not the one the branch happens to lead with.
-		{"two issues, newest first", "bar-4157-and-bar-4160-both", []string{"BAR"}, []string{"BAR-4160", "BAR-4157"}},
+		{"two issues, newest first", "eng-4157-and-eng-4160-both", []string{"ENG"}, []string{"ENG-4160", "ENG-4157"}},
 		// The gate. issueKeysIn is permissive by design, so without the
 		// team a dependency bump reads as SHARP-0 and would be filed as a
 		// feature of yours.
-		{"a version is not an issue", "deps/sharp-0.35.4", []string{"BAR"}, nil},
-		{"another team's issue", "foo-12-something", []string{"BAR"}, nil},
-		{"no key at all", "refactor/tidy-imports", []string{"BAR"}, nil},
+		{"a version is not an issue", "deps/sharp-0.35.4", []string{"ENG"}, nil},
+		{"another team's issue", "foo-12-something", []string{"ENG"}, nil},
+		{"no key at all", "refactor/tidy-imports", []string{"ENG"}, nil},
 		// Without a team configured there is nothing to check a key
 		// against, so nothing is inferred.
-		{"no team configured", "bar-4157-thing", nil, nil},
+		{"no team configured", "eng-4157-thing", nil, nil},
 		// A second team is followed as readily as the first: a workspace
 		// with both writes either key into a branch, and a gate holding
 		// only one drops the other's work.
@@ -44,16 +44,16 @@ func TestIssueKeysFor(t *testing.T) {
 		// Keys from two teams on one branch sort by number, not by the
 		// order the teams are configured in.
 		{"across teams, newest first", "dev-12-and-life-30", []string{"DEV", "LIFE"}, []string{"LIFE-30", "DEV-12"}},
-		{"an empty team is not a prefix", "bar-4157-thing", []string{""}, nil},
+		{"an empty team is not a prefix", "eng-4157-thing", []string{""}, nil},
 	} {
 		if got := issueKeysFor(c.branch, c.teams); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: issueKeysFor(%q, %v) = %v, want %v", c.name, c.branch, c.teams, got, c.want)
 		}
 	}
-	if got := issueKeyFor("bar-4157-and-bar-4160-both", []string{"BAR"}); got != "BAR-4160" {
-		t.Errorf("issueKeyFor took %q, want the newest BAR-4160", got)
+	if got := issueKeyFor("eng-4157-and-eng-4160-both", []string{"ENG"}); got != "ENG-4160" {
+		t.Errorf("issueKeyFor took %q, want the newest ENG-4160", got)
 	}
-	if got := issueKeyFor("deps/sharp-0.35.4", []string{"BAR"}); got != "" {
+	if got := issueKeyFor("deps/sharp-0.35.4", []string{"ENG"}); got != "" {
 		t.Errorf("issueKeyFor(%q) = %q, want none", "deps/sharp-0.35.4", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestTeamKeys(t *testing.T) {
 		want []string
 	}{
 		{"neither", LinearConfig{}, nil},
-		{"team alone, as configs did before", LinearConfig{Team: "BAR"}, []string{"BAR"}},
+		{"team alone, as configs did before", LinearConfig{Team: "ENG"}, []string{"ENG"}},
 		{"teams alone", LinearConfig{Teams: []string{"DEV", "LIFE"}}, []string{"DEV", "LIFE"}},
 		// `team` stays the write target; `teams` answers the gate, and
 		// need not repeat it.
@@ -84,8 +84,8 @@ func TestScopeForName(t *testing.T) {
 	for name, want := range map[string]string{
 		"pr-42":                     "reviews",
 		"pr-42-fix-crash":           "reviews",
-		"bar-4157-drop-tenant-shim": "features",
-		"proj-sequential-capture":   "projects",
+		"eng-4157-drop-tenant-shim": "features",
+		"proj-background-indexer":   "projects",
 	} {
 		if got := scopeForName(name).name; got != want {
 			t.Errorf("scopeForName(%q) = %s, want %s", name, got, want)
@@ -106,9 +106,9 @@ func TestLookupPRTakesBothRoads(t *testing.T) {
 	}
 	script := `#!/bin/sh
 case "$1 $2" in
-  "api graphql") printf '%s' '{"data":{"repository":{"pullRequest":{"title":"A Title","headRefName":"bar-4157-x","isCrossRepository":false,"viewerDidAuthor":true}}}}' ;;
+  "api graphql") printf '%s' '{"data":{"repository":{"pullRequest":{"title":"A Title","headRefName":"eng-4157-x","isCrossRepository":false,"viewerDidAuthor":true}}}}' ;;
   "api user") echo you ;;
-  "pr view") printf '%s' '{"title":"A Title","headRefName":"bar-4157-x","isCrossRepository":false,"author":{"login":"you"}}' ;;
+  "pr view") printf '%s' '{"title":"A Title","headRefName":"eng-4157-x","isCrossRepository":false,"author":{"login":"you"}}' ;;
   *) echo "unexpected $*" >&2; exit 1 ;;
 esac
 `
@@ -122,7 +122,7 @@ esac
 		if !ok {
 			t.Fatalf("slug %q: lookup failed", slug)
 		}
-		if f.Title != "A Title" || f.HeadRefName != "bar-4157-x" || f.CrossRepo {
+		if f.Title != "A Title" || f.HeadRefName != "eng-4157-x" || f.CrossRepo {
 			t.Errorf("slug %q: facts = %+v", slug, f)
 		}
 		if !f.Mine {
@@ -156,12 +156,12 @@ func TestFirstPromptFollowsTheWorkspace(t *testing.T) {
 
 	// Yours never opens on the review skill: that procedure ends in a
 	// review posted with gh, and you cannot review yourself.
-	yours := prWorkspace{name: "bar-4157-shim", branch: "bar-4157-shim", key: "BAR-4157", own: true}
+	yours := prWorkspace{name: "eng-4157-shim", branch: "eng-4157-shim", key: "ENG-4157", own: true}
 	got := firstPrompt(cfg, 4290, yours)
 	if strings.Contains(got, "/owl:review") {
 		t.Errorf("your own PR opens on the review skill: %q", got)
 	}
-	for _, want := range []string{"#4290", "bar-4157-shim"} {
+	for _, want := range []string{"#4290", "eng-4157-shim"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the prompt does not name %s: %q", want, got)
 		}
@@ -206,24 +206,24 @@ func TestReopeningAsksGitHubNothing(t *testing.T) {
 }
 
 // ownFixture is the fixture with PR 42 belonging to you, pushed to
-// head, and BAR configured as the team.
+// head, and ENG configured as the team.
 func ownFixture(t *testing.T, head string) *fixture {
 	f := newFixture(t)
 	t.Chdir(f.repo)
 	f.prIsYours(head)
-	f.cfg.Linear = LinearWorkspaces{{Team: "BAR"}}
+	f.cfg.Linear = LinearWorkspaces{{Team: "ENG"}}
 	// The branch exists on the remote, as an open PR's head does.
 	f.git(f.origin, "branch", head, "refs/pull/42/head")
 	return f
 }
 
 func TestOpenYourOwnPRTakesItsBranch(t *testing.T) {
-	head := "bar-4157-drop-legacy-tenant-shim"
+	head := "eng-4157-drop-legacy-tenant-shim"
 	f := ownFixture(t, head)
 
 	out := f.open("42")
 
-	// Named for the branch, which is what `owl issue open BAR-4157`
+	// Named for the branch, which is what `owl issue open ENG-4157`
 	// would have called it, and so in the features container.
 	wt := filepath.Join(f.repo, ".worktrees.local", head)
 	if !strings.Contains(out, "started features:"+head) {
@@ -248,18 +248,18 @@ func TestOpenYourOwnPRTakesItsBranch(t *testing.T) {
 }
 
 func TestOpenYourOwnPRJoinsTheFeatureAlreadyOpen(t *testing.T) {
-	head := "bar-4157-drop-legacy-tenant-shim"
+	head := "eng-4157-drop-legacy-tenant-shim"
 	f := ownFixture(t, head)
 	// The issue list got there first, and named the workspace from
 	// Linear's own slug — a different directory name for the same
 	// branch. The PR has to find it by the branch, not by the name.
 	f.git(f.repo, "fetch", "-q", "origin", head+":"+head)
-	existing := filepath.Join(f.repo, ".worktrees.local", "bar-4157-something-else")
+	existing := filepath.Join(f.repo, ".worktrees.local", "eng-4157-something-else")
 	f.git(f.repo, "worktree", "add", "-q", existing, head)
 
 	out := f.open("42")
 
-	if !strings.Contains(out, "bar-4157-something-else") {
+	if !strings.Contains(out, "eng-4157-something-else") {
 		t.Errorf("did not join the workspace already open: %q", out)
 	}
 	if made := filepath.Join(f.repo, ".worktrees.local", head); f.exists(made) {
@@ -330,7 +330,7 @@ func TestOpenYourOwnPRWithNoIssueKeepsThePRName(t *testing.T) {
 }
 
 func TestCloseYourOwnPRPointsAtTheFeature(t *testing.T) {
-	head := "bar-4157-drop-legacy-tenant-shim"
+	head := "eng-4157-drop-legacy-tenant-shim"
 	f := ownFixture(t, head)
 	f.open("42")
 
@@ -340,8 +340,8 @@ func TestCloseYourOwnPRPointsAtTheFeature(t *testing.T) {
 		t.Fatalf("close removed a feature's workspace through the PR: %q", out.String())
 	}
 	// Not "already closed": the workspace is there, under the issue.
-	if !strings.Contains(err.Error(), "owl issue close BAR-4157") {
-		t.Errorf("close said %q, want it to name `owl issue close BAR-4157`", err)
+	if !strings.Contains(err.Error(), "owl issue close ENG-4157") {
+		t.Errorf("close said %q, want it to name `owl issue close ENG-4157`", err)
 	}
 	if wt := filepath.Join(f.repo, ".worktrees.local", head); !f.exists(wt) {
 		t.Errorf("the feature's worktree was removed anyway: %s", wt)

@@ -84,7 +84,7 @@ func (m model) selectedProject() *Project {
 	return row.project
 }
 
-// label is how the action row names the row: #42, BAR-4159.
+// label is how the action row names the row: #42, ENG-4159.
 func (r visibleRow) label() string {
 	if r.line != nil {
 		return "the stack to #" + strconv.Itoa(r.line.tip().Number)

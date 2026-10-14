@@ -238,7 +238,7 @@ func (m model) mineLegend() string {
 		"",
 		fmt.Sprintf("  %s %s %s the head commit's checks: green, failing, still running", styleApproved.Render("✓"), styleChangesReqd.Render("✗"), styleDraft.Render("◐")),
 		fmt.Sprintf("  %s   third slot: GitHub reports the branch as conflicting", styleChangesReqd.Render("⚠")),
-		fmt.Sprintf("  %s   the issues the branch carries, newest first — the first names the workspace", styleDim.Render("BAR-4157")),
+		fmt.Sprintf("  %s   the issues the branch carries, newest first — the first names the workspace", styleDim.Render("ENG-4157")),
 		stackLegend,
 	)
 }

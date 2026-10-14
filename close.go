@@ -24,7 +24,7 @@ import (
 // nothingToCloseError is `close` finding no workspace to remove; main
 // maps it to exit status 2 so callers can tell it from a failure.
 type nothingToCloseError struct {
-	label string // pr-42, BAR-4159
+	label string // pr-42, ENG-4159
 	repo  string
 }
 

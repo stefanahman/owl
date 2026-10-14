@@ -224,7 +224,7 @@ func TestCloseStackFollowsTheLine(t *testing.T) {
 }
 
 func TestStackNamesAreWorkspaces(t *testing.T) {
-	for _, name := range []string{"stack-fix-crash", "stack-4974"} {
+	for _, name := range []string{"stack-fix-crash", "stack-1206"} {
 		if !isWorkspaceName(name) || !reviews.owns(Config{}, name) {
 			t.Errorf("%s is not a review workspace", name)
 		}
@@ -246,22 +246,22 @@ func TestStackNamesAreWorkspaces(t *testing.T) {
 // reach.
 func TestCloseStackRefusesASharedLayer(t *testing.T) {
 	records := []stackRecord{
-		{name: "stack-desktop", Repo: "acme/app", Tip: 4974, PRs: []int{4969, 4970, 4971, 4972, 4973, 4974}},
-		{name: "stack-goods", Repo: "acme/app", Tip: 5065, PRs: []int{4969, 4970, 4971, 4972, 4973, 5065}},
-		{name: "stack-elsewhere", Repo: "acme/other", Tip: 9, PRs: []int{4973, 9}},
+		{name: "stack-ui", Repo: "acme/app", Tip: 1206, PRs: []int{1201, 1202, 1203, 1204, 1205, 1206}},
+		{name: "stack-export", Repo: "acme/app", Tip: 1210, PRs: []int{1201, 1202, 1203, 1204, 1205, 1210}},
+		{name: "stack-elsewhere", Repo: "acme/other", Tip: 9, PRs: []int{1205, 9}},
 	}
-	g := newPRGraph("acme/app", "main", cfiPRs())
+	g := newPRGraph("acme/app", "main", forkedStackPRs())
 	for _, graph := range []*prGraph{g, nil} {
-		_, err := stackToClose(records, graph, "acme/app", "/repo", 4973)
-		if err == nil || !strings.Contains(err.Error(), "stack-desktop (to #4974), stack-goods (to #5065)") || strings.Contains(err.Error(), "elsewhere") {
-			t.Errorf("graph %v: stackToClose(4973) = %v, want both of acme/app's lines named", graph != nil, err)
+		_, err := stackToClose(records, graph, "acme/app", "/repo", 1205)
+		if err == nil || !strings.Contains(err.Error(), "stack-export (to #1210), stack-ui (to #1206)") || strings.Contains(err.Error(), "elsewhere") {
+			t.Errorf("graph %v: stackToClose(1205) = %v, want both of acme/app's lines named", graph != nil, err)
 		}
-		if name, err := stackToClose(records, graph, "acme/app", "/repo", 5065); err != nil || name != "stack-goods" {
-			t.Errorf("graph %v: stackToClose(5065) = %q, %v", graph != nil, name, err)
+		if name, err := stackToClose(records, graph, "acme/app", "/repo", 1210); err != nil || name != "stack-export" {
+			t.Errorf("graph %v: stackToClose(1210) = %q, %v", graph != nil, name, err)
 		}
 	}
 	// The remote's spelling of the repository need not be GitHub's.
-	if name, err := stackToClose(records, g, "Acme/App", "/repo", 4974); err != nil || name != "stack-desktop" {
-		t.Errorf("stackToClose(4974) under Acme/App = %q, %v", name, err)
+	if name, err := stackToClose(records, g, "Acme/App", "/repo", 1206); err != nil || name != "stack-ui" {
+		t.Errorf("stackToClose(1206) under Acme/App = %q, %v", name, err)
 	}
 }

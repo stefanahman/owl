@@ -80,8 +80,8 @@ func (m model) fetchIssuePRs() tea.Msg {
 // By the key and not by Linear's branchName: only the branches owl
 // itself creates carry that slug verbatim, and one PR in ten is pushed
 // from it. A branch keeps the key and rewrites the slug —
-// `bar-4159-company-fuzzy-match-particle-guard` for an issue Linear
-// names `bar-4159-company-fuzzy-match-accepts-particle-only-name-overlap`
+// `eng-4159-address-fuzzy-match-particle-guard` for an issue Linear
+// names `eng-4159-address-fuzzy-match-accepts-particle-only-name-overlap`
 // — so matching the whole string finds almost nothing.
 func byIssueKey(prs []PR) map[string][]PR {
 	out := map[string][]PR{}
@@ -245,8 +245,8 @@ type milestoneSection struct {
 //
 // That last section is often the biggest and is not a mistake: issues
 // are milestoned as a project's plan firms up, not when they are
-// filed. Sequential Capture redesign has 49 of its 52 open issues on a
-// milestone; Sven v2 has one of eight.
+// filed. Background Indexer redesign has 49 of its 52 open issues on a
+// milestone; Lint v2 has one of eight.
 func milestoneSections(issues []Issue) []milestoneSection {
 	type group struct {
 		name   string

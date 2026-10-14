@@ -65,7 +65,7 @@ func isStackName(name string) bool { return stackHandleRe.MatchString(name) }
 var issueHandleRe = regexp.MustCompile(`^([A-Za-z]+-[0-9]+)(-.*)?$`)
 
 // issueKeyOf extracts the issue key from a feature's workspace name
-// (bar-4159-company-fuzzy-match → BAR-4159), or "" — a review's
+// (eng-4159-address-fuzzy-match → ENG-4159), or "" — a review's
 // pr-<N> name is never an issue's, and neither is a stack's, though
 // `stack-4974` has the shape of one.
 func issueKeyOf(name string) string {
@@ -80,7 +80,7 @@ func issueKeyOf(name string) string {
 }
 
 // matchesIssue reports whether name is the workspace name for the
-// issue with key (BAR-4159).
+// issue with key (ENG-4159).
 func matchesIssue(name, key string) bool {
 	return issueKeyOf(name) == strings.ToUpper(key)
 }
@@ -88,8 +88,8 @@ func matchesIssue(name, key string) bool {
 // issueKeyRefRe finds an issue key inside a longer name, at a word
 // boundary. Unanchored, unlike issueHandleRe: a workspace is named by
 // owl and carries the key first, a branch is named by whoever pushed
-// it and carries the key wherever they put it — `fix/bar-4157-…` as
-// readily as `bar-4157-…`.
+// it and carries the key wherever they put it — `fix/eng-4157-…` as
+// readily as `eng-4157-…`.
 var issueKeyRefRe = regexp.MustCompile(`(?i)\b[a-z]+-[0-9]+`)
 
 // issueKeysIn returns every issue key a name mentions, upper-cased and
@@ -114,7 +114,7 @@ func issueKeysIn(name string) []string {
 //
 // This is the link between a pull request and the work it does, and it
 // is structured rather than guessed at: Linear's own GitHub
-// integration generates `bar-4157-<slug>` from the key, so the key
+// integration generates `eng-4157-<slug>` from the key, so the key
 // travels in the one name both sides can see. The teams are what keep
 // it honest — issueKeysIn is deliberately permissive and reads
 // `deps/sharp-0.35.4` as SHARP-0, so without the gate a dependency
@@ -178,7 +178,7 @@ var issueKeyRe = regexp.MustCompile(`^[A-Za-z]+-[0-9]+$`)
 // its case.
 func parseIssueKey(s string) (string, error) {
 	if !issueKeyRe.MatchString(s) {
-		return "", usageError(fmt.Sprintf("issue key must look like BAR-123, got %q", s))
+		return "", usageError(fmt.Sprintf("issue key must look like ENG-123, got %q", s))
 	}
 	return strings.ToUpper(s), nil
 }
@@ -241,7 +241,7 @@ func gitCommonDir(dir string) (string, error) {
 }
 
 // lockWorkspace serialises open, start and close on one workspace
-// (pr-42, BAR-4159) across processes: a key pressed twice before the
+// (pr-42, ENG-4159) across processes: a key pressed twice before the
 // TUI registered the first, two owl instances, a shell command during
 // a TUI open — each would create the worktree; with the lock the
 // second waits, then finds it. The lock file lives in the repository's
@@ -300,7 +300,7 @@ func (w worktree) handle() string {
 var projHandleRe = regexp.MustCompile(`^proj-([a-z0-9][a-z0-9-]*)$`)
 
 // projectSlugOf extracts the slug from a project's workspace name
-// (proj-sequential-capture-redesign → sequential-capture-redesign),
+// (proj-background-indexer-redesign → background-indexer-redesign),
 // or "".
 func projectSlugOf(name string) string {
 	m := projHandleRe.FindStringSubmatch(name)
@@ -439,7 +439,7 @@ func listWorktrees(dir string) ([]worktree, error) {
 // branchCarries reports whether a branch name mentions the issue key
 // anywhere. Not the same question as matchesIssue: a workspace is
 // named by owl and leads with the key, a branch is named by whoever
-// pushed it — `bar-4098-credit-flip`, `fix/bar-4157-projection`.
+// pushed it — `eng-4098-cursor-flip`, `fix/eng-4157-projection`.
 func branchCarries(branch, key string) bool {
 	key = strings.ToUpper(key)
 	for _, k := range issueKeysIn(branch) {

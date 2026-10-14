@@ -8,29 +8,29 @@ import (
 	"time"
 )
 
-// TestByIssueKey uses the branch names bardo-system actually has open:
+// TestByIssueKey uses branch names of the shapes a real repository has open:
 // only one of them is the slug Linear names, the rest carry the key
 // and a slug of their author's own.
 func TestByIssueKey(t *testing.T) {
 	index := byIssueKey([]PR{
-		{Number: 4006, HeadRefName: "bar-4159-company-fuzzy-match-particle-guard"},
-		{Number: 3975, HeadRefName: "bar-4079-shadow-validation-verdane-activity-creation-captured-data"},
-		{Number: 4002, HeadRefName: "bar-4091-activity-unit-by-acquisition-method"},
-		{Number: 3998, HeadRefName: "bar-4091-count-dimension-normalization"},
-		{Number: 4114, HeadRefName: "fix/bar-4157-activity-ef-projection"},
-		{Number: 4076, HeadRefName: "codex/bar-4095-freight-quantity"},
+		{Number: 4006, HeadRefName: "eng-4159-address-fuzzy-match-particle-guard"},
+		{Number: 3975, HeadRefName: "eng-4079-shadow-validation-vendor-record-creation-cached-data"},
+		{Number: 4002, HeadRefName: "eng-4091-customer-unit-by-onboarding-method"},
+		{Number: 3998, HeadRefName: "eng-4091-count-field-normalization"},
+		{Number: 4114, HeadRefName: "fix/eng-4157-customer-id-projection"},
+		{Number: 4076, HeadRefName: "codex/eng-4095-batch-quantity"},
 		{Number: 4279, HeadRefName: "dependabot/npm_and_yarn/sharp-0.35.4"},
 	})
 	for _, tc := range []struct {
 		key  string
 		want []int // PR numbers, newest first
 	}{
-		{"BAR-4159", []int{4006}},
-		{"BAR-4079", []int{3975}},
-		{"BAR-4091", []int{4002, 3998}}, // two at once, newest first
-		{"BAR-4157", []int{4114}},       // the key past a `fix/` prefix
-		{"BAR-4095", []int{4076}},
-		{"BAR-4375", nil}, // an issue nobody opened a PR for
+		{"ENG-4159", []int{4006}},
+		{"ENG-4079", []int{3975}},
+		{"ENG-4091", []int{4002, 3998}}, // two at once, newest first
+		{"ENG-4157", []int{4114}},       // the key past a `fix/` prefix
+		{"ENG-4095", []int{4076}},
+		{"ENG-4375", nil}, // an issue nobody opened a PR for
 	} {
 		var got []int
 		for _, pr := range index[tc.key] {
@@ -68,11 +68,11 @@ func TestMilestoneSections(t *testing.T) {
 	// Deliberately out of order, and with the unmilestoned in the
 	// middle: the project's own sortOrder decides, not the input.
 	got := milestoneSections([]Issue{
-		ms("BAR-5", "m5", "M5 — Output evaluation", 4163, 3*time.Hour),
-		ms("BAR-0", "", "", 0, 2*time.Hour),
-		ms("BAR-3", "m3", "M3 — Core parity", 900, time.Hour),
-		ms("BAR-35", "m35", "M3.5 — Downstream", 2603.5, time.Hour),
-		ms("BAR-5b", "m5", "M5 — Output evaluation", 4163, time.Hour),
+		ms("ENG-5", "m5", "M5 — Output evaluation", 4163, 3*time.Hour),
+		ms("ENG-0", "", "", 0, 2*time.Hour),
+		ms("ENG-3", "m3", "M3 — Core parity", 900, time.Hour),
+		ms("ENG-35", "m35", "M3.5 — Downstream", 2603.5, time.Hour),
+		ms("ENG-5b", "m5", "M5 — Output evaluation", 4163, time.Hour),
 	})
 	var titles []string
 	for _, s := range got {
@@ -83,13 +83,13 @@ func TestMilestoneSections(t *testing.T) {
 		t.Errorf("sections = %v, want %v", titles, want)
 	}
 	// One section per milestone, newest change first inside it:
-	// BAR-5b was touched an hour ago, BAR-5 three hours ago.
+	// ENG-5b was touched an hour ago, ENG-5 three hours ago.
 	m5 := got[2]
-	if len(m5.issues) != 2 || m5.issues[0].Key != "BAR-5b" || m5.issues[1].Key != "BAR-5" {
+	if len(m5.issues) != 2 || m5.issues[0].Key != "ENG-5b" || m5.issues[1].Key != "ENG-5" {
 		t.Errorf("M5 = %+v", m5.issues)
 	}
 	// Issues with no milestone are not an error and get a heading.
-	if last := got[3]; len(last.issues) != 1 || last.issues[0].Key != "BAR-0" {
+	if last := got[3]; len(last.issues) != 1 || last.issues[0].Key != "ENG-0" {
 		t.Errorf("unmilestoned = %+v", last.issues)
 	}
 }
@@ -100,9 +100,9 @@ func TestProjectFlag(t *testing.T) {
 		id   string
 		ok   bool
 	}{
-		{[]string{"--project", "sequential"}, "sequential", true},
-		{[]string{"--project=sequential"}, "sequential", true},
-		{[]string{"open", "BAR-1"}, "", false},
+		{[]string{"--project", "background"}, "background", true},
+		{[]string{"--project=background"}, "background", true},
+		{[]string{"open", "ENG-1"}, "", false},
 		{nil, "", false},
 	} {
 		id, ok, err := projectFlag(c.args)
@@ -122,7 +122,7 @@ func TestIssueListAndHoot(t *testing.T) {
 	linearEndpoint = srv.URL
 	t.Cleanup(func() { linearEndpoint = orig })
 	cfg := defaultConfig()
-	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "BAR"}}
+	cfg.Linear = LinearWorkspaces{{Token: "lin_key", Team: "ENG"}}
 	var out strings.Builder
 	if err := runIssue(cfg, nil, &out); err != nil {
 		t.Fatal(err)
@@ -130,14 +130,14 @@ func TestIssueListAndHoot(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^KEY\s+PRIO\s+AGE\s+STATE\s+PROJECT\s+TITLE$`).MatchString(out.String()) {
 		t.Errorf("list header:\n%s", out.String())
 	}
-	if !regexp.MustCompile(`(?m)^BAR-4159\s+!!\s+\S+\s+In Review\s+Sequential Capture rede…\s+Company fuzzy match$`).MatchString(out.String()) || !strings.Contains(out.String(), "BAR-4160") {
+	if !regexp.MustCompile(`(?m)^ENG-4159\s+!!\s+\S+\s+In Review\s+Background Indexer rede…\s+Address fuzzy match$`).MatchString(out.String()) || !strings.Contains(out.String(), "ENG-4160") {
 		t.Errorf("list rows:\n%s", out.String())
 	}
 	out.Reset()
 	if err := runIssue(cfg, []string{"new", "Fix", "the", "owl"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "BAR-9001  Fix the owl\nhttps://linear.app/x/issue/BAR-9001") || len(fake.created) != 1 || fake.created[0] != "Fix the owl" {
+	if !strings.Contains(out.String(), "ENG-9001  Fix the owl\nhttps://linear.app/x/issue/ENG-9001") || len(fake.created) != 1 || fake.created[0] != "Fix the owl" {
 		t.Errorf("hoot: %q, created %v", out.String(), fake.created)
 	}
 	if err := runIssue(cfg, []string{"new"}, &out); err == nil || !strings.Contains(err.Error(), "title is required") {
@@ -147,7 +147,7 @@ func TestIssueListAndHoot(t *testing.T) {
 		t.Error("unknown issue command should fail")
 	}
 	// No token: the message says what to configure.
-	cfg.Linear = LinearWorkspaces{{Team: "BAR"}} // a team, no key: the tracker has nothing to read with
+	cfg.Linear = LinearWorkspaces{{Team: "ENG"}} // a team, no key: the tracker has nothing to read with
 	if err := runIssue(cfg, nil, &out); err == nil || !strings.Contains(err.Error(), "no token configured") {
 		t.Errorf("without a token: %v", err)
 	}
@@ -161,12 +161,12 @@ func TestClaimNeverFailsTheOpen(t *testing.T) {
 		tracker *stubTracker
 		want    string
 	}{
-		"claimed":   {&stubTracker{claim: Claimed{From: "Todo", To: "In Progress", Assigned: true}}, "BAR-1: Todo → In Progress, assigned to you\n"},
+		"claimed":   {&stubTracker{claim: Claimed{From: "Todo", To: "In Progress", Assigned: true}}, "ENG-1: Todo → In Progress, assigned to you\n"},
 		"unchanged": {&stubTracker{}, ""},
-		"read-only": {&stubTracker{err: errors.New("linear: Invalid scope")}, "BAR-1: not claimed in Linear (issue.claim: false turns this off): linear: Invalid scope\n"},
+		"read-only": {&stubTracker{err: errors.New("linear: Invalid scope")}, "ENG-1: not claimed in Linear (issue.claim: false turns this off): linear: Invalid scope\n"},
 	} {
 		var out strings.Builder
-		claim(tc.tracker, "BAR-1", &out)
+		claim(tc.tracker, "ENG-1", &out)
 		if out.String() != tc.want {
 			t.Errorf("%s: %q, want %q", name, out.String(), tc.want)
 		}
