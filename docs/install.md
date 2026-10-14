@@ -27,3 +27,5 @@ prompt of a review and of a feature:
 macOS and Linux. On Linux `o` opens with `xdg-open`; `y` copies through
 OSC 52, the terminal escape for the clipboard, which most terminals
 support.
+
+Next, under herdr or cmux: [Getting started](getting-started.md).
