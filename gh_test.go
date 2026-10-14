@@ -132,3 +132,43 @@ func TestOpeningElsewhereIsRefused(t *testing.T) {
 		t.Errorf("a row with no repo = %q", got)
 	}
 }
+
+// TestOpenPRsAsksWhatTheConfigCounts: the search carries the config's
+// asked filter, and looks each of pr.teams up in the same query.
+func TestOpenPRsAsksWhatTheConfigCounts(t *testing.T) {
+	args := filepath.Join(t.TempDir(), "args")
+	fakeGHOnPath(t, `#!/bin/sh
+printf '%s\n' "$@" > '`+args+`'
+printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"t0":{"team":{"slug":"web"}},"search":{"nodes":[]}}}'
+`)
+	pr := PRConfig{Teams: []string{"acme/web"}}
+	if _, _, err := openPRs("repo:acme/app", "is:open", pr); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"q=repo:acme/app is:pr is:open " + pr.Asked() + "\n",
+		`t0: organization(login: "acme") { team(slug: "web") { slug } }`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("gh was asked:\n%s\nwant %q", b, want)
+		}
+	}
+}
+
+// TestOpenPRsNamesATeamGitHubCannotFind: a team-review-requested: GitHub
+// cannot resolve empties the whole search, requests made of you by name
+// included, and says nothing; owl says which team it was instead of
+// showing an empty list as the truth.
+func TestOpenPRsNamesATeamGitHubCannotFind(t *testing.T) {
+	fakeGHOnPath(t, `#!/bin/sh
+printf '%s' '{"data":{"viewer":{"login":"stefanahman"},"t0":{"team":{"slug":"web"}},"t1":{"team":null},"search":{"nodes":[]}}}'
+`)
+	_, _, err := openPRs("repo:acme/app", "is:open", PRConfig{Teams: []string{"acme/web", "acme/wbe"}})
+	if err == nil || !strings.Contains(err.Error(), "pr.teams: GitHub has no team acme/wbe") || strings.Contains(err.Error(), "acme/web,") {
+		t.Errorf("a team GitHub cannot find: %v", err)
+	}
+}

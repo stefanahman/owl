@@ -375,7 +375,7 @@ func (m model) fetchPRs() tea.Msg {
 func openPRs(scope, filter string, pr PRConfig) ([]PR, string, error) {
 	query := `
 query($q: String!) {
-  viewer { login }
+  viewer { login }` + teamLookups(pr.Teams) + `
   search(query: $q, type: ISSUE_ADVANCED, first: 100) {
     nodes {
       ... on PullRequest {
@@ -446,6 +446,9 @@ query($q: String!) {
 	if err := json.Unmarshal(out, &resp); err != nil {
 		return nil, "", fmt.Errorf("parse graphql: %w", err)
 	}
+	if err := unknownTeams(out, pr.Teams); err != nil {
+		return nil, "", err
+	}
 
 	prs := make([]PR, 0, len(resp.Data.Search.Nodes))
 	for _, n := range resp.Data.Search.Nodes {
@@ -474,6 +477,49 @@ query($q: String!) {
 		prs = append(prs, pr)
 	}
 	return prs, resp.Data.Viewer.Login, nil
+}
+
+// teamLookups asks after each of teams beside the search, in the same
+// round trip, as t0, t1 and on. GitHub answers a team-review-requested:
+// it cannot resolve with nothing — not for that term but for the whole
+// OR, so one misspelt or renamed team empties the list, the requests
+// made of you by name included, and says nothing. The lookup is how owl
+// finds out. teamRe has kept anything but a name out of the strings.
+func teamLookups(teams []string) string {
+	var b strings.Builder
+	for i, t := range teams {
+		org, slug, _ := strings.Cut(t, "/")
+		fmt.Fprintf(&b, "\n  t%d: organization(login: %q) { team(slug: %q) { slug } }", i, org, slug)
+	}
+	return b.String()
+}
+
+// unknownTeams names the teams whose lookup came back empty. An org
+// GitHub cannot resolve fails the whole query before this, with gh's
+// own words for it.
+func unknownTeams(out []byte, teams []string) error {
+	if len(teams) == 0 {
+		return nil
+	}
+	var resp struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return fmt.Errorf("parse graphql: %w", err)
+	}
+	var missing []string
+	for i, t := range teams {
+		var org struct {
+			Team *struct{} `json:"team"`
+		}
+		if raw, ok := resp.Data[fmt.Sprintf("t%d", i)]; !ok || json.Unmarshal(raw, &org) != nil || org.Team == nil {
+			missing = append(missing, t)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("pr.teams: GitHub has no team %s that you can see, and a team it cannot find empties the whole search", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // mineQuery asks what is blocking your own pull requests, which is a

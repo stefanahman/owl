@@ -73,6 +73,10 @@ keys:                            # rebind any action: a key name or a list
   start: s
   quit: [q, ctrl+c]
 
+# pr:                            # unset: the PR list holds the repo you are standing in
+#   owners: ["@me", acme]        # the owners it spans instead; owl pr --here narrows to this repo
+#   teams: [acme/web, acme/api]  # the teams whose review requests you follow, as org/team; written with none, no team's; unset, every team you are in
+
 linear:                          # the issue tracker behind `owl issue`
   token: ""                      # op://<vault>/<item>/<field>, file://<path>, $VAR, or the key; Read for the lists, Write for issue.claim and `owl hoot`
   account: ""                    # the 1Password account the item is in, when several are signed in

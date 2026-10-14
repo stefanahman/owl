@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -484,6 +485,67 @@ func TestReposRouteTeamsToRepositories(t *testing.T) {
 	} {
 		if _, err := parseConfig([]byte(c.yaml)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: %v, want an error saying %q", c.yaml, err, c.want)
+		}
+	}
+}
+
+// TestPRAsked: without pr.teams, a request to any team you are in is a
+// request to you, as GitHub's review-requested:@me has it. With them,
+// only those teams' requests count beside your own — a maintainer of
+// every team is a member of every team, and their requests are not
+// all one person's to review.
+func TestPRAsked(t *testing.T) {
+	if got := (PRConfig{}).Asked(); got != "(review-requested:@me OR reviewed-by:@me) -author:@me" {
+		t.Errorf("no teams: %q", got)
+	}
+	// An empty list is a list: no team's request is one to you.
+	if got := (PRConfig{Teams: []string{}}).Asked(); got != "(user-review-requested:@me OR reviewed-by:@me) -author:@me" {
+		t.Errorf("no team of yours: %q", got)
+	}
+	got := PRConfig{Teams: []string{"acme/web", "acme/api"}}.Asked()
+	want := "(user-review-requested:@me OR reviewed-by:@me OR team-review-requested:acme/web OR team-review-requested:acme/api) -author:@me"
+	if got != want {
+		t.Errorf("teams:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestParseConfigTeams: a team is named as GitHub's search names one,
+// org/slug, since a list may span several orgs and a slug alone
+// belongs to none of them.
+func TestParseConfigTeams(t *testing.T) {
+	cfg, err := parseConfig([]byte("pr:\n  teams: [acme/web, acme/api]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.PR.Teams, []string{"acme/web", "acme/api"}) {
+		t.Errorf("pr.teams = %v", cfg.PR.Teams)
+	}
+	// Written, the list is a list whatever it holds: empty, or with
+	// every entry commented out, it names no team. Only unset is every
+	// team you are in.
+	byName := "(user-review-requested:@me OR reviewed-by:@me) -author:@me"
+	every := "(review-requested:@me OR reviewed-by:@me) -author:@me"
+	for doc, want := range map[string]string{
+		"pr:\n  teams: []\n":                byName,
+		"pr:\n  teams:\n":                   byName,
+		"pr:\n  teams:\n    # - acme/web\n": byName,
+		"pr: {}\n":                          every,
+		"pr:\n  owners: [acme]\n":           every,
+	} {
+		cfg, err := parseConfig([]byte(doc))
+		if err != nil {
+			t.Fatalf("%q: %v", doc, err)
+		}
+		if got := cfg.PR.Asked(); got != want {
+			t.Errorf("%q asks %q, want %q", doc, got, want)
+		}
+	}
+	// Anything but a name would go into the query as an operator, and
+	// GitHub answers a term it cannot read with no rows at all.
+	for _, bad := range []string{"web", "acme/", "/web", "acme/web/x", "@acme/web",
+		"acme/web)", "acme/web,api", "acme/*", "acme/web OR x", "acme/web\nOR x"} {
+		if _, err := parseConfig([]byte("pr:\n  teams: [\"" + bad + "\"]\n")); err == nil || !strings.Contains(err.Error(), "pr.teams") {
+			t.Errorf("pr.teams %q: %v, want an error naming pr.teams", bad, err)
 		}
 	}
 }

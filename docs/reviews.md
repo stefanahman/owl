@@ -127,6 +127,26 @@ not dilute your own. Asked of nobody outstanding is a PR you have
 already reviewed, which is why it is still listed at all. Only
 requests that exist, none of them yours, at least one a team's.
 
+Which teams count is GitHub's answer until you say otherwise: a request
+to any team you are in is one to you. A team's maintainer is one of its
+members, so whoever manages every team is asked about every pull request
+the code owners route anywhere — the list and the merged section fill
+with work that is nobody's in particular to you. `pr.teams` names the
+teams whose domains are yours, as GitHub names a team:
+
+```yaml
+pr:
+  teams: [acme/web, acme/api]
+```
+
+Beside what is asked of you by name and what you have reviewed, only
+those teams' requests are fetched, and they are dim as above; a request
+to any other team of yours is not in the list at all. Written with no
+team — `teams: []`, or every entry commented out — it names none, and
+the list is what is asked of you and what you reviewed. A team GitHub
+cannot find is an error that names it: the search would otherwise come
+back empty, requests made of you by name and all.
+
 ## Two panes (`tab`)
 
 The PR list has two, because "what needs my review" and "what is
