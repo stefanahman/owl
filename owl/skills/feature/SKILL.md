@@ -52,7 +52,7 @@ With no project file, run the core workflow only.
 
 1. **The ticket.** With the `linear` module: `get_issue $issue` - title, description, acceptance criteria, comments, labels, the parent issue and the project when there is one, and every document it links (`get_document`). Read all of it; the comments often hold the decision the description lacks. Without a tracker module, ask the user for the ticket's text.
 2. **Where you are.** `owl issue open` started you in a worktree on the branch Linear names for the issue - `git status`, `git branch --show-current`, `git log --oneline <base>..HEAD` say whether work already exists here. `<base>` is `<remote>/<default>` for an ordinary feature, which is what the next item settles; against the wrong one this log shows another branch's commits as if they were yours. `gh pr list --head <branch> --json number,title,isDraft,url` says whether a pull request already exists; if one does, this is a continuation: read it and its review comments before anything else. A bot reviewer's findings are verified against the code like anyone's, not repeated; where the repository has its own skill for that reviewer, act on them through it.
-3. **Whether you are a layer.** `git config --get branch.$(git branch --show-current).owlBase` answers it. A branch name means this issue was opened on another one's unmerged work (`owl issue open $issue --base <branch>`), and *that* branch is your `<base>` everywhere this skill says `<base>` — the trunk is not. Nothing printed, exit 1: an ordinary feature, which is the common case and needs none of what follows. For a branch already in a GitHub stack, `gh stack view` says so too; outside one it exits non-zero with "current branch … is not part of a stack", which is the same answer in a different voice.
+3. **Whether you are a layer.** `git config --get branch.$(git branch --show-current).owlBase` answers it. A branch name means this issue was opened on another one's unmerged work (`owl issue open $issue --base <branch>`), and *that* branch is your `<base>` everywhere this skill says `<base>` — the trunk is not. Nothing printed, exit 1: an ordinary feature, which is the common case and needs none of what follows.
 3. **The codebase.** From the ticket's terms, find where the change lands: Grep for the names it uses, read the whole files around them and their callers, and note the tests that cover that area today. The project file's `## Design brief` says where routes, contracts, schemas and migrations live.
 
 ## Step 2: Agree the approach
@@ -121,16 +121,7 @@ Pushing and opening are deliberately not among this skill's pre-approved tools: 
 1. **Re-read the draft file first** - the user may have edited it after you printed it. The file is the single source of truth.
 2. `git push -u <remote> <branch>`.
 3. `gh pr create --title <title> --body-file <the body, from the draft> --draft` (omit `--draft` when the file says `draft: false`), then print the pull request's URL. Linear picks it up through the branch name; the issue's state follows the integration's rules - there is nothing to post on the ticket.
-4. **A layer opens against the layer below** (Step 1.3 found a base): add `--base <base>` to that same command, then join the stack on GitHub:
-
-   ```sh
-   gh stack link <the bottom PR number> … <this PR number>   # bottom to top
-   gh stack link <stack number> <this PR number>             # or grow an existing stack from the top
-   ```
-
-   **PR numbers, never branch names.** Given a branch with no pull request, `link` opens one for it — no editor, no prompt, an invented body — which is the one thing this skill exists to prevent. Numbers name pull requests that already exist, so there is nothing for it to create.
-
-   Not `gh stack submit` either: it opens an editor no agent can drive, and `--auto` invents a title over the draft the user approved. `link` is the one built for branches another tool manages; it reuses the pull requests that exist and skips any already in the stack.
+4. **A layer opens against the layer below** (Step 1.3 found a base): add `--base <base>` to that same command. The base is the whole of the stack: the pull request shows only this layer's commits, and `owl pr stack <N>` reads the line from each PR's base. Nothing else registers it.
 5. The user closes the workspace with `owl issue close $issue` when the pull request has merged; leave the worktree in place.
 
 ## When you are a layer and the ground moves
@@ -138,10 +129,10 @@ Pushing and opening are deliberately not among this skill's pre-approved tools: 
 Only for a branch with a base (Step 1.3). Everything here is about not rewriting someone else's work:
 
 - **The layer below changed.** `git fetch <remote> && git rebase <remote>/<base>`, then `git push --force-with-lease`. Rebase onto the *base*, never onto the trunk: onto the trunk you would drop the layer below's commits out from under your own.
-- **The bottom merged.** GitHub rebases the remaining branches server-side, so your remote branch was rewritten while you were not looking. `git fetch <remote>` and rebase onto what is there now *before* touching anything — a force-push over it would undo GitHub's rebase and take the other layers with it.
+- **The layer below merged.** Your pull request may still target its branch. `git fetch <remote>` first: someone may have moved yours already. Then point it at the merged PR's base, `gh pr edit <your PR> --base <its base>`, and rebase onto that: `git rebase <remote>/<its base>` after a merge commit, whose history already holds the layer below's commits, or `git rebase --onto <remote>/<its base> <the merged PR's last commit>` after a squash, which leaves those commits behind; `gh pr view <the merged PR> --json headRefOid` gives that commit even once its branch is deleted. Then `git push --force-with-lease`.
 - **Something sits above you.** Your force-push moves the ground under it. Say so, and let whoever owns that layer rebase; `owl pr stack <your PR>` lists the line above you up to a fork and the tips past it; every PR between you and a tip needs the rebase too, and `→` on your row in owl's list draws them all.
 
-When the base branch is gone from the remote and your PR now targets the trunk, the stack is behind you: the base key is stale, and `git config --unset branch.<branch>.owlBase` retires it.
+Whenever your pull request's base changes, the base key follows it, since it is what the next session reads: `git config branch.<branch>.owlBase <the new base>`, or, once the PR targets the trunk and the stack is behind you, `git config --unset branch.<branch>.owlBase`.
 
 ## Writing style
 
