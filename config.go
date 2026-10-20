@@ -108,6 +108,9 @@ func window(text string) Window {
 type IssueConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
+	// Cmd is the agent command a feature's workspace starts with, in
+	// place of agent.cmd; "" is agent.cmd.
+	Cmd string `yaml:"cmd"`
 	// Claim makes an opened issue the user's in Linear: started, and
 	// assigned to them when nobody holds it.
 	Claim bool `yaml:"claim"`
@@ -145,6 +148,9 @@ type GroupsConfig struct {
 type ProjectConfig struct {
 	Session string `yaml:"session"`
 	Prompt  string `yaml:"prompt"`
+	// Cmd is the agent command a project's workspace starts with, in
+	// place of agent.cmd; "" is agent.cmd.
+	Cmd string `yaml:"cmd"`
 	// DimStatuses are the statuses that mean present but not moving.
 	// Nothing in the data marks them: Linear types Paused as `started`,
 	// the same as In Progress, because `paused` is not one of the types

@@ -396,6 +396,19 @@ func TestIssueOpenNamesTheRepoThatIsNotOne(t *testing.T) {
 	}
 }
 
+// issue.cmd is what a feature's workspace starts, in place of agent.cmd:
+// agent.cmd with --remote-control, say, so the features are reachable
+// from claude.ai and the Claude app while the reviews are not.
+func TestIssueOpenStartsWithIssueCmd(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	ran := filepath.Join(f.root, "ran")
+	f.cfg.Issue.Cmd = "echo issue.cmd >> " + shellQuote(ran) + " #" // the rest of the line is ignored
+	f.cfg.Agent.Cmd = "echo agent.cmd >> " + shellQuote(ran) + " #"
+	f.openIssue("ENG-4160")
+	f.waitFile(ran, "issue.cmd\n")
+}
+
 func TestIssueClose(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)

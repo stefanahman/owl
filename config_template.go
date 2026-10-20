@@ -36,6 +36,7 @@ issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key (ENG-123)
   claim: true                    # opening an issue makes it yours in Linear: triage, backlog or todo moves to the team's first started state, and an issue nobody holds is assigned to you; someone else's stays theirs. Needs a key with Write
+  cmd: ""                        # the agent command a feature's workspace starts with, in place of agent.cmd — agent.cmd with --remote-control, say, to reach features from claude.ai/code and the Claude app. "" is agent.cmd
 
 mine:                            # a PR of your own, opened from the second pane of ` + "`owl pr`" + `
   prompt: "Please read up on where this work stands before changing anything. The branch is {branch} and its pull request is #{pr}: read the commits against the base, the PR's checks, its review comments and whether it merges cleanly, and anything uncommitted in the worktree. Then tell me what is done, what is left, and what is stopping it from landing — and wait for me. Do not review this PR: it is mine, not one I was asked to look at."    # first prompt of a *fresh* conversation on a PR of your own; {pr}, {branch}, and {key} (empty when the branch carries no issue). A workspace that already holds a conversation resumes it instead and is sent no prompt at all, so this fires when you arrive somewhere for the first time
@@ -44,6 +45,7 @@ project:
   session: projects              # tmux: one window per project lives here — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
   dim_statuses: [Paused]         # statuses that mean present but not moving: their rows render dim. Linear types Paused as started, the same as In Progress, so only this tells them apart
+  cmd: ""                        # the agent command a project's workspace starts with, in place of agent.cmd. "" is agent.cmd
 
 groups:                          # cmux workspace groups, one per scope, named after the scope itself; tmux and herdr have no such thing and ignore this
   enabled: false                 # off by default: grouping folds the sidebar but costs its single recency order, since cmux sorts groups by their own latest notification and members below their anchor

@@ -3,7 +3,7 @@
 | layer | what | owner |
 |---|---|---|
 | git worktree | `<repo>/.worktrees.local/<name>` on a branch of the same name: `pr-<N>-<slug>` fetched from `pull/N/head`, or the issue's branch. A project's `proj-<slug>` is detached at the remote's default branch instead: it has no branch of its own, and its agent reads rather than commits | `open` creates, `close` removes |
-| window | same name, in the multiplexer, cwd the worktree, running `agent.cmd` | `open` creates, `close` kills |
+| window | same name, in the multiplexer, cwd the worktree, running `agent.cmd` — a feature's `issue.cmd` and a project's `project.cmd` when those are set | `open` creates, `close` kills |
 | conversation | Claude's transcript for that directory | survives `close`; `open` resumes it with `-c`, or for a project with `--resume` and the id owl keeps in `$XDG_STATE_HOME/owl/projects.json`, when that conversation's own transcript is there |
 
 A prompt (`f`, a binding, `open --prompt`) is typed into the window as

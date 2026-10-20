@@ -41,6 +41,7 @@ issue:
   session: features              # tmux: one window per feature lives here; herdr and cmux need no container
   prompt: "/owl:feature {key}"   # first prompt of a fresh feature; {key} is the issue's key
   claim: true                    # opening an issue makes it yours in Linear: started, and assigned to you when nobody holds it
+  cmd: ""                        # the agent command a feature starts with, in place of agent.cmd; "" is agent.cmd
 
 mine:                            # a PR of your own, from the second pane of `owl pr`
   prompt: "Please read up on…"   # first prompt of a *fresh* conversation on one; {pr}, {branch}, {key}
@@ -49,6 +50,7 @@ project:
   session: projects              # tmux: one window per project — the conversation above the issues
   prompt: "/owl:project {name}"  # first prompt of a fresh project; {name} is the project's name in Linear
   dim_statuses: [Paused]         # statuses that mean present but not moving; their rows render dim
+  cmd: ""                        # the agent command a project starts with, in place of agent.cmd; "" is agent.cmd
 
 groups:                          # cmux workspace groups, one per scope; tmux and herdr ignore them
   enabled: false                 # folds the sidebar, costs its single recency order — see docs/multiplexers.md

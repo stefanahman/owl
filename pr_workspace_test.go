@@ -247,6 +247,17 @@ func TestOpenYourOwnPRTakesItsBranch(t *testing.T) {
 	}
 }
 
+// A PR of yours opens its feature's workspace, so it starts the way the
+// feature does: with issue.cmd, not agent.cmd.
+func TestOpenYourOwnPRStartsWithIssueCmd(t *testing.T) {
+	f := ownFixture(t, "eng-4157-drop-legacy-tenant-shim")
+	ran := filepath.Join(f.root, "ran")
+	f.cfg.Issue.Cmd = "echo issue.cmd >> " + shellQuote(ran) + " #" // the rest of the line is ignored
+	f.cfg.Agent.Cmd = "echo agent.cmd >> " + shellQuote(ran) + " #"
+	f.open("42")
+	f.waitFile(ran, "issue.cmd\n")
+}
+
 func TestOpenYourOwnPRJoinsTheFeatureAlreadyOpen(t *testing.T) {
 	head := "eng-4157-drop-legacy-tenant-shim"
 	f := ownFixture(t, head)

@@ -69,6 +69,9 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		first: firstPrompt(cfg, n, plan),
 		env:   env,
 	}
+	if plan.key != "" {
+		ws.cmd = cfg.Issue.Cmd // a PR of yours opens its feature's workspace
+	}
 	return ws.open(cfg, newWindows(cfg, scopeForName(plan.name)), repo, o.prompt, arrive, out)
 }
 
@@ -91,6 +94,9 @@ type workspace struct {
 	// project's --name. startLine joins them into a shell line as they
 	// are, so each is shell-quoted already.
 	args []string
+	// cmd is the agent command the window starts: the list's own
+	// (issue.cmd, project.cmd) where it names one, else agent.cmd.
+	cmd string
 }
 
 // open brings the workspace up in the multiplexer: the window with
@@ -105,6 +111,10 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	}
 
 	resume := hasConversationFor(ws.dir)
+	cmd := ws.cmd
+	if cmd == "" {
+		cmd = cfg.Agent.Cmd
+	}
 	args := ws.args
 	if ws.session != "" {
 		resume = hasSession(ws.dir, ws.session)
@@ -131,7 +141,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	}
 	switch {
 	case !slices.Contains(mx.Windows(), ws.name):
-		if err := mx.Open(ws.name, ws.dir, startLine(cfg.Agent.Cmd, file, resume, args...)); err != nil {
+		if err := mx.Open(ws.name, ws.dir, startLine(cmd, file, resume, args...)); err != nil {
 			return err
 		}
 		if resume {
@@ -145,7 +155,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(ws.name, startLine(cfg.Agent.Cmd, file, resume, args...)); err != nil {
+		if err := mx.Run(ws.name, startLine(cmd, file, resume, args...)); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)

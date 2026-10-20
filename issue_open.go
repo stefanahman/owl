@@ -40,6 +40,7 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		dir:   wt,
 		first: strings.ReplaceAll(cfg.Issue.Prompt, "{key}", key),
 		env:   map[string]string{"OWL_ISSUE": key, "OWL_BRANCH": name},
+		cmd:   cfg.Issue.Cmd,
 	}
 	if err := ws.open(cfg, newWindows(cfg, features), repo, o.prompt, arrive, out); err != nil {
 		return err

@@ -118,6 +118,22 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 	}
 }
 
+// project.cmd is what a project's workspace starts, in place of
+// agent.cmd: the conversation above a project's issues is the one to
+// reach from another device.
+func TestProjectOpenStartsWithProjectCmd(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	ran := filepath.Join(f.root, "ran")
+	f.cfg.Project.Cmd = "echo project.cmd >> " + shellQuote(ran) + " #" // the rest of the line is ignored
+	f.cfg.Agent.Cmd = "echo agent.cmd >> " + shellQuote(ran) + " #"
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	f.waitFile(ran, "project.cmd\n")
+}
+
 func TestProjectOpenRefusesAnAmbiguousName(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
