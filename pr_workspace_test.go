@@ -258,6 +258,15 @@ func TestOpenYourOwnPRStartsWithIssueCmd(t *testing.T) {
 	f.waitFile(ran, "issue.cmd\n")
 }
 
+// The feature's conversation is named for its issue whichever list opens
+// it; here no Linear key is configured, so the name is the key alone.
+func TestOpenYourOwnPRNamesTheFeaturesSession(t *testing.T) {
+	f := ownFixture(t, "eng-4157-drop-legacy-tenant-shim")
+	named := nameAgent(t, f)
+	f.open("42")
+	f.waitFile(named, "ENG-4157\n")
+}
+
 func TestOpenYourOwnPRJoinsTheFeatureAlreadyOpen(t *testing.T) {
 	head := "eng-4157-drop-legacy-tenant-shim"
 	f := ownFixture(t, head)

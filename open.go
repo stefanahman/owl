@@ -70,7 +70,11 @@ func runOpen(cfg Config, args []string, out io.Writer, arrive bool) error {
 		env:   env,
 	}
 	if plan.key != "" {
-		ws.cmd = cfg.Issue.Cmd // a PR of yours opens its feature's workspace
+		// A PR of yours opens its feature's workspace, and starts the
+		// way the feature does: its command, its issue's name.
+		key := plan.key
+		ws.cmd = cfg.Issue.Cmd
+		ws.title = func() string { return sessionName(trackerFor(cfg), key) }
 	}
 	return ws.open(cfg, newWindows(cfg, scopeForName(plan.name)), repo, o.prompt, arrive, out)
 }
