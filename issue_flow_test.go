@@ -354,6 +354,26 @@ func TestIssueOpenReusesAWorktreeItDidNotMake(t *testing.T) {
 	}
 }
 
+// Linear can name a branch with its owner in front (stefan/eng-4160-…),
+// and an agent puts a worktree wherever it likes. Found by its branch
+// in a folder that names no issue, it is not opened where it stands:
+// its window would be named for the folder, which no list maps back to
+// the issue. open names the adopt that moves it in.
+func TestIssueOpenPointsAtAdoptForAFolderThatNamesNoIssue(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	foreign := filepath.Join(f.root, "app-eng-4160")
+	f.git(f.repo, "worktree", "add", "-q", "-b", "stefan/eng-4160-credit-flip", foreign, "origin/main")
+
+	err := runIssue(f.cfg, []string{"open", "ENG-4160"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "owl issue adopt ENG-4160 "+foreign) {
+		t.Fatalf("open: %v, want it to name the adopt that moves %s in", err, foreign)
+	}
+	if slices.Contains(f.featureWindows(), "app-eng-4160") {
+		t.Error("open made a window named for the folder")
+	}
+}
+
 // A team with a repository of its own opens there, from whichever
 // repository the list runs in: owl merges several companies' issues into
 // one list, and one's branch must never land in another's repo. The list

@@ -86,7 +86,9 @@ func claim(tracker Tracker, key string, out io.Writer) {
 // any of its own, in three steps:
 //
 //  1. A worktree checked out for the issue — owl's own, else one
-//     someone else made, used where it stands.
+//     someone else made in a folder that names the issue, used where
+//     it stands. One in a folder that names none is refused, with the
+//     adopt that moves it in.
 //  2. A branch carrying the key, local or on the remote. The work on an
 //     issue rarely lives on the slug Linear names: it is pushed from
 //     `eng-4098-cursor-flip-uniform-sets` or `fix/eng-4157-projection`,
@@ -96,6 +98,13 @@ func claim(tracker Tracker, key string, out io.Writer) {
 func ensureIssueWorktree(cfg Config, repo, key, base string, tracker Tracker, out io.Writer) (name, wt string, err error) {
 	if w, own, ok := findIssueWorktree(repo, cfg.WorktreesDir, key); ok {
 		if !own {
+			// Found by its branch, in a folder that names no issue: a
+			// window named for that folder is one no list finds the issue
+			// by, and close leaves what owl did not make. adopt moves it
+			// to where open would have put it.
+			if !matchesIssue(filepath.Base(w.Path), key) {
+				return "", "", fmt.Errorf("%s is checked out in %s, a folder that names no issue: owl issue adopt %s %s moves it into %s", w.Branch, w.Path, key, w.Path, cfg.WorktreesDir)
+			}
 			fmt.Fprintf(out, "%s is checked out outside %s:\n  %s\nopening it there\n", w.Branch, cfg.WorktreesDir, w.Path)
 		}
 		// The branch point is behind us — this worktree exists and has

@@ -99,10 +99,14 @@ the work by name. `open` looks for the work that already exists before
 making any of its own:
 
 1. **A worktree already checked out for the issue** — one of owl's,
-   else one made by hand or by Claude Code's worktree tool, used where
-   it stands. git will not check a branch out twice, so a worktree
-   outside `worktrees_dir` has to be reused rather than duplicated;
-   `open` says where it landed, and `close` leaves it alone.
+   else one made by hand or by an agent in a folder that names the
+   issue (`eng-4160-flip`), used where it stands. git will not check a
+   branch out twice, so a worktree outside `worktrees_dir` has to be
+   reused rather than duplicated; `open` says where it landed, and
+   `close` leaves it alone. One found by its branch in a folder that
+   names no issue (`app-eng-4160` on `stefan/eng-4160-…`) is refused,
+   with the `adopt` below that moves it in: a window named for that
+   folder is one the list cannot find the issue by.
 2. **A branch carrying the key**, local or on the remote. Work on an
    issue rarely lives on the slug Linear names: it is pushed from
    `eng-4098-cursor-flip-uniform-sets` or `fix/eng-4157-projection`.
