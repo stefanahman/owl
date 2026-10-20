@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -650,6 +651,17 @@ func (l Linear) Claim(key string) (Claimed, error) {
 // set is worth its indirection where there is something to merge, and
 // where there is not it would only stand between the list and the
 // error it is trying to report.
+// trackerFor is the tracker a command works with. What it does on the
+// user's behalf, such as reading a key from 1Password, it says on stderr
+// and as a notification too, since owl may be running in a popup the
+// user is about to close.
+func trackerFor(cfg Config) Tracker {
+	return newTracker(cfg, func(text string) {
+		fmt.Fprintln(os.Stderr, text)
+		newWindows(cfg, features).Notify(text)
+	})
+}
+
 func newTracker(cfg Config, notify func(string)) Tracker {
 	if len(cfg.Linear) == 0 {
 		return Linear{Token: secret{name: "linear", notify: notify}}

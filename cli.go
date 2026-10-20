@@ -142,10 +142,7 @@ func main() {
 	case len(args) > 0 && args[0] == "issue":
 		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
 			exitOn(newWindows(cfg, features).Ping())
-			tracker := newTracker(cfg, func(text string) {
-				fmt.Fprintln(os.Stderr, text)
-				newWindows(cfg, features).Notify(text)
-			})
+			tracker := trackerFor(cfg)
 			runTUI(initialIssueModel(cfg, tracker))
 			return
 		}
@@ -154,10 +151,7 @@ func main() {
 	case len(args) > 0 && args[0] == "project":
 		if len(args) == 1 && term.IsTerminal(os.Stdout.Fd()) {
 			exitOn(newWindows(cfg, projects).Ping())
-			tracker := newTracker(cfg, func(text string) {
-				fmt.Fprintln(os.Stderr, text)
-				newWindows(cfg, features).Notify(text)
-			})
+			tracker := trackerFor(cfg)
 			runTUI(initialProjectModel(cfg, tracker))
 			return
 		}

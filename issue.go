@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -14,10 +13,7 @@ import (
 
 // runIssue dispatches `owl issue [command]`.
 func runIssue(cfg Config, args []string, out io.Writer) error {
-	tracker := newTracker(cfg, func(text string) {
-		fmt.Fprintln(os.Stderr, text)
-		newWindows(cfg, features).Notify(text)
-	})
+	tracker := trackerFor(cfg)
 	if len(args) == 0 {
 		return listIssues(tracker, out)
 	}
