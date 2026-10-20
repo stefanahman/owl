@@ -174,7 +174,7 @@ func (m model) started(r visibleRow) bool {
 	// workspace had — for an issue, in its team's repository.
 	if r.issue != nil {
 		repo, err := m.cfg.repoFor(r.issue.Key)
-		return err == nil && hasConversationFor(filepath.Join(repo, m.cfg.WorktreesDir, r.issue.Branch))
+		return err == nil && hasConversationFor(filepath.Join(repo, m.cfg.WorktreesDir, worktreeName(r.issue.Branch, r.issue.Key)))
 	}
 	if m.repoDir == "" {
 		return false

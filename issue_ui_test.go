@@ -470,3 +470,36 @@ func TestStartedFindsAConversationInTheTeamsRepo(t *testing.T) {
 		t.Error("the conversation in the team's repository is not found from a list run elsewhere")
 	}
 }
+
+// Linear can name a branch with its owner's prefix (jane/eng-4160-…), and
+// open names the worktree for the branch's last segment. A closed
+// feature's conversation is looked for under that same name, or every
+// `when: conversation` binding goes dark for such an issue once its
+// workspace closes.
+func TestStartedFindsAConversationUnderAPrefixedBranchsName(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
+	m.cfg.Repos = map[string]string{"ENG": repo}
+	is := mkIssue("ENG-4160", "Per-tenant override", "jane/eng-4160-per-tenant-override", "Todo", "unstarted", 2, time.Hour)
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(projects, encodeProjectPath(filepath.Join(repo, m.cfg.WorktreesDir, worktreeName(is.Branch, is.Key))))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "s.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.started(visibleRow{issue: &is}) {
+		t.Error("the conversation under the worktree's name is not found for a prefixed branch")
+	}
+}
