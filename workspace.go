@@ -277,6 +277,11 @@ type worktree struct {
 	// gone. It stays listed until `git worktree prune` runs, so owl must
 	// skip it rather than hand out a path that does not exist.
 	Prunable bool
+	// Locked is git's `worktree lock`, which `worktree move` and
+	// `remove` refuse; LockReason is what the locker wrote, often
+	// nothing. Claude Code locks each worktree it creates.
+	Locked     bool
+	LockReason string
 }
 
 // handle returns the workspace name a worktree is known by: its
@@ -431,9 +436,24 @@ func listWorktrees(dir string) ([]worktree, error) {
 			list[len(list)-1].Branch = strings.TrimPrefix(line, "branch refs/heads/")
 		case strings.HasPrefix(line, "prunable") && len(list) > 0:
 			list[len(list)-1].Prunable = true
+		case (line == "locked" || strings.HasPrefix(line, "locked ")) && len(list) > 0:
+			list[len(list)-1].Locked = true
+			list[len(list)-1].LockReason = strings.TrimPrefix(strings.TrimPrefix(line, "locked"), " ")
 		}
 	}
 	return list, nil
+}
+
+// worktreeAt is the registration of the worktree at path, or the zero
+// worktree when git lists none there.
+func worktreeAt(repo, path string) worktree {
+	list, _ := listWorktrees(repo)
+	for _, w := range list {
+		if w.Path == path {
+			return w
+		}
+	}
+	return worktree{}
 }
 
 // branchCarries reports whether a branch name mentions the issue key

@@ -1019,3 +1019,23 @@ func TestMainRepo(t *testing.T) {
 		t.Error("mainRepo outside a repo should fail")
 	}
 }
+
+func TestListWorktreesReadsTheLock(t *testing.T) {
+	f := newFixture(t)
+	held := filepath.Join(f.root, "held")
+	bare := filepath.Join(f.root, "bare")
+	f.git(f.repo, "worktree", "add", "-q", "--detach", held, "origin/main")
+	f.git(f.repo, "worktree", "add", "-q", "--detach", bare, "origin/main")
+	f.git(f.repo, "worktree", "lock", "--reason", "claude session probe (pid 7904 start Tue Oct 20 12:02:31 2026)", held)
+	f.git(f.repo, "worktree", "lock", bare)
+
+	for path, want := range map[string]worktree{
+		f.repo: {Path: f.repo, Branch: "main"},
+		held:   {Path: held, Locked: true, LockReason: "claude session probe (pid 7904 start Tue Oct 20 12:02:31 2026)"},
+		bare:   {Path: bare, Locked: true},
+	} {
+		if got := worktreeAt(f.repo, path); got != want {
+			t.Errorf("worktree at %s = %+v, want %+v", path, got, want)
+		}
+	}
+}
