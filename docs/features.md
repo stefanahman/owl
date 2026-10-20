@@ -47,6 +47,9 @@ back one: you were there when you finished something, while a
 cancellation is usually someone else's decision about your work and
 should survive a weekend. The section renders grey — on the list so you
 notice it happened, not so it competes with work that is still alive.
+An issue marked a duplicate is listed here too, with Duplicate in its
+state column: Linear gives Duplicate a state type of its own, and an
+issue marked one has left your work the way a cancelled one has.
 
 Its own request, too, and not by choice. Linear accepts an `or:` of two
 windowed branches and then answers by state type alone, applying

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -332,6 +333,13 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 		is.CanceledAt = time.Now().Add(-ago)
 		return is
 	}
+	// Marked a duplicate: Linear's own state type, which left the open
+	// list the way a cancellation does.
+	duplicate := func(key, title string, ago time.Duration) Issue {
+		is := dropped(key, title, ago)
+		is.State.Name, is.State.Type = "Duplicate", "duplicate"
+		return is
+	}
 	m := newIssueModel(defaultConfig(), "acme/example", nil, nil)
 	m.issues, m.ready = fixtureIssues(), true
 	m.cancelledIssues = []Issue{
@@ -339,6 +347,7 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 		// Past the window: the query bounds it, and a cache written days
 		// ago would otherwise smuggle this one back in.
 		dropped("ENG-1724", "the one from last week", 8*24*time.Hour),
+		duplicate("ENG-4288", "shadow validation, again", 6*time.Hour),
 	}
 	m.width, m.height = 160, 40
 	m.resizeViewport()
@@ -357,6 +366,9 @@ func TestIssueListShowsWhatWasCancelled(t *testing.T) {
 	}
 	if strings.Contains(out, "ENG-1724") {
 		t.Errorf("an issue cancelled eight days ago is in the list:\n%s", out)
+	}
+	if !regexp.MustCompile(`ENG-4288.*Duplicate`).MatchString(out) {
+		t.Errorf("an issue marked a duplicate 6h ago is not under Canceled, saying so:\n%s", out)
 	}
 	// The section is named what Linear calls the state, so the row does
 	// not say it a second time in the state column.

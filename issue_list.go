@@ -156,7 +156,9 @@ func (m model) issueSections() []issueSection {
 		// "Canceled" with one l, which is Linear's spelling and not owl's:
 		// each section is named what the tracker calls that state, and that
 		// is also what keeps the row from repeating it in the state column.
-		{"Canceled", cancelledWindowLabel, styleSectionCancelled, []string{"canceled"}, false},
+		// A duplicate is listed here too, under its own state name: it left
+		// the open list the way a cancellation does.
+		{"Canceled", cancelledWindowLabel, styleSectionCancelled, cancelledTypes, false},
 	}
 }
 
@@ -208,7 +210,7 @@ func (m model) visibleIssueRows() []visibleRow {
 			if is.State.Type == "completed" && time.Since(is.CompletedAt) > m.cfg.DoneWindow.D {
 				continue
 			}
-			if is.State.Type == "canceled" && time.Since(is.CanceledAt) > cancelledWindow {
+			if contains(cancelledTypes, is.State.Type) && time.Since(is.CanceledAt) > cancelledWindow {
 				continue
 			}
 			members = append(members, is)

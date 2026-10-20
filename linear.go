@@ -356,11 +356,20 @@ func (l Linear) assigned(filter map[string]any) ([]Issue, error) {
 	}
 }
 
-// Issues: the user's open issues — every state but completed and
-// canceled — newest change first.
+// Linear's state types for an issue no longer open. Duplicate is a type
+// of its own rather than a kind of canceled, though Linear stamps
+// canceledAt on it: an issue marked a duplicate leaves the open list the
+// way a cancelled one does, and is listed with them.
+var (
+	cancelledTypes = []string{"canceled", "duplicate"}
+	closedTypes    = []string{"completed", "canceled", "duplicate"}
+)
+
+// Issues: the user's open issues — every state but the closed ones —
+// newest change first.
 func (l Linear) Issues() ([]Issue, error) {
 	return l.assigned(map[string]any{
-		"state": map[string]any{"type": map[string]any{"nin": []string{"completed", "canceled"}}},
+		"state": map[string]any{"type": map[string]any{"nin": closedTypes}},
 	})
 }
 
@@ -373,10 +382,11 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 	})
 }
 
-// Cancelled: the issues cancelled since the given time. Cancelling is
-// not finishing — which is why these have a section of their own
-// rather than joining the Done one — but it is still something that
-// happened to your work, and often not by your hand.
+// Cancelled: the issues cancelled, or marked a duplicate, since the
+// given time. Cancelling is not finishing — which is why these have a
+// section of their own rather than joining the Done one — but it is
+// still something that happened to your work, and often not by your
+// hand.
 //
 // Its own request, and deliberately. `or: [{completed, completedAt},
 // {canceled, canceledAt}]` is a filter Linear accepts and then answers
@@ -384,7 +394,7 @@ func (l Linear) Done(since time.Time) ([]Issue, error) {
 // live API, where it returned issues cancelled two months back.
 func (l Linear) Cancelled(since time.Time) ([]Issue, error) {
 	return l.assigned(map[string]any{
-		"state":      map[string]any{"type": map[string]any{"eq": "canceled"}},
+		"state":      map[string]any{"type": map[string]any{"in": cancelledTypes}},
 		"canceledAt": map[string]any{"gte": since.UTC().Format(time.RFC3339)},
 	})
 }
@@ -476,7 +486,7 @@ func (l Linear) Project(id string) (Project, error) {
 // and the count that matters on a project row is yours over this.
 const projectIssuesQuery = `query($id: String!, $first: Int!, $after: String) {
   project(id: $id) {
-    issues(first: $first, after: $after, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
+    issues(first: $first, after: $after, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled", "duplicate"] } } }) {
       nodes { ` + issueFields + ` } pageInfo { hasNextPage endCursor }
     }
   }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			n := issue("ENG-4286", "Open update-customer fields", "eng-4286-open-update-customer", "Done", "completed")
 			n["completedAt"] = "2026-09-09T09:00:00.000Z"
 			nodes = []any{inProject(n, "5b16b5f4", "Endpoint Validation")}
-		case stype["eq"] == "canceled":
+		case typesAre(stype["in"], "canceled", "duplicate"):
 			// The bound matters more here than anywhere: Linear takes an
 			// `or:` of two windowed branches and then applies neither, so
 			// a query without its own canceledAt would quietly return
@@ -88,8 +89,12 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			}
 			n := issue("ENG-4287", "Drop the shadow validation", "eng-4287-drop-shadow-validation", "Cancelled", "canceled")
 			n["canceledAt"] = "2026-09-09T12:00:00.000Z"
-			nodes = []any{n}
-		case len(stype["nin"].([]any)) == 2:
+			// Linear gives Duplicate a state type of its own, and stamps
+			// canceledAt on it as it does on a cancellation.
+			d := issue("ENG-4288", "Shadow validation, again", "eng-4288-shadow-validation-again", "Duplicate", "duplicate")
+			d["canceledAt"] = "2026-09-09T13:00:00.000Z"
+			nodes = []any{n, d}
+		case typesAre(stype["nin"], "completed", "canceled", "duplicate"):
 			// Two pages of one: the client must follow the cursor.
 			nodes, page = []any{inProject(issue("ENG-4159", "Address fuzzy match", "eng-4159-address-fuzzy-match", "In Review", "started"), "b00000000008", "Background Indexer redesign")}, map[string]any{"hasNextPage": true, "endCursor": "cursor-1"}
 			if after, _ := req.Variables["after"].(string); after == "cursor-1" {
@@ -285,8 +290,11 @@ func TestLinearIssuesIssueAndCreate(t *testing.T) {
 	// Cancelled is its own request with its own bound. One `or:` beside
 	// the done filter is a query Linear accepts and then answers by
 	// state type alone, ignoring both windows.
+	// A duplicate is asked for with it: it left the open list the same
+	// way, and Linear stamps canceledAt on it too.
 	cancelled, err := l.Cancelled(time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
-	if err != nil || len(cancelled) != 1 || cancelled[0].Key != "ENG-4287" || cancelled[0].State.Type != "canceled" || cancelled[0].CanceledAt.IsZero() {
+	if err != nil || len(cancelled) != 2 || cancelled[0].Key != "ENG-4287" || cancelled[0].State.Type != "canceled" || cancelled[0].CanceledAt.IsZero() ||
+		cancelled[1].Key != "ENG-4288" || cancelled[1].State.Type != "duplicate" {
 		t.Fatalf("Cancelled() = %+v, %v", cancelled, err)
 	}
 	if f.cancelledSince != "2026-09-07T12:00:00Z" {
@@ -473,6 +481,32 @@ func TestLinearScopeErrorNamesTheRemedy(t *testing.T) {
 	for _, want := range []string{"Invalid scope", "read-only", "Write"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// typesAre reports whether a filter's list of state types, as the fake
+// decodes it from JSON, holds exactly these, in any order.
+func typesAre(v any, want ...string) bool {
+	list, _ := v.([]any)
+	if len(list) != len(want) {
+		return false
+	}
+	for _, w := range want {
+		if !slices.Contains(list, any(w)) {
+			return false
+		}
+	}
+	return true
+}
+
+// A project's issue list is a query string rather than a filter the
+// client builds, so this is what keeps it leaving out every closed type
+// the open list does: Linear's Duplicate among them, a type of its own.
+func TestProjectIssuesQueryLeavesOutEveryClosedType(t *testing.T) {
+	for _, typ := range closedTypes {
+		if !strings.Contains(projectIssuesQuery, strconv.Quote(typ)) {
+			t.Errorf("projectIssuesQuery keeps %s issues: %s", typ, projectIssuesQuery)
 		}
 	}
 }
