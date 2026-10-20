@@ -151,14 +151,20 @@ func readWorktrees(cfg Config) map[string]worktree {
 		}
 	}
 	// A routed team's features are the ones in its own repository: open
-	// goes there, so that is the worktree the row has.
-	for _, team := range slices.Sorted(maps.Keys(cfg.Repos)) {
-		list, err := listWorktrees(cfg.Repos[team])
+	// goes there, so that is the worktree the row has. Each repository
+	// is listed once, however many teams share it.
+	teams := map[string][]string{}
+	for team, dir := range cfg.Repos {
+		teams[dir] = append(teams[dir], team)
+	}
+	for _, dir := range slices.Sorted(maps.Keys(teams)) {
+		list, err := listWorktrees(dir)
 		if err != nil {
 			continue
 		}
 		for _, wt := range list {
-			if h := wt.handle(); strings.HasPrefix(issueKeyOf(h), team+"-") {
+			h := wt.handle()
+			if team, _, _ := strings.Cut(issueKeyOf(h), "-"); slices.Contains(teams[dir], team) {
 				result[h] = wt
 			}
 		}
