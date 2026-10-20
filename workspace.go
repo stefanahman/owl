@@ -14,7 +14,7 @@
 // Then the name is that worktree's handle when it has one — the
 // feature window the issue list opened, say — and the planned name
 // when it does not. `close` removes only worktrees under
-// worktrees_dir, so an adopted one is left where it was found.
+// worktrees_dir, so one used where it stands is left there.
 //
 // This file holds what `open`, `close` and the TUI overlay share.
 package main

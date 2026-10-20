@@ -42,6 +42,8 @@ func runIssue(cfg Config, args []string, out io.Writer) error {
 		return runIssueOpen(cfg, tracker, args[1:], out, false)
 	case "close":
 		return runIssueClose(cfg, args[1:], out)
+	case "adopt":
+		return runIssueAdopt(cfg, tracker, args[1:], out)
 	}
 	return usageError("issue: unknown command " + args[0])
 }

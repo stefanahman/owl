@@ -431,7 +431,7 @@ func ensureWorktree(cfg Config, repo string, n int, p prWorkspace, out io.Writer
 			// workspace — neither a PR number nor an issue key — belongs
 			// to no scope, so every later call fails to find the window
 			// owl is opening right now. Where the directory has no
-			// handle the planned name stands; only the path is adopted.
+			// handle the planned name stands; only the path is borrowed.
 			if h := wt.handle(); h != "" {
 				p.name = h
 			}

@@ -59,6 +59,7 @@ const usage = `usage: owl [--config FILE] [--mux tmux|herdr|cmux] [<noun> [comma
        owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY; --base starts it on another branch, for a layer of a stack
        owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
        owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
+       owl issue adopt <KEY> [<dir>]    move work begun before its issue, the worktree you are in (or dir), to the issue's workspace with its conversation, and open it
        owl issue new <title…>           file an issue in linear.team, assigned to you
        owl issue --project <id|name>    a project's open issues by milestone, whoever they belong to
        owl project                      the projects you work in, from Linear
@@ -111,7 +112,7 @@ func main() {
 		case "issue":
 			if len(args) > 1 && !strings.HasPrefix(args[1], "--project") {
 				switch args[1] {
-				case "open", "start", "close", "new":
+				case "open", "start", "close", "adopt", "new":
 				default:
 					exitOn(usageError("issue: unknown command " + args[1]))
 				}

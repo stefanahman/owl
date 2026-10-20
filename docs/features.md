@@ -137,6 +137,27 @@ branch another worktree holds, and a branch with commits that exist
 nowhere else is refused unless `--force`. The remote branch is never
 touched.
 
+Work begun before its issue was filed — an agent's worktree beside the
+repository, or under `.claude/worktrees/` — moves into the workspace
+`open` would have made with `owl issue adopt <KEY>`, run from inside
+it, or `owl issue adopt <KEY> <dir>` from anywhere. The issue has to
+exist first: `owl hoot` files one. Then adopt:
+
+| | |
+|---|---|
+| The worktree | moves to `worktrees_dir/<name>`, named as `open` names one |
+| Its branch | takes the name Linear gives the issue, which is what links a PR to it, with no upstream, as `open` starts one. A branch that carries the key keeps its name; so does one on the remote, which a new name would part from its PR (put the key in the PR's title instead) |
+| Claude's conversation | moves with it: the folder Claude Code keeps for the worktree's path, whole and unread, so `open` resumes it there |
+
+Then it opens the issue as `open` does. It refuses, and moves nothing,
+when the worktree is the main checkout or another repository's, its
+branch carries another issue's key, the issue already has a worktree,
+Claude keeps a conversation at both ends, or Claude runs in the
+worktree — a session whose directory moves out from under it breaks, so
+end it first. A conversation that had Remote Control on keeps its
+claude.ai session, listed under the folder it started in until that
+session is deleted.
+
 Opening an issue also claims it in Linear, so the board says what
 you are working on before there is a pull request to say it. The
 state and the assignee are decided apart:

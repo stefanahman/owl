@@ -4,7 +4,10 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -131,6 +134,51 @@ func priorWorkspaceName(repo, worktreesDir string, n int) string {
 // exists.
 func hasPriorConversation(repo, worktreesDir string, n int) bool {
 	return priorWorkspaceName(repo, worktreesDir, n) != ""
+}
+
+// claudeRunningIn lists the Claude Code processes working in dir or
+// below it. A session whose directory moves out from under it breaks,
+// and it writes its transcript while it runs, so neither may move. It
+// finds Claude by its process name, claude, as the native build runs.
+func claudeRunningIn(dir string) ([]int, error) {
+	out, err := exec.Command("pgrep", "-x", "claude").Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil // none running
+		}
+		return nil, fmt.Errorf("pgrep: %w", err)
+	}
+	var pids []int
+	for _, f := range strings.Fields(string(out)) {
+		pid, err := strconv.Atoi(f)
+		if err != nil {
+			continue
+		}
+		if cwd := processCwd(pid); cwd == dir || strings.HasPrefix(cwd, dir+string(filepath.Separator)) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+// processCwd is a process's working directory, from /proc where there
+// is one and lsof where there is not (macOS); "" when neither can say,
+// as for another user's process.
+func processCwd(pid int) string {
+	if cwd, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd"); err == nil {
+		return cwd
+	}
+	out, err := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn").Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if cwd, ok := strings.CutPrefix(line, "n"); ok {
+			return cwd
+		}
+	}
+	return ""
 }
 
 // hasConversation reports whether a project state directory holds at

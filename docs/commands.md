@@ -12,6 +12,7 @@ owl issue                             the open issues assigned to you; a table w
 owl issue open <KEY> [--prompt TEXT] [--base BRANCH]  open (or focus) the feature workspace of issue KEY, and claim the issue
 owl issue start <KEY> [--prompt TEXT] [--base BRANCH] the same without going there
 owl issue close [--force] [<KEY>]     remove the feature's worktree, local branch and window
+owl issue adopt <KEY> [<dir>]         move work begun before its issue — the worktree you are in, or dir — to the issue's workspace with its branch and conversation, and open it
 owl issue new <title…>                file an issue in linear.team, assigned to you
 owl project                           the projects you work in; a table when stdout is not a terminal
 owl project open <id> [--prompt TEXT] open (or focus) the project's conversation; <id> is Linear's slug, its workspace's slug, or a fragment of the name
