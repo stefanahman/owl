@@ -41,6 +41,12 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		first: strings.ReplaceAll(cfg.Issue.Prompt, "{key}", key),
 		env:   map[string]string{"OWL_ISSUE": key, "OWL_BRANCH": name},
 		cmd:   cfg.Issue.Cmd,
+		// Named for the issue as Linear has it, as a project's
+		// conversation is: the resume picker, the terminal title, and
+		// claude.ai and the Claude app under Remote Control then name the
+		// work rather than the machine. Asked of Linear only when the
+		// agent starts.
+		title: func() string { return sessionName(tracker, key) },
 	}
 	if err := ws.open(cfg, newWindows(cfg, features), repo, o.prompt, arrive, out); err != nil {
 		return err
@@ -49,6 +55,16 @@ func runIssueOpen(cfg Config, tracker Tracker, args []string, out io.Writer, arr
 		claim(tracker, key, out)
 	}
 	return nil
+}
+
+// sessionName is the title a feature's conversation carries: the key and
+// the issue's title. With Linear out of reach it is the key alone, and
+// the open goes on — a name is worth a lookup, not a refusal.
+func sessionName(tracker Tracker, key string) string {
+	if is, err := tracker.Issue(key); err == nil && is.Title != "" {
+		return key + " " + is.Title
+	}
+	return key
 }
 
 // claim makes the issue the user's in Linear and says what changed.

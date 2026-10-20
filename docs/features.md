@@ -88,8 +88,12 @@ they were opened in; `start` and `close` follow, and the list shows
 their worktrees from there. A team `repos` leaves out, such as one whose
 work spans several repositories, keeps opening where owl runs.
 
-A feature workspace is a worktree for the issue. `open` looks for the
-work that already exists before making any of its own:
+A feature workspace is a worktree for the issue, and its conversation is
+named for it: `--name "ENG-4160 Per-tenant override"`, the key and the
+title as Linear has it at that open, so Claude's resume picker and, with
+`issue.cmd` turning on Remote Control, claude.ai and the Claude app list
+the work by name. `open` looks for the work that already exists before
+making any of its own:
 
 1. **A worktree already checked out for the issue** — one of owl's,
    else one made by hand or by Claude Code's worktree tool, used where

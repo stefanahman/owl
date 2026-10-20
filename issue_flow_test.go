@@ -409,6 +409,47 @@ func TestIssueOpenStartsWithIssueCmd(t *testing.T) {
 	f.waitFile(ran, "issue.cmd\n")
 }
 
+// A feature's conversation is named for its issue, key and title, as one
+// argument: under Remote Control that is the name claude.ai and the
+// Claude app list it by.
+func TestIssueOpenNamesTheSession(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	named := nameAgent(t, f)
+	f.openIssue("ENG-4160")
+	f.waitFile(named, "ENG-4160 Per-tenant override\n")
+}
+
+// Linear out of reach, the conversation is named for the key alone, and
+// the open goes on.
+func TestIssueOpenNamesTheSessionByKeyWithoutLinear(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Chdir(f.repo)
+	named := nameAgent(t, f)
+	f.cfg.Linear[0].Token = "not-the-key"
+	f.openIssue("ENG-4159") // its branch is on the remote: nothing else in open needs Linear
+	f.waitFile(named, "ENG-4159\n")
+}
+
+// The name costs a Linear lookup, so it is asked for only when an agent
+// starts: a prompt to the agent already running asks Linear nothing, and
+// waits on nothing when Linear is slow.
+func TestIssueStartAsksNoNameOfARunningAgent(t *testing.T) {
+	f, fake := issueFixture(t)
+	t.Chdir(f.repo)
+	f.cfg.Issue.Claim = false            // claiming asks Linear on every open, by design
+	f.cfg.Agent.Cmd = "cat >/dev/null #" // stays in the foreground; the rest of the line is ignored
+	f.openIssue("ENG-4160")
+	f.waitPaneIn("features", "eng-4160-per-tenant-override", "cat ")
+	before := len(fake.queries)
+	if err := runIssue(f.cfg, []string{"start", "ENG-4160", "--prompt", "and the tests"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if asked := fake.queries[before:]; len(asked) > 0 {
+		t.Errorf("a prompt to a running agent asked Linear %d times:\n%s", len(asked), strings.Join(asked, "\n"))
+	}
+}
+
 func TestIssueClose(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)
