@@ -23,7 +23,7 @@ herdr:
 remote: origin                   # the GitHub remote: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # relative to the repo root
 default_repo: ""                 # used when owl starts outside a git repo
-repos: {}                        # where each team's issues open, by team key: {VI: ~/src/voyage}; a team not named opens where owl runs
+repos: {}                        # where each team's issues open, by team key: {OPS: ~/src/infrastructure}; a team not named opens where owl runs
 
 merged_window: 3d                # how far back the Merged sections reach: 3d, 12h, 90m — said back in the section header
 done_window: 3d                  # the same for the issue list's Done section

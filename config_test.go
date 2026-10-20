@@ -471,17 +471,17 @@ func TestReposRouteTeamsToRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := parseConfig([]byte("linear:\n  team: VI\nrepos:\n  vi: ~/src/voyage\n"))
+	cfg, err := parseConfig([]byte("linear:\n  team: OPS\nrepos:\n  ops: ~/src/infrastructure\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := cfg.Repos["VI"], filepath.Join(home, "src/voyage"); got != want {
-		t.Errorf("repos.VI = %q, want %q", got, want)
+	if got, want := cfg.Repos["OPS"], filepath.Join(home, "src/infrastructure"); got != want {
+		t.Errorf("repos.OPS = %q, want %q", got, want)
 	}
 	for _, c := range []struct{ yaml, want string }{
-		{"linear:\n  team: VI\nrepos:\n  VI: src/voyage\n", "not an absolute path"},
-		{"linear:\n  team: VI\nrepos:\n  NOR: /src/norrbrunn\n", "no Linear workspace names that team"},
-		{"repos:\n  vi: /a\n  VI: /b\n", "named twice"},
+		{"linear:\n  team: OPS\nrepos:\n  OPS: src/infrastructure\n", "not an absolute path"},
+		{"linear:\n  team: OPS\nrepos:\n  ENG: /src/app\n", "no Linear workspace names that team"},
+		{"repos:\n  ops: /a\n  OPS: /b\n", "named twice"},
 	} {
 		if _, err := parseConfig([]byte(c.yaml)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: %v, want an error saying %q", c.yaml, err, c.want)

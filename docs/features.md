@@ -79,11 +79,11 @@ whose code lives in different repositories, and
 
 ```yaml
 repos:
-  NOR: ~/src/norrbrunn
-  VI: ~/src/voyage-interieur
+  ENG: ~/src/app
+  OPS: ~/src/infrastructure
 ```
 
-sends NOR-176 and VI-12 to their own repositories from whichever list
+sends ENG-4160 and OPS-12 to their own repositories from whichever list
 they were opened in; `start` and `close` follow, and the list shows
 their worktrees from there. A team `repos` leaves out, such as one whose
 work spans several repositories, keeps opening where owl runs.
