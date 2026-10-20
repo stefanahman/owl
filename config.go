@@ -1020,14 +1020,19 @@ func (cfg *Config) validateRepos() error {
 	return nil
 }
 
-// repoFor is the repository an issue's work happens in: the one repos
-// names for its team, else the one owl runs in. owl merges several
-// workspaces into one list, and a team with a repository of its own
-// opens there from any list, so one company's branch never lands in
-// another's repository.
+// repoFor is the repository an issue's work happens in: its team's.
 func (c Config) repoFor(key string) (string, error) {
-	team, _, _ := strings.Cut(strings.ToUpper(key), "-")
-	if dir, ok := c.Repos[team]; ok {
+	team, _, _ := strings.Cut(key, "-")
+	return c.repoForTeams([]string{team})
+}
+
+// repoForTeams is the repository work of these teams happens in: the
+// one repos names for them, when it names one and the same for every
+// team, else the one owl runs in. owl merges several workspaces into
+// one list, and a team with a repository of its own opens there from
+// any list, so one company's work never lands in another's repository.
+func (c Config) repoForTeams(teams []string) (string, error) {
+	if dir, team, ok := c.sharedRepo(teams); ok {
 		repo, err := mainRepo(dir)
 		if err != nil {
 			return "", fmt.Errorf("repos.%s: %s is not a git repository", team, dir)
@@ -1039,6 +1044,22 @@ func (c Config) repoFor(key string) (string, error) {
 		return "", errors.New("not inside a git repository (default_repo makes owl work from anywhere)")
 	}
 	return repo, nil
+}
+
+// sharedRepo is the directory repos names for every one of the teams,
+// and the first team, for an error to name; ok is false when there are
+// no teams, or one is not named, or two are named different ones.
+func (c Config) sharedRepo(teams []string) (dir, team string, ok bool) {
+	for i, t := range teams {
+		d, named := c.Repos[strings.ToUpper(t)]
+		if !named || (i > 0 && d != dir) {
+			return "", "", false
+		}
+		if i == 0 {
+			dir, team = d, strings.ToUpper(t)
+		}
+	}
+	return dir, team, dir != ""
 }
 
 var colorRe = regexp.MustCompile(`^(#[0-9a-fA-F]{6}|[0-9]{1,3})$`)
