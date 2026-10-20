@@ -184,15 +184,22 @@ func (s trackerSet) ProjectIssues(id string) ([]Issue, error) {
 }
 
 // tryEach asks every workspace for one thing and takes the first real
-// answer. Linear answers a project of another workspace with an empty
-// value and no error, so found says what counts as an answer.
+// answer; found says what counts as one.
+//
+// Every workspace but the one that has the thing answers with an error:
+// Linear says "Entity not found" for another workspace's project, and
+// for a name rather than an id. That is the ordinary answer here, not a
+// failure, so nothing is reported while it is being asked: the errors
+// come back to the caller, and only when no workspace had it. A caller
+// such as findProject reads them as "not an id" and falls back to the
+// names.
 func tryEach[T any](s trackerSet, id string, read func(Tracker, string) (T, error), stamp func(*T, string), found func(T) bool) (T, error) {
 	var zero T
 	var errs []error
 	for _, w := range s.workspaces {
 		got, err := read(w.tracker, id)
 		if err != nil {
-			errs = s.report(errs, w, err)
+			errs = append(errs, fmt.Errorf("%s: %w", w.name, err))
 			continue
 		}
 		if found(got) {

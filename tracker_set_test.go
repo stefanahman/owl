@@ -47,10 +47,14 @@ func (s *stubTracker) Project(id string) (Project, error) {
 			return p, nil
 		}
 	}
-	// Linear answers a project of another workspace with an empty value
-	// and no error, which is what makes tryEach need `found`.
-	return Project{}, nil
+	// Linear answers a project of another workspace, and a name, with an
+	// error rather than an empty value (measured 2026-10-20).
+	return Project{}, errEntityNotFound
 }
+
+// errEntityNotFound is what Linear says for a project it does not have.
+var errEntityNotFound = errors.New("linear: Entity not found: Project")
+
 func (s *stubTracker) ProjectIssues(id string) ([]Issue, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -227,10 +231,43 @@ func TestSetFindsAProjectWhereverItIs(t *testing.T) {
 	if got.Name != "The Vake" || got.Workspace != "norrbrunn" {
 		t.Errorf("project = %+v, want The Vake from norrbrunn", got)
 	}
-	// One that exists nowhere is empty and not an error, as one
-	// workspace answers today.
-	if got, err := set.Project("nope"); err != nil || got.ID != "" {
+	// One that exists nowhere is every workspace's error, and nothing.
+	if got, err := set.Project("nope"); err == nil || got.ID != "" {
 		t.Errorf("a missing project = %+v, %v", got, err)
+	}
+}
+
+// Asked for one project, every workspace but its own answers with an
+// error, and that is the expected answer rather than a failure: the set
+// says nothing while a workspace has the project, and hands the errors
+// back, still without a notification, only when none does. findProject
+// then falls back to the names, as it always has.
+func TestSetLooksUpAProjectQuietly(t *testing.T) {
+	other := &stubTracker{err: errEntityNotFound}
+	is := issueAt("NOR-1", "2026-09-14T10:00:00Z")
+	is.Project.ID = "p-b"
+	own := &stubTracker{projects: []Project{projectAt("p-b", "The Vake", "2026-09-14T10:00:00Z")}, issues: []Issue{is}}
+	var said []string
+	notify := func(s string) { said = append(said, s) }
+
+	set := twoWorkspaces(other, own, notify)
+	if p, err := set.Project("p-b"); err != nil || p.Workspace != "norrbrunn" {
+		t.Errorf("Project = %+v, %v", p, err)
+	}
+	if issues, err := set.ProjectIssues("p-b"); err != nil || len(issues) != 1 {
+		t.Errorf("ProjectIssues = %+v, %v", issues, err)
+	}
+	if len(said) != 0 {
+		t.Errorf("a project one workspace has notified %q", said)
+	}
+
+	set = twoWorkspaces(other, &stubTracker{err: errEntityNotFound}, notify)
+	_, err := set.Project("unfold")
+	if err == nil || !strings.Contains(err.Error(), "stefanahman") || !strings.Contains(err.Error(), "norrbrunn") {
+		t.Errorf("a project no workspace has: %v, want each workspace's error", err)
+	}
+	if len(said) != 0 {
+		t.Errorf("a project no workspace has notified %q; the caller decides what it means", said)
 	}
 }
 
