@@ -175,7 +175,7 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 	if err != nil {
 		return err
 	}
-	repo, err := mainRepo(".")
+	repo, err := cfg.repoForTeams(p.TeamKeys())
 	if err != nil {
 		return err
 	}
@@ -306,12 +306,13 @@ func runProjectClose(cfg Config, tracker Tracker, args []string, out io.Writer) 
 	states := loadProjectStates()
 	names := projectNames(p, states[p.ID], takenNames(states, p.ID))
 	mx := newWindows(cfg, projects)
-	name := names[0]
-	if repo, err := mainRepo("."); err == nil {
-		name = pickProjectWorkspace(repo, cfg.WorktreesDir, names, mx.Windows())
+	repo, err := cfg.repoForTeams(p.TeamKeys())
+	if err != nil {
+		return fmt.Errorf("close: %w", err)
 	}
+	name := pickProjectWorkspace(repo, cfg.WorktreesDir, names, mx.Windows())
 	isIt := func(n string) bool { return n == name }
-	return closeWorkspace(cfg, mx, names[0], isIt, force, out)
+	return closeWorkspaceIn(cfg, mx, repo, names[0], isIt, force, out)
 }
 
 // pickProjectWorkspace is the first of names a worktree under

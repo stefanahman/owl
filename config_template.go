@@ -21,7 +21,7 @@ herdr:
 remote: origin                   # git remote of the GitHub repo: PRs are listed for it and fetched from it
 worktrees_dir: .worktrees.local  # where review worktrees go, relative to the repo root (added to .git/info/exclude)
 default_repo: ""                 # repo to use when owl is started outside a git repo; ~ is expanded
-repos: {}                        # the repository each team's issues open in, by team key: {OPS: ~/src/infrastructure} opens OPS-12 there from any list. A team not named opens in the repo owl runs in; ~ is expanded
+repos: {}                        # the repository each team's issues and projects open in, by team key: {OPS: ~/src/infrastructure} opens OPS-12, and a project of OPS alone, there from any list. A team not named opens in the repo owl runs in; ~ is expanded
 
 agent:
   cmd: claude --permission-mode auto     # Claude Code, with your flags (e.g. --model claude-opus-5); owl appends -c when the worktree has a prior conversation (found in ~/.claude/projects)

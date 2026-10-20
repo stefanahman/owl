@@ -121,6 +121,41 @@ func TestProjectOpenCreatesTheConversation(t *testing.T) {
 // project.cmd is what a project's workspace starts, in place of
 // agent.cmd: the conversation above a project's issues is the one to
 // reach from another device.
+// A project opens in the repository repos names for its teams, from
+// whichever repository the list runs in: a company's project is planned
+// beside that company's code, with its Linear workspace's tools. The
+// list sees the worktree from where it runs, and close finds it there.
+func TestProjectGoesToItsTeamsRepo(t *testing.T) {
+	f, _ := issueFixture(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	own := filepath.Join(f.root, "eng-repo")
+	f.git(f.root, "clone", "-q", f.origin, own)
+	f.cfg.Repos = map[string]string{"ENG": own}
+	t.Chdir(f.repo)
+
+	if err := runProject(f.cfg, []string{"open", "b00000000008"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	name := "proj-background-indexer-redesign"
+	wt := filepath.Join(own, ".worktrees.local", name)
+	if !f.exists(wt) {
+		t.Fatalf("no worktree in the team's repository at %s", wt)
+	}
+	if f.exists(filepath.Join(f.repo, ".worktrees.local", name)) {
+		t.Error("the project was opened in the repository the list runs in")
+	}
+	if got := readWorktrees(f.cfg)[name].Path; got != wt {
+		t.Errorf("the list, run in another repository, has the worktree at %q", got)
+	}
+	var out strings.Builder
+	if err := runProject(f.cfg, []string{"close", "b00000000008"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(wt) {
+		t.Errorf("close left the worktree in the team's repository:\n%s", out.String())
+	}
+}
+
 func TestProjectOpenStartsWithProjectCmd(t *testing.T) {
 	f, _ := issueFixture(t)
 	t.Chdir(f.repo)

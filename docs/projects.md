@@ -104,7 +104,10 @@ No milestone
 Enter opens the project's **conversation** — the one above the issues.
 It is a workspace like the others: a worktree under `worktrees_dir`
 named `proj-<slug>`, a window in `project.session`, Claude started in
-it on `/owl:project {name}`. Two things differ, and both follow from a
+it on `/owl:project {name}`. The worktree is in the repository `repos`
+names for the project's teams, when it names one for every team, so a
+company's project is planned beside that company's code and with its
+tools; otherwise it is in the repository owl runs in. Two things differ, and both follow from a
 project having no branch of its own:
 
 - The worktree is **detached at the remote's default branch**. git

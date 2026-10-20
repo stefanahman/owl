@@ -549,3 +549,24 @@ func TestParseConfigTeams(t *testing.T) {
 		}
 	}
 }
+
+// A project has teams rather than a key, and goes where repos sends all
+// of them: to one repository named for every team, else where owl runs.
+func TestSharedRepo(t *testing.T) {
+	c := Config{Repos: map[string]string{"ENG": "/src/app", "WEB": "/src/app", "OPS": "/src/infrastructure"}}
+	for _, tc := range []struct {
+		teams []string
+		want  string
+	}{
+		{[]string{"ENG"}, "/src/app"},
+		{[]string{"eng", "WEB"}, "/src/app"},
+		{[]string{"ENG", "OPS"}, ""},
+		{[]string{"ENG", "DATA"}, ""},
+		{[]string{"DATA"}, ""},
+		{nil, ""},
+	} {
+		if got, _, _ := c.sharedRepo(tc.teams); got != tc.want {
+			t.Errorf("sharedRepo(%v) = %q, want %q", tc.teams, got, tc.want)
+		}
+	}
+}

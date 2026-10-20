@@ -127,6 +127,11 @@ func (f *fakeLinear) handler(w http.ResponseWriter, r *http.Request) {
 			// error; the caller falls back to the list.
 			data = map[string]any{"project": nil}
 		}
+		// GraphQL answers the fields asked for, and only those: the
+		// project's teams come back when the query names them.
+		if p, ok := data.(map[string]any)["project"].(map[string]any); ok && strings.Contains(req.Query, "teams { nodes { key } }") {
+			p["teams"] = map[string]any{"nodes": []any{map[string]string{"key": "ENG"}}}
+		}
 	case strings.Contains(req.Query, "projects(first:"):
 		// Lead or member, and nothing about issues: Linear's project-level
 		// `issues: { some: … }` does not conjoin per issue, so owl asks

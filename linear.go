@@ -174,6 +174,13 @@ type Project struct {
 	Lead struct {
 		Name string `json:"name"`
 	} `json:"lead"`
+	// Teams are the teams the project belongs to, which is what says
+	// which repository its conversation opens in (repos).
+	Teams struct {
+		Nodes []struct {
+			Key string `json:"key"`
+		} `json:"nodes"`
+	} `json:"teams"`
 	// Initiatives is the layer above the project. Linear allows several;
 	// the row has space for one, and one is what nearly every project
 	// has.
@@ -192,6 +199,15 @@ type Project struct {
 	Workspace string `json:"workspace,omitempty"`
 }
 
+// TeamKeys are the keys of the project's teams: ENG, OPS.
+func (p Project) TeamKeys() []string {
+	keys := make([]string, 0, len(p.Teams.Nodes))
+	for _, t := range p.Teams.Nodes {
+		keys = append(keys, t.Key)
+	}
+	return keys
+}
+
 // Initiative is the initiative the project belongs to, or "".
 func (p Project) Initiative() string {
 	if len(p.Initiatives.Nodes) == 0 {
@@ -203,7 +219,7 @@ func (p Project) Initiative() string {
 // projectFields is what the project query selects. `scope` is the
 // issue count: the issues connection caps at fifty, so counting its
 // nodes would report 50 for a project of 915.
-const projectFields = `id name slugId url progress scope priority targetDate updatedAt completedAt status { name type } lead { name } initiatives(first: 1) { nodes { name } } projectMilestones(first: 50) { nodes { id name progress } }`
+const projectFields = `id name slugId url progress scope priority targetDate updatedAt completedAt status { name type } lead { name } teams { nodes { key } } initiatives(first: 1) { nodes { name } } projectMilestones(first: 50) { nodes { id name progress } }`
 
 // issueFields is what every issue query selects.
 const issueFields = `id identifier title branchName priority priorityLabel url updatedAt completedAt canceledAt state { name type } project { id name } projectMilestone { id name sortOrder } assignee { name isMe } team { key }`

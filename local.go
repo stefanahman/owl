@@ -151,8 +151,9 @@ func readWorktrees(cfg Config) map[string]worktree {
 		}
 	}
 	// A routed team's features are the ones in its own repository: open
-	// goes there, so that is the worktree the row has. Each repository
-	// is listed once, however many teams share it.
+	// goes there, so that is the worktree the row has. So are projects,
+	// which open where repos sends their teams. Each repository is
+	// listed once, however many teams share it.
 	teams := map[string][]string{}
 	for team, dir := range cfg.Repos {
 		teams[dir] = append(teams[dir], team)
@@ -164,7 +165,7 @@ func readWorktrees(cfg Config) map[string]worktree {
 		}
 		for _, wt := range list {
 			h := wt.handle()
-			if team, _, _ := strings.Cut(issueKeyOf(h), "-"); slices.Contains(teams[dir], team) {
+			if team, _, _ := strings.Cut(issueKeyOf(h), "-"); slices.Contains(teams[dir], team) || projectSlugOf(h) != "" {
 				result[h] = wt
 			}
 		}
