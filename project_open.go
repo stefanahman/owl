@@ -228,8 +228,8 @@ func runProjectOpen(cfg Config, tracker Tracker, args []string, out io.Writer, a
 		// Claude's prompt box, its /resume picker and the terminal
 		// title, which a multiplexer's tab and cmux-describe read. On a
 		// resume it adds a newer title, which is the one Claude shows.
-		args: []string{"--name", shellQuote(p.Name)},
-		cmd:  cfg.Project.Cmd,
+		title: func() string { return p.Name },
+		cmd:   cfg.Project.Cmd,
 		env: map[string]string{
 			"OWL_PROJECT":         p.Name,
 			"OWL_PROJECT_SLUG":    p.SlugID,

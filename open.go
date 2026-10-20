@@ -90,10 +90,11 @@ type workspace struct {
 	// worktree, since resuming an id with no transcript fails. Without
 	// one, a review or a feature resumes with `-c`.
 	session string
-	// args are more flags for the agent command, before the prompt — a
-	// project's --name. startLine joins them into a shell line as they
-	// are, so each is shell-quoted already.
-	args []string
+	// title is the conversation's name, passed as --name each time the
+	// agent starts — a project's, as Linear calls it now. A func, so a
+	// lookup the name needs is made only when an agent does start: a
+	// prompt to a running agent, or arriving at one, needs no name.
+	title func() string
 	// cmd is the agent command the window starts: the list's own
 	// (issue.cmd, project.cmd) where it names one, else agent.cmd.
 	cmd string
@@ -115,14 +116,14 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	if cmd == "" {
 		cmd = cfg.Agent.Cmd
 	}
-	args := ws.args
+	var args []string
 	if ws.session != "" {
 		resume = hasSession(ws.dir, ws.session)
 		flag := "--session-id"
 		if resume {
 			flag = "--resume"
 		}
-		args = append([]string{flag, ws.session}, ws.args...)
+		args = []string{flag, ws.session}
 	}
 	where := mx.Describe(ws.name)
 	// The text the agent starts on: the caller's prompt, or the
@@ -139,9 +140,18 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 			return fmt.Errorf("%s: writing the prompt: %w", ws.label, err)
 		}
 	}
+	// startAgent is the line that starts the agent, made only when one
+	// is started, since the title may cost a lookup.
+	startAgent := func() string {
+		flags := args
+		if ws.title != nil {
+			flags = slices.Concat(args, []string{"--name", shellQuote(ws.title())})
+		}
+		return startLine(cmd, file, resume, flags...)
+	}
 	switch {
 	case !slices.Contains(mx.Windows(), ws.name):
-		if err := mx.Open(ws.name, ws.dir, startLine(cmd, file, resume, args...)); err != nil {
+		if err := mx.Open(ws.name, ws.dir, startAgent()); err != nil {
 			return err
 		}
 		if resume {
@@ -155,7 +165,7 @@ func (ws workspace) open(cfg Config, mx windows, repo, prompt string, arrive boo
 	case prompt != "" && mx.AtShell(ws.name):
 		// The agent exited; typing the prompt into a shell would run it
 		// as a command. Start the agent again with the prompt instead.
-		if err := mx.Run(ws.name, startLine(cmd, file, resume, args...)); err != nil {
+		if err := mx.Run(ws.name, startAgent()); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "restarted agent in %s\n", where)
